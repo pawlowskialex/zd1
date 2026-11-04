@@ -149,7 +149,7 @@ App stage-2 checksum: 16-bit LE words, a = b = 0xFFFF, folded every 360 words, r
 | 0x00 | `bCoD`; 0x04 container version 1 |
 | 0x08 | build date/time, 16 chars |
 | 0x18 / 0x1C | model id (0x69) / software version (0x2398 = build 9112) |
-| 0x20 | low 16 bits = HWID: 0xBD (also BL2's PersParam default) in B&W's Zeppelin Air, A5 and Z2 images; 0xBE in the Zeppelin Air with Lightning's (2.01.04, 2.04.35); 0xA7 in the A7's |
+| 0x20 | low 16 bits = HWID: 0xBD (BridgeCo's generic DM870 ID, also BL2's PersParam default) in B&W's Zeppelin Air, A5 and Z2 images; 0xBE in the Zeppelin Air with Lightning's (2.01.04, 2.04.35); 0xA7 in the A7's |
 | 0x28 / 0x2C | header version (2 = 0xB0-byte header) / **header CRC32** (zlib, over the header with this field zeroed) |
 | 0x30 + 0x20·i | sections {file offset, NAND address, size, CRC32, partition size}: 0 app (→ 0x240000), 1 factory CnE, 2 resources (→ 0xC40000; 0x90 + 4·i = the sizes of its containers, 8 words, 3 used) |
 | 0xB0 | "DMP 3.x" |

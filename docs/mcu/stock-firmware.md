@@ -29,15 +29,36 @@ then the MCU part: a 32-byte header, u32 LE: 2 (the wrapper's version), the modu
 none), the MCU part's length, a checksum and a smaller sum (not yet checked), 0, 0; then the `.bcd` (`bCoD`, as
 `app_DMP.bcd`); then the MCU part. BL2's web updater reads the wrapper (`docs/module/boot-chain.md`) [EMU]. On the A7
 and the ZD1L the MCU part is a `.dmb`: a 24-byte header (`00 01 00 80`, a word, the app's length, 0x80000000 + a sum),
-its name at +24, the app at +128, loaded at 0x80008000. The A5's and Z2's MCU part (63 KB, "B&WAZ2LITEON~",
-"B&WMA1LITEON~") is another MCU, and their module images name a CX870. B&W's manifest marks ZD1 2.04.05 `usb` (desktop
-app only) and ZD1L 2.04.35 and A7 2.04.77 `ota` (the iOS app too).
+its name at +24, the app at +128, loaded at 0x80008000. The A5's and Z2's are another platform (below). B&W's manifest
+marks ZD1 2.04.05 `usb` (desktop app only) and ZD1L 2.04.35 and A7 2.04.77 `ota` (the iOS app too).
 
 **The three models' module images** (`tools/zeppelin/fw/bcd.py`, `cne2txt.py`, `ffsres_extract.py`): the module app
 (section 0) is byte-identical in ZD1 2.04.05, ZD1L 2.04.35 and A7 2.04.77. They differ in the header's HWID (0xBD,
 0xBE, 0xA7), the factory CnE (`TCPIPTunnel`, the TCP-to-SPI-registers tunnel on port 50001: `REMOTE_REGISTERS` on the
 ZD1, `OFF` on the others; the A7's names and its own certificate for the setup page) and the resources: only the
 ZD1L's and A7's setup page has the "Prepare for Firmware" panel.
+
+**The A5 and the Z2** (`a5v4852.fw`, `z2v4919.fw`; `tools/zeppelin/fw/bwfw.py` cuts them) [RE]: one platform, not
+the Zeppelin's.
+- Network module: a BridgeCo **CX870** (DM870 SoC) with **16 MB of parallel NOR** (drivers for Spansion S29GL128N,
+  S29GL256S, S29GL512N) at 0x40000000, not the CR870's NAND. BridgeCo's release `JB3_0F_edmp_16MB_NOR`, SDK 3.8.0
+  build 9110 (the Zeppelin's: 9112); container version 3, the app at 0x401C0000 (5.4 MB partition), the resources
+  at 0x40720000. HWID 0xBD, which the Z2's UPnP description calls `BridgecoCE2DM870_0xBD`: BridgeCo's generic DM870 ID.
+  The module app checks versions of "CX870 | MCU | BLMCU" (the MCU's bootloader too).
+- A5 against Z2: the preloader (stage 1, SDRAM and flash set-up) 99.9 % the same bytes, the factory CnE the same tree
+  (names, the Z2's model number FP33626 and dock volume `ipodVol`/`ipodMax`, a few iAP accessory claims), the same
+  resource files; the module app the same code base rebuilt (June and October 2012: 52.8 % of the A5's 32-byte pieces
+  are in the Z2's).
+- Main MCU: a Microchip **PIC24**, most likely a **PIC24FJ64GA00x** (64 KB flash). The MCU part (63,616 B: the tag
+  "B&WAZ2LITEON~" / "B&WMA1LITEON~", internal names AZ2 and MA1, padded to 0x70, 16 bytes "ABCDEFGHIJKLMN" + 2, then
+  program memory) holds 24-bit words with the phantom byte, 0 in all 15,872; the opcode mix is PIC24's (MOV, SUB, BRA
+  NZ, CLR, RCALL; 137 RETURN = 0x060000 in the Z2's). It opens with GOTOs (reset 0x3100, a default handler 0xAA54, a
+  few others): an app's remapped vectors above a bootloader. Its last two words are configuration words, CW2 0x789F
+  and CW1 0x3D7F: the GA00x family's two, at its flash's top (0xABFC, 0xABFE), which puts the image at 0x3000 and a
+  12 KB bootloader at 0x0000-0x2FFF. They decode as the internal FRC oscillator, the primary oscillator off, JTAG off,
+  the watchdog under software control and **code protection off**: a PICkit on the programming pins reads the whole
+  flash, the bootloader too. GA002 (28 pins) or GA004 (44) isn't in the firmware. The same layout and configuration
+  words in both: the same MCU, another program (13.5 % of the A5's pieces are in the Z2's; the Z2 has a dock).
 
 **B&W's update over the LAN** (the ZD1L's and A7's setup page, `scripts/device_base.js`) [EMU 2026-11-04, the stock
 images, `zemu run` below]: `GET /1000/firmware_prepare.asp`, then
