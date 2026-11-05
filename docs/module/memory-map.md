@@ -157,13 +157,19 @@ only if the MCU has the amp on and the DSP routed to it. Port 3 = standard I2S (
 = video.
 
 ## Wi-Fi (WILD)
-On-chip FullMAC (Wipro-NewLogic "WiLD" 802.11b/g MAC + baseband, firmware 0x00A70506 [HW], an ARM7 of its own with
-**128 KB of SRAM** at 0x30000000) behind 0x30000000/0x30200000, presenting an **802.3 interface** (frames in and out
-are Ethernet). The radio is the T6201 (the "Eagle RF" the MIB names). KnOS drives it through a shared-memory MIB (28
-groups, 329 elements: `re/netmodule/wlan_mib_schema.txt`, `re/netmodule/WIFI_DRIVER.md`), with CCMP in hardware. The
-Nokia kernel's GPL `sulu_wlan.ko` (mac80211) loads the same firmware build (`sulu-wlan.fw`): gate 19 off and on,
-tgen +0x40 bit 15 cleared, MtxWild cleared, ARM7 reset asserted (tgen +0x20 = 2), the firmware copied to 0x30000000,
-the reset released (+0x24 = 2), then it waits for the firmware's first interrupt [RE].
+On-chip Wipro-NewLogic "WiLD" 802.11b/g MAC + baseband (firmware version 0x00A70506 [HW], an ARM7 of its own with
+**128 KB of SRAM** at 0x30000000) behind 0x30000000/0x30200000. The radio is the T6201 (the "Eagle RF" the MIB names).
+KnOS drives it through a shared-memory MIB (28 groups, 329 elements: `re/netmodule/wlan_mib_schema.txt`,
+`re/netmodule/WIFI_DRIVER.md`), with CCMP in hardware, and moves Ethernet frames. The Nokia kernel's GPL `sulu_wlan.ko`
+loads a different build with the same version word (`sulu-wlan.fw`, what our OS runs): gate 19 off and on, tgen +0x40
+bit 15 cleared, MtxWild cleared, ARM7 reset asserted (tgen +0x20 = 2), the firmware copied to 0x30000000 with
+`memcpy_toio` (nothing checks a signature), the reset released (+0x24 = 2), then it waits for the firmware's first
+interrupt [RE].
+
+**Under Linux the firmware is a lower MAC** [RE]: `sulu_wlan_80211_tx` and `sulu_wlan_tl_handle_rx` move whole 802.11
+headers and bodies, and `mac80211` on the host authenticates and associates. The firmware keeps the timing, retries,
+fragments, the MIB and the keys; it has no RSN or WPA OUI and no AES tables (the AES and RC4 work is a hardware engine
+it hands descriptors to, `FUN_000038a4`). What it does with frames: `re/netmodule/WIFI_DRIVER.md`, The firmware.
 
 **On the unit [HW 2026-10-23]** the driver finds the hardware, the firmware starts (IRQ 15 fires, "phy0 started", no
 "timeout waiting for firmware"), `wlan0` carries MAC0 with the locally administered bit, and a Wireless-Extensions scan
@@ -181,7 +187,8 @@ clears it while it starts the core, and afterwards its value doesn't matter. The
 **Association works [HW 2026-10-24]**: `wpa_supplicant` 2.11 (`-Dwext`) joins a WPA2-PSK (CCMP) network at -57 dBm,
 `udhcpc` gets a lease, and the receivers play over it (AirPlay 2 realtime recovers the lost packets by retransmit
 requests: `module/os/forks.md`). WPA3-only networks (SAE) are not reachable this way:
-WEXT has no SAE authentication path [INF]. `wpa_cli signal_poll` reports -80 dBm whatever the level: the driver doesn't fill it in;
+WEXT has no SAE authentication path [INF]; what stands in the way is the host's stack, not the radio
+(`re/netmodule/WIFI_DRIVER.md`, WPA3). `wpa_cli signal_poll` reports -80 dBm whatever the level: the driver doesn't fill it in;
 `wpa_cli bss BSSID` has the real one.
 
 **The antenna is on the radio's second port** [HW 2026-10-24]: `sulu_wlan`'s `diversity` parameter (0 both, the

@@ -2,7 +2,7 @@
 
 The module OS is the Nokia Home Music HD-1's kernel (BCoLinux 2.2.1, Linux 2.6.24.7, `arch/arm/mach-sulu`),
 unmodified, with our own userspace (`module/os/`). The HD-1 uses the same BridgeCo chip family with the same
-peripheral map (same bases, same IRQs, the same WILD Wi-Fi firmware build); its kernel is unstripped and its modules
+peripheral map (same bases, same IRQs, the same WILD Wi-Fi firmware version); its kernel is unstripped and its modules
 are GPL: a working driver set for our hardware. Analysis of the dump: `re/netmodule/NOKIA_HD1.md`; the
 kernel's symbols: `tools/zeppelin/jtag/kallsyms.py`. Tags: `docs/README.md`.
 

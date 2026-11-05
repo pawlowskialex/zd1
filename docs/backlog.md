@@ -25,6 +25,10 @@ and what is known. What already works: `status.md`; checks that need a person at
 - **The boot stub's UART1 output** is garbled after BL1 (another divisor): set UART1 up in the stub.
 - **GPIO-17 "BIST activate"** (J2 pin 48, low-active, pulled up): what BL1/BL2 do when it is low at boot is not known
   (`docs/hardware/cr870-module.md`). Leave it alone.
+- **WPA3-only networks** (parked: not worth doing yet): not joinable today. Nothing found in the firmware stops SAE; the
+  host's 2.6.24 `mac80211` and WEXT do, and PMF may need a firmware patch (`re/netmodule/WIFI_DRIVER.md`, WPA3). If it
+  is picked up, the first step is a Commit/Confirm exchange through a monitor interface. Transition networks already
+  join with WPA2.
 
 ## Streaming
 - **AirPlay: groups with Apple's receivers** (`docs/streaming.md`, Synchronised playback): with an Apple TV and a
