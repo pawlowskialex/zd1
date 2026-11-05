@@ -6,9 +6,9 @@ decompilation and the live shell (booted on Wi-Fi). Our OS uses the Nokia kernel
 under KnOS. Tags: `docs/README.md`. No key material was captured.
 
 ## Shape
-- The WILD core is a FullMAC with its own ARM7 and firmware (version 0x00A70506 [HW], the same build as Nokia's
-  `sulu-wlan.fw`). It presents an **802.3 interface**: the host moves Ethernet frames; 802.11 framing and CCMP happen
-  in the core.
+- The WILD core has its own ARM7 and firmware (version 0x00A70506 [HW]). Under KnOS the host moves Ethernet frames
+  (`wlan_pkt_receive` below); where the 802.11 framing happens under KnOS was not traced. KnOS's firmware is not
+  Nokia's: see The firmware.
 - Configuration and status live in a **shared-memory MIB** that the host reads and writes directly.
 - Frames move through the shared SuluDMA engine (bus master "WILD").
 - The module binds one network interface at boot and does not fail over: booted on Ethernet, the WLAN device
@@ -64,6 +64,53 @@ order]:
 5. Connect; the MAC authenticates/associates and raises `AssociateInd` (→ `wpa_driver_sulu_notify_os`).
 Driver entry points: `wpa_driver_sulu_init` 0x6047cb4c, `set_mode` 0x6047dff8, `site_scan` ~0x605b8218; classes
 `SuluWlanDevice`, `WlControlService`/`SluWlanControl`; the `sys wlan ctrl` handler `SuluWlanDeviceCtrlCmd`.
+
+## The firmware [RE]
+Two builds carry the version word 0x00A70506, neither with public source. Both are plain ARM7 images (vector table at 0,
+unencrypted, unsigned), built with ARM's compiler (its C library's messages at the end):
+- `sulu-wlan.fw-rev78512` (Nokia's, what our OS loads): 60,304 bytes, the version literal at +0x1648.
+- The stock app's: at `re/gen/module-app/image.bin` +0x5992CC, about 70 KB, the version literal at +0x1A68. About 20 % of
+  Nokia's 16-byte windows occur in it (735 of 3,769), so it is a different build, possibly the same sources in part.
+
+Nokia's build, from a Ghidra decompilation (function addresses are offsets in the file; nothing here seen on the unit):
+- It knows the MIB's layout: `DP_SEC_CONF` as in the schema (default keys +0x03, their status +0x87, key mapping +0x8B,
+  DefaultKeyID +0x4AB, privacy +0x4AC).
+- **RX** (`FUN_000036a8`): the Protected bit alone selects decryption, whatever the frame's type. The key comes from the
+  sender's station entry, or the group table when the frame is multicast or the station has no pairwise key; no key is
+  error 0x302, dropped.
+- **TX** (`FUN_00004930`): privacy on and Protected set selects a key the same way, again with no check of the type.
+  Otherwise it **clears the Protected bit** and sends in the clear, so a frame the host already encrypted can't pass.
+- **Crypto** (`FUN_000038a4`): a descriptor to a hardware engine: cipher (WEP, TKIP, CCMP), key length, the TID, the
+  header's length, the key. Nothing marks a management frame.
+- **Authentication frames**: one test of subtype 0xB0 (`FUN_0000854c`, a one-shot hook on the receive path). Nothing
+  reads the algorithm number or the body.
+
+## WPA3
+Nothing has been tried on the unit; this is what the code above implies [INF].
+
+SAE itself should pass the firmware: the frames are ordinary cleartext Authentication frames, built by the host, and
+the firmware doesn't read their algorithm. The radio has no part in it, and CCMP-128 is what WPA3-Personal uses.
+
+PMF is the part the hardware may not do. 802.11w changes CCMP for management frames (a Management bit in the nonce,
+different masking of the frame control in the AAD), and this engine predates it, so protected unicast management frames
+would probably fail their MIC in both directions. Test it before relying on it. The way around is a small firmware
+patch, since nothing checks a signature: treat Protected management frames as "no cipher" in `FUN_000036a8`, and keep the
+Protected bit in `FUN_00004930`'s no-cipher path, with CCMP for those frames in software on the host. BIP (broadcast
+management frames) is cleartext with a trailer, host software with no firmware change.
+
+The blocker is the host, a binary 2.6.24.7 kernel:
+- `mac80211.ko`'s MLME sends Authentication frames itself and ignores transactions it doesn't expect; no external
+  authentication, no nl80211. `wpa_supplicant`'s SAE needs a driver that lets it run the SME (Wireless Extensions don't).
+- It has `ieee80211_monitor_start_xmit` and radiotap, so a monitor interface could inject and hear the SAE frames.
+  Getting `mac80211` from there into its associate state needs kernel code: an out-of-tree module
+  (`docs/module/linux.md`) or a patched `mac80211.ko`. The RSN element (AKM 8, MFPR) already goes through WEXT's generic IE.
+- `wpa_supplicant` needs a driver backend of ours with the SME flags, and an ECC library: `CONFIG_TLS=internal` has none.
+- `mac80211` here doesn't enforce PMF: without a patch it accepts unprotected deauthentication. Such a join has SAE's
+  gains (no offline dictionary attack, forward secrecy) but not PMF's, though the AP believes otherwise.
+- The cost of SAE's P-256 work on the 240 MHz ARM926 is unmeasured, and an AP's patience with a slow peer is finite.
+
+The cheapest test that decides it: a monitor interface on the unit, a test program, and a Commit/Confirm exchange with a
+WPA3-only AP. WPA3 transition networks already join with WPA2.
 
 ## Datapath [RE]
 - **Netif** ops struct at 0x6051e150: `{ctx, name "WLAN", "802.11", 0x60526dd4 link up/down ("Network driver %d

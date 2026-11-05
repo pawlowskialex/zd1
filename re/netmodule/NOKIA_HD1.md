@@ -5,7 +5,7 @@ Kernel symbols: `python3 -I tools/zeppelin/jtag/kallsyms.py` decodes them from t
 
 **Bottom line:** the HD-1 is a BridgeCo "Sulu" (DM860-class) running BCoLinux 2.2.1 (Linux 2.6.24.7,
 `arch/arm/mach-sulu`, JukeBlox 4.2). Its peripheral map is **the same as our DM870's**: the same addresses,
-the same IRQ numbers, and the same WILD Wi-Fi firmware build. So it is a (GPL, unstripped, `-O0`) Linux
+the same IRQ numbers, and the same WILD Wi-Fi firmware version. So it is a (GPL, unstripped, `-O0`) Linux
 driver set for our module's hardware. Our stock app names the chip too ("WILD core did trigger interrupt on
 Sulu").
 
@@ -97,11 +97,11 @@ dev_id 1)`, the "old DMA" block moves sulu_eth uses), groups 2/3 → **12/13** a
   the block is the pad switch matrix, which our stock chain sets up and this kernel never does
   (`docs/module/memory-map.md`).
 
-## 5. Wi-Fi (WILD): same firmware as ours
+## 5. Wi-Fi (WILD): the same version as ours, another build
 - `sulu_wlan.ko` is a **mac80211** driver (GPL, symbols intact) + `/lib/firmware/sulu-wlan.fw` (rev78512, 60 KB,
   an ARM7 image with a vector table at 0).
 - **The firmware's version routine loads `0x00a70506`, which is exactly the `FirmwareVersion` (MIB 00:02) our
-  unit reports live.** So it's the same WILD MAC firmware build. The Linux host side (slot/mailbox queues
+  unit reports live**, but the stock app's copy is a different binary (`re/netmodule/WIFI_DRIVER.md`, The firmware). The Linux host side (slot/mailbox queues
   `gi_*`, `sulu_wlan_send_cmd`, MIB get/set via debugfs, TX/RX buffer rings, `set_key`) is a working driver; our OS
   loads it unchanged, and on the unit it associates with WPA2 (`docs/module/memory-map.md`, Wi-Fi).
 - Boot sequence (`sulu_wlan_arm7_startup`): power gate 19 off, wait ~100 µs, on → tgen+0x40 &= ~0x8000 →
@@ -109,8 +109,8 @@ dev_id 1)`, the "old DMA" block moves sulu_eth uses), groups 2/3 → **12/13** a
   (WILD SRAM) → reg 0x30200000+**0x584** |= 1<<IRQ (15) → release reset (tgen+0x24 = 2) → wait for the
   firmware-ready interrupt.
 - 0x30000000 is the **WILD core's own memory window** (2 MiB), with WILD registers from 0x30200000.
-- Where our stock app keeps its copy of the firmware is unknown (no plain vector-table match; probably compressed or
-  in a resource). Not needed while we ship Nokia's blob; its licence is open.
+- The stock app keeps its own copy uncompressed, at `re/gen/module-app/image.bin` +0x5992CC. Not needed while we ship
+  Nokia's blob; its licence is open.
 
 ## 6. SuluDMA (`newdma_*`, exported)
 - Linux maps the controller at **0xB5000000, 64 KiB** (the cfg block live at 0xB5001000 = +0x1000).
