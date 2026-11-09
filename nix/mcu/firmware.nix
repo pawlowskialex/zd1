@@ -1,6 +1,7 @@
 # The MCU firmware (mcu/Makefile): $out/NAME.{elf,hex,bin,map}.
 #   emulator     the emulator's build (packages mcu-emu): the console on USART0 as well, where zemu reads and types
 #                it (no USB host there; ZD1_EMU)
+#   appBase      where it is linked: null for the default (0x80004000); 0x80008000 for a B&W .dmb
 {
   lib,
   stdenv,
@@ -8,6 +9,7 @@
   src,
   name ? "zd1",
   emulator ? false,
+  appBase ? null,
 }:
 stdenv.mkDerivation {
   inherit name;
@@ -21,7 +23,11 @@ stdenv.mkDerivation {
   ];
   sourceRoot = "source/mcu";
   nativeBuildInputs = [ avr32-toolchain ];
-  makeFlags = [ "OUT=${name}" ] ++ lib.optional emulator "EXTRA_CFLAGS=-DZD1_EMU";
+  makeFlags = [
+    "OUT=${name}"
+  ]
+  ++ lib.optional emulator "EXTRA_CFLAGS=-DZD1_EMU"
+  ++ lib.optional (appBase != null) "APP_BASE=${appBase}";
   enableParallelBuilding = true;
   installPhase = ''
     mkdir -p $out

@@ -3,7 +3,8 @@
 Replacement firmware for the Zeppelin Air main board (AT32UC3A1256), built on Atmel's ASF. It does what the stock
 firmware does for USB, AUX and AirPlay through the stock module, plus a host link for tools (typed requests over USB,
 the network module's console among them). It links at 0x80004000, so the B&W DFU bootloader stays in
-place and any build can be undone (`docs/mcu/bootloader-dfu.md`).
+place and any build can be undone (`docs/mcu/bootloader-dfu.md`). `nix build .#mcu-dmb` links it at 0x80008000 instead,
+behind stock's branch, for a B&W `.dmb` (`docs/mcu/stock-firmware.md`); never flash that build over DFU.
 
 ## Status (on the unit)
 
