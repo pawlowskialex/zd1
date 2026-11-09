@@ -483,5 +483,6 @@ cipher, **WPA passphrase**, SSID).
 1. DRC 0xE1/0xE2/0x9E exact meaning and the unused codes 0xB2/0x13/0xFA (module `RemoteRegDRCCommand::passResult`).
 2. The `03 01 x {00,03}` ↔ `03 01 01 {02,04}` exchange on 0x40 (and the unreachable `03 01 01 01`).
 3. Module meanings of 0x11 = 0x20, 0x22, 0x24-0x26, and 0x6A result codes '1'-'6'.
-4. Why 0x11 = 0x27 (self-DFU request) is honoured only on board variant 2.
+4. What the Lightning model's bootloader does after 0x11 = 0x27 (ISP_FORCE, GPLP 0x1000000). Variant 2 only because
+   only that model's setup page has the LAN update (`docs/mcu/stock-firmware.md`) [INF].
 5. Site-survey (0x68) request value; 0xDC special case in the read task (0x8000c424).

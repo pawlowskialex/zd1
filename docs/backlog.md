@@ -111,14 +111,17 @@ and what is known. What already works: `status.md`; checks that need a person at
 ## Other models
 - **The Zeppelin Air with Lightning** (`docs/mcu/stock-firmware.md`): our MCU firmware ignores the board variant, and
   BL2's SPI XModem (the relay, `zd1 xmodem`) takes our image whatever HWID the module has (`docs/module/boot-chain.md`)
-  [EMU]. Open: its MCU bootloader, in no `.fw`, whose relay our installer needs. Before a first install on one: the
-  module's PersParam on the stock console and a DFU backup of the MCU; the way back is the stock module image inside
-  `zd1lv20435.fw` (HWID 0xBE).
+  [EMU]. Reported (issue #1): the key-hold gives BL2's web updater on Ethernet and nothing on USB, so `zd1 install` can't
+  run as it is and there's no DFU backup to take first. Open, in order: what its BL2 is (the paths ours serves, its
+  banner on the UART, a NAND read); its bootloader (a JTAG dump: on its board TMS is TP88, the rest of TP88-91 is
+  inferred); whether a `.fw`'s MCU part gets flashed, and on which way in. If it does, our firmware on both boards
+  goes that way (`.#mcu-dmb`, `bwfw.py --pack`) and needs no stock-MCU mode. The way back is the stock module image
+  inside `zd1lv20435.fw` (HWID 0xBE).
 - **The A7**: the module program is the Zeppelin's, its MCU app (`AZ1_v2-04-77.dmb`, booting on the ZD1 board model) is
   another build of the same code; a port means its pins, DSP, amp and keys from that binary, and an A7 to try it on.
-- **BL2 and B&W's `.fw`**: what it does with the MCU part after the module image, and why it read the wrapper a byte
-  late in the emulator (`docs/module/boot-chain.md`, Web updater). The A7's and Lightning model's bootloaders would
-  show how their LAN update goes on from USB DFU.
+- **B&W's LAN update**: the BL2 we have rejects a whole `.fw` (`docs/module/boot-chain.md`, Web updater). The A7's and
+  Lightning model's BL2 and bootloaders would show how the update goes on after the module's reboot, and what takes the
+  MCU part.
 
 ## Emulator
 Places where the emulator is known to differ from the unit; fix the model when one gets in the way.

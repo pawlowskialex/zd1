@@ -48,6 +48,9 @@ else (BOD, other warm reset):
 3. **Any DFU session** sets ISP_FORCE itself (the DNLOAD handler, so a reset mid-programming comes back to DFU); the
    start-app commands clear it [RE]. A unit that was left in a DFU session boots into DFU again.
 
+All of this is the 30-pin model's bootloader. The Lightning model's is unknown, and its key-hold is reported to start
+BL2 on Ethernet with nothing on USB (`docs/mcu/stock-firmware.md`).
+
 ## DFU protocol (USB 03EB:2FF8, interface 0)
 Atmel FLIP v2 framing. `host/core/src/dfu.rs` implements it (`zd1 dfu`, `zd1 flash`, the web page), checked frame
 by frame against the decompiled B&W updater (`re/ghidra/setup.py mcu-updater`; `cargo test -p zd1-host`).

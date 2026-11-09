@@ -50,7 +50,8 @@ it. Whether it has any other boot source (UART, USB) with a blank NAND is unknow
 
 ## BL2 (0xA0000), the updater
 `blobs/module/bl2.bin` (MetaInfo + boot header + stage 1 + stage 2 at 0x60008000, mostly Thumb-2; build 2010-09-27;
-the archive.org copy has bit rot, ours verifies). It reports **0x11 = 0x2300** to the MCU, brings up KnOS, Ethernet,
+the archive.org copy has bit rot, ours verifies). The only BL2 we have, and everything below is about it: no update
+carries one, and the Lightning model's is another build (`docs/mcu/stock-firmware.md`). It reports **0x11 = 0x2300** to the MCU, brings up KnOS, Ethernet,
 the SPI link and:
 - **Web updater** (GoAhead, port 80, no authentication) [HW]: `POST /goform/formPostHandler` multipart field
   `appFirmware`, then `GET /goform/formDownloadConfirmationHandler?button=Ok` (or the Expert handler with
@@ -62,19 +63,24 @@ the SPI link and:
   - The status page keeps the previous update's verdict while the next burn runs: after a failed update in the
     same BL2 session the next upload shows "100 % / failed" at once while the burn succeeds and BL2 resets the board
     [HW, EMU]. `bl2web` waits out a "failed" page for the reset.
-  - It also takes B&W's over-the-air `.fw` (`docs/mcu/stock-firmware.md`) [EMU]: it reads the `.fw`'s 32-byte header
-    as BridgeCo's encryption wrapper ("version = 2", "encryption mode = 0": not encrypted) and checks the `.bcd`
-    inside. The A7's on the test unit (0xBD): refused, "HWID(0xbd), bcd HWID(0xa7)". With PersParam's HWID patched
-    to 0xA7, every upload of it in that BL2 session failed the header CRC instead: BL2 read the wrapper one byte late
-    ("total of 367 bytes in buffer"; the first upload of the first session read 366, correctly) [EMU, not
-    understood]. What BL2 does with the MCU part after the module image is not seen.
+  - It doesn't know B&W's over-the-air `.fw` (`docs/mcu/stock-firmware.md`): the upload is parsed as a `.bcd` from
+    its first byte, so the `.fw`'s 32-byte wrapper puts everything out of place and the header CRC fails ("The file
+    is an invalid BCD file"). The A7's, the Lightning model's and one packed by `bwfw.py` all end there, each the first
+    upload of a fresh BL2; the `.bcd` cut out of the Lightning model's gets as far as "HWID(0xbd), bcd HWID(0xbe)" [EMU
+    2026-11-08: `zemu run emu/img/os/os.bcd --mcu FLASH --fwd 18080:80 --allow-panic --until 'waiting for a system'
+    --host 'zd1 module bl2' --sleep 25 --host 'python3 -I tools/zeppelin/knos/bl2web.py 127.0.0.1:18080 FILE --yes'].
+    The "version" and "encryption mode" it logs are the upload's bytes +0x28 and +0x29 (0x60021c7e, 0x60021c94 [RE]): a
+    `.bcd`'s header version and encryption flag; a `.fw` gives ASCII from the build date (50, 48). "Total of N bytes in
+    buffer" is the size of the first network chunk.
 - TFTP server, XModem over UART1 or SPI (the MCU bootloader's relay, `zd1 xmodem` [HW]), and a serial menu on UART1 ("Bootloader Level
   2 Menu") [RE, EMU]: 1 download image + CnE, 2 image only, 3 resource pages, **4 start image**, 5 print image info,
   **6 mark image as invalid**, 7 CnE to factory default, 8 program MAC0, 9 program GUID, a set start mode, b exit to
   shell. `zd1 module esc` stops sending after BL1's menu, so it never reaches these.
 - Image check (`checkBCDAndFlashStatus`, 0x60040de4) [RE]: header CRC32, the `.bcd`'s HWID against PersParam's
-  (expert mode skips it), each section's CRC32, a version compare. **No signature.** Optional Blowfish with
-  BridgeCo's placeholder key, off. Keep the version ≥ stock. **Only the web updater runs it**: its one call (0x60040c56)
+  (expert mode skips it), each section's CRC32. **No signature.** Optional Blowfish with BridgeCo's placeholder key,
+  off. The version doesn't refuse anything: the confirm page shows it, a `.bcd` with a lower software version or model
+  id (header +0x1C, +0x18) is taken and burns (105.1, 104.1, over 105.9112), and a higher model id than the installed
+  image's only adds "user mode, configure Cne download" [EMU 2026-11-08]. **Only the web updater runs it**: its one call (0x60040c56)
   is in `WebFirmwareUpdate::closeBinData`; the SPI XModem (the relay, `zd1 xmodem`) hands the data to the
   FlashUpdateService without it, and BL2 reads PersParam's HWID nowhere else but its banner and the CnE value
   `HardwareID`. An `os.bcd` with its header's HWID set to 0xBE (CRC recomputed) went on a unit whose PersParam says

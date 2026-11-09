@@ -24,13 +24,36 @@ The A7's 2.04.77 is the same March 2015 release: B&W's notes for 2.04.05 (`relea
 the same text. This binary has no A7 variant (both variants are Zeppelins with a dock); the A7's MCU app is
 `AZ1_v2-04-77.dmb` in `a7v20477.fw`, another build of the same code ("Dec 12 2014", 191 KB, ~147k bytes differ).
 
-A B&W OTA `.fw` (A7, ZD1L; the A5 and Z2 too) is BridgeCo's encryption wrapper, unencrypted, around a module image,
-then the MCU part: a 32-byte header, u32 LE: 2 (the wrapper's version), the module image's length, 0 (encryption mode:
-none), the MCU part's length, a checksum and a smaller sum (not yet checked), 0, 0; then the `.bcd` (`bCoD`, as
-`app_DMP.bcd`); then the MCU part. BL2's web updater reads the wrapper (`docs/module/boot-chain.md`) [EMU]. On the A7
-and the ZD1L the MCU part is a `.dmb`: a 24-byte header (`00 01 00 80`, a word, the app's length, 0x80000000 + a sum),
-its name at +24, the app at +128, loaded at 0x80008000. The A5's and Z2's are another platform (below). B&W's manifest
-marks ZD1 2.04.05 `usb` (desktop app only) and ZD1L 2.04.35 and A7 2.04.77 `ota` (the iOS app too).
+A B&W OTA `.fw` (A7, ZD1L; the A5 and Z2 too) is a 32-byte wrapper, then the `.bcd` (`bCoD`, as `app_DMP.bcd`), then
+the MCU part, then one newline (0x0A, outside the CRC). All of it holds for every `.fw` we have [RE]:
+
+| Wrapper, u32 LE | |
+|---|---|
+| +0 | 2 |
+| +4 | the `.bcd`'s length |
+| +8 | 0 |
+| +12 | the MCU part's length |
+| +16 | CRC-32 of the `.bcd` and the MCU part |
+| +20 | the release as a decimal number (20435 for 2.04.35, 4852 for the A5's) |
+| +24, +28 | 0 |
+
+On the A7 and the ZD1L the MCU part is a `.dmb`, big-endian (the A5's and Z2's are another platform, below):
+
+| `.dmb` | |
+|---|---|
+| +0 | `00 01 00 80` |
+| +4 | build time, Unix (0x547C2B42 = 2014-12-01, the app's "Dec 1 2014") |
+| +8 | the app's length |
+| +12 | 0x8000, the app's offset in flash |
+| +16 | CRC-16/XMODEM of the app (u16; zeros to +24) |
+| +24 | the name, 20 bytes (`ZD1L_v2-04-35.dmb`) |
+| +44 | the version, 3 bytes (`02 04 23`); zeros to +128 |
+| +128 | the app, for 0x80008000 |
+
+`tools/zeppelin/fw/bwfw.py` cuts a `.fw`, packs one (`--pack`) and checks itself (`--selftest`: each shipped file
+rebuilt from its parts, byte for byte: all five are). Which of these fields anything enforces is unknown: nothing
+that reads a `.fw` has been seen. The BL2 we have doesn't (`docs/module/boot-chain.md`, Web updater) [EMU]. B&W's
+manifest marks ZD1 2.04.05 `usb` (desktop app only) and ZD1L 2.04.35 and A7 2.04.77 `ota` (the iOS app too).
 
 **The three models' module images** (`tools/zeppelin/fw/bcd.py`, `cne2txt.py`, `ffsres_extract.py`): the module app
 (section 0) is byte-identical in ZD1 2.04.05, ZD1L 2.04.35 and A7 2.04.77. They differ in the header's HWID (0xBD,
@@ -80,6 +103,38 @@ ends there. The ZD1L's and A7's bootloaders, which no `.fw` carries, must start 
 EEPROM record (+6: 0x0005 for ZD1, 0x0035 for ZD1L, 0x0077 for the A7) and takes a record with another version as
 invalid (its defaults). The A7 app boots on the ZD1 board model ("PSS AZ1", DSP firmware v01.00, finds its DSP, codec
 and EEPROM, reaches RUN); the ZD1L app looks like 2.04.05 throughout (the -4 differences changed nothing seen).
+
+**The Lightning model's key-hold**, as an owner reported it on a stock 2.04.35 unit (GitHub issue #1; read-only, not
+seen here): ON/OFF held at power-up gives a white LED, nothing on USB (three tries, with the cable that works in normal
+mode), and the module on wired Ethernet only (DHCP), serving GoAhead's `/bl_index.asp`, "Zeppelin Air Setup - Firmware
+Update", © 2012. `/scripts/info.asp` gives `firmware_version="105.9112"` and `host_vers="2.04.35"`;
+`/1000/firmware_status.asp` the same and the progress; `scripts/firmware.js` says "This firmware file is incorrect for
+your speaker hardware" on a reply containing `_HWID`. A plain power cycle afterwards boots stock.
+
+**Its BL2 is not ours** [INF, strong]. Ours is built 2010-09-27 and serves none of those three files (404, as does
+`/index.asp`) [EMU 2026-11-08]; it rejects every B&W `.fw` whole (`docs/module/boot-chain.md`), so it can't be what
+those files were made for. A `.bcd` has three sections (app, CnE, resources), so no update brings a BL2: the Lightning
+model's is the factory's. Whatever `docs/module/boot-chain.md` says about BL2 was read from ours. Nothing is known of
+theirs but the report above: its HWID, CRC and version checks, whether it takes `.bcd`, `.fw` or both, what happens to
+a `.fw`'s MCU part.
+
+**Is USB DFU there at all?** Open. For: the ZD1L app restores the same ISP word (`0x929E0870`: PA08, the ON/OFF key;
+`.dmb` +0x9352 and +0x9386, as in 2.04.05's) [RE]; on variant 2 the app sets ISP_FORCE, whose only known use is forcing
+DFU, and a GPLP flag (0x1000000) that it clears unread at boot and that the 0514 bootloader never reads, so a bootloader
+somewhere does [INF]; and the USB mux is software-driven and differs by variant (`re/mcu/work/usb_ipod_notes.txt`:
+request 3 is variant 1 only, PA19 high likewise), so a running DFU could be routed away from the rear port [INF].
+Against: the MCU part ships as a `.dmb` with its own header where the ZD1's is a `.hex`, which suggests something other
+than a DFU tool reads it, and a 16 KB bootloader that receives the app from the module may have had USB taken out [INF].
+The key-hold can't set ISP_FORCE or the GPLP flag, so 0x27 is a second, untested way in; ISP_FORCE survives power cycles
+and on a bootloader without DFU may have no way off but a finished update, so that test wants JTAG ready.
+
+**Our firmware as a `.dmb`**: the stock app region starts with one branch (`e0 8f 20 00`, to 0x80008000) and zeros, and
+a `.dmb` only holds what follows. `nix build .#mcu-dmb` links our firmware at 0x80008000 for that (72 KB; up to
+0x37E00 B; `.#mcu-emu-dmb` is the emulator's build). Packed with `os.bcd`, cut again, started by the ZD1's bootloader through the stock branch, on board
+variant 2, it runs and the module goes slot A, slot B, rescue as on a first install [EMU 2026-11-08: `bwfw.py --pack
+OUT.fw os.bcd zd1emudmb.bin --name ZD1L_v2-04-35.dmb --version 2.04.35 --hwid 0xBE`, `bwfw.py OUT.fw DIR`, `zemu run
+DIR/module.bcd --mcu DIR/mcu_flash.bin --renode 'zd1:board Adc "2:0x300"' --allow-panic`]. That the Lightning unit has
+the same branch at 0x80004000 is inferred from every `.dmb` starting at 0x8000.
 
 Other ways a `.fw` might get in, from the module app's strings [RE, untried]: its own online check (`GetLatestFwUrl`,
 `FirmwareIndexPage` = BridgeCo's dead `bridgeco-jukeblox.net/download/index.xml`), a USB stick
