@@ -136,6 +136,13 @@ OUT.fw os.bcd zd1emudmb.bin --name ZD1L_v2-04-35.dmb --version 2.04.35 --hwid 0x
 DIR/module.bcd --mcu DIR/mcu_flash.bin --renode 'zd1:board Adc "2:0x300"' --allow-panic`]. That the Lightning unit has
 the same branch at 0x80004000 is inferred from every `.dmb` starting at 0x8000.
 
+**A telnet hook on the stock 2.04.35, repacked as a `.fw`** (`stock-patch/`, `patch.py --fw`): a way to a shell on a
+stock ZD1L without replacing its firmware, e.g. to read BL2 out (`fburn rd`, the reverse-SPI code the relay needs). The
+2.04.05 hook (HW-proven 2026-10-16) ports to 2.04.35 untouched: every address it uses is byte-identical, only sbrk's
+heap-base literal moves (0x8002ae28 -> 0x8002ae24, the -4 shift), which `patch()` locates. A repacked `.fw` gave the
+KnOS shell on telnet (`sds://>`) in the emulator, a stock module image beside the patched MCU [EMU 2026-11-08, AUX
+boot]. Same delivery question as any MCU change here: unproven that a ZD1L flashes a `.fw`'s MCU part.
+
 Other ways a `.fw` might get in, from the module app's strings [RE, untried]: its own online check (`GetLatestFwUrl`,
 `FirmwareIndexPage` = BridgeCo's dead `bridgeco-jukeblox.net/download/index.xml`), a USB stick
 (`Firmware_update_prepare_for_usb.asp`), the iOS app over the dock (`JBLinkPacket_UpgradeFirmware`); its way to the
