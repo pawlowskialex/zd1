@@ -517,6 +517,20 @@ namespace Antmicro.Renode.Peripherals.ZD1
 
         public bool SpdifLock { get; set; }
 
+        /// <summary>Every write appended to this file as `{u16 sub-address BE, u16 length BE, data}`: the format of the
+        /// extracted download sequence (re/mcu/extracted/dsp/download_sequence.bin), so a stock app's DSP setup can be
+        /// recorded and compared (`--renode 'zd1:twi.dsp Record "FILE"'`).</summary>
+        public string Record
+        {
+            get => record;
+            set
+            {
+                record = value;
+                rec?.Dispose();
+                rec = string.IsNullOrEmpty(value) ? null : new FileStream(value, FileMode.Create);
+            }
+        }
+
         public byte[] Memory => mem;
 
         public uint Param(int n) => n >= 0 && n < 0x400 ? param[n] : 0;
@@ -694,6 +708,12 @@ namespace Antmicro.Renode.Peripherals.ZD1
             }
             var sub = b[0] << 8 | b[1];
             var len = b.Length - 2;
+            if (rec != null)
+            {
+                rec.Write(new[] { b[0], b[1], (byte)(len >> 8), (byte)len }, 0, 4);
+                rec.Write(b, 2, len);
+                rec.Flush();
+            }
             Array.Copy(b, 2, mem, sub, Math.Min(len, 0x10000 - sub));
             SinkWrite(sub, b, 2, len);
             var sb = new StringBuilder();
@@ -787,8 +807,10 @@ namespace Antmicro.Renode.Peripherals.ZD1
             e002;
         private int readSub,
             reads;
-        private string audioWav;
-        private FileStream wav;
+        private string audioWav,
+            record;
+        private FileStream wav,
+            rec;
         private ulong frames,
             sfr,
             wframes,

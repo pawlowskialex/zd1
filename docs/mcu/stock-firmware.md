@@ -188,6 +188,17 @@ first boot's Wi-Fi setup crashes the module: `emu/README.md`, Recipes, Stock on 
 | driver mutes | tweeter 0x13C-0x13F, mid 0x145/0x146 + 0x149/0x14A, woofer 0x185/0x186 | |
 | input level meter | 0x031 (read) | linear peak, 5.23, of the selected input before the volume stage; follows the signal (falls ~50 dB in 0.4 s after it stops); AUX with a source plugged in and paused -86 dBFS, music -66..-28 [HW 2026-10-27] |
 
+**The three models' DSP setups** [EMU 2026-11-17]: each stock app's writes to the DSP recorded in the emulator
+(`zemu run none --mcu FLASH --renode 'zd1:twi.dsp Record "FILE"'`, the ZD1L's and A7's flash images cut from their
+`.fw` by `bwfw.py`, variant 2 for the ZD1L) and compared with `re/scripts/dspcmp.py`; the ZD1's recording is the
+extracted download, write for write (but the zero-length write to 0x6000, which the emulated I2C drops). **The ZD1L's is the ZD1's, byte for byte**: program, configuration and
+parameters. **The A7's is another design**: 419 of the 1360 program words differ; configuration registers 0xE100,
+0xE140/0xE142, 0xE200/0xE202 (written as 0xE101 and 0xE141, 2 bytes), 0xE246 and 0xE252 (0xE240 written as 4 + 12
+bytes); 47 of the 400 parameters, mostly filter coefficients a little apart (another voicing), two of the ZD1's
+filters left as pass-throughs (0x071-0x073, 0x0A1-0x0A5) and other gains (0x04B −5 dB for −3, 0x083 −4 dB for −1.5,
+0x0B5-0x0B8 0/+3 dB for +1.5/+2). With another program the same address may be another control, so the ZD1's
+parameter map (above) holds for the ZD1L, not yet for the A7.
+
 Tables: `re/mcu/extracted/dsp/runtime_tables.txt`, `param_records_8001f5bc.txt`. The "soft mute" records stock
 writes on some paths are input-path selectors, not a mute: `FUN_800200b4` writes the source gains 0x147/0x148/0x173/
 0x174/0x18E/0x18F = 1.0 (`FUN_8002005c`, records +0x138..+0x160) and then +0x168..+0x1D0 (selector pairs 0xB9/0xBA,
