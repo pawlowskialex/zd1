@@ -123,7 +123,9 @@ and what is known. What already works: `status.md`; checks that need a person at
   is TP88, the rest of TP88-91 inferred); `zd1l.fw` installed on a real ZD1L, and what of our MCU firmware works
   on its board (variant 2 differs in the video only, which our firmware doesn't use: `docs/mcu/stock-firmware.md`); and an owner pursuing a module-OS-on-stock-MCU route (issue #1).
 - **The A7**: the module program is the Zeppelin's, its MCU app (`AZ1_v2-04-77.dmb`, booting on the ZD1 board model) is
-  another build of the same code; a port means its pins, DSP, amp and keys from that binary, and an A7 to try it on.
+  another build of the same code. What ran in the emulator drives the ZD1's pins and ADC channels the same way, without
+  the dock's authentication chip; its DSP setup is another design (`docs/mcu/stock-firmware.md`). A port means its DSP
+  setup, and whatever its keys, IR, amp and standby paths do differently (not exercised yet), and an A7 to try it on.
   The telnet hook already ports to it: `stock-patch/patch.py --fw` handles A7 2.04.77 (`voTask`/`WRITEREG` unchanged,
   the RAM data shifted −0x5c8 so `STATUS`/`ATTACH` are 0x3918/0x482c, the carve follows `memend` 0x7a08). In the
   emulator the patched MCU reaches RUN and the hook *fires* (its STATE byte at 0x7a08 runs 0→4, writing reg
