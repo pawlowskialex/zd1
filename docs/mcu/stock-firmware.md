@@ -84,6 +84,16 @@ EEPROM record (+6: 0x0005 for ZD1, 0x0035 for ZD1L, 0x0077 for the A7) and takes
 invalid (its defaults). The A7 app boots on the ZD1 board model ("PSS AZ1", DSP firmware v01.00, finds its DSP, codec
 and EEPROM, reaches RUN); the ZD1L app looks like 2.04.05 throughout (the -4 differences changed nothing seen).
 
+**What the three apps do with the MCU's peripherals** [EMU 2026-11-17]: each stock app with its own module image, the
+MCU traced whole until the emulator's ~21 s CnE assert (`re/scripts/mcutracecmp.py`, its docstring has the `zemu run`)
+and compared. The ZD1L app does what the ZD1 app does, but for the variant it reads on ADC2 (the input set). The A7
+app drives the same 35 pins the same way, enables the same ADC channels (0, 2, 4, 5, 6) and writes the same codec,
+CS2000 and EEPROM; it differs in the DSP setup (above) and in PA02, the Apple authentication chip's reset, which it
+leaves low where the ZD1 app releases it to ping the chip at start-up. Its strings agree: no authentication-chip test
+(no dock, no iAP), none of the ZD1 app's copy of the module's network settings in the MCU's user page, "PSS AZ1",
+`A7_Setup_XXXXXX` for the setup network. The board model is the ZD1's, so this shows where the A7's code acts
+differently, not how the A7 is wired; keys, IR, sources, standby and the amp's protections didn't run.
+
 **The Lightning model's key-hold**, as an owner reported it on a stock 2.04.35 unit (GitHub issue #1; read-only, not
 seen here): ON/OFF held at power-up gives a white LED, nothing on USB (three tries, with the cable that works in normal
 mode), and the module on wired Ethernet only (DHCP), serving GoAhead's `/bl_index.asp`, "Zeppelin Air Setup - Firmware
