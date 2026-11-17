@@ -121,7 +121,7 @@ and what is known. What already works: `status.md`; checks that need a person at
   (who initiates the SPI DFU, and whether USB DFU exists at all) — once our firmware runs there and reaches USB, `zd1 peek 0x80000000 0x8000 --out
   boot.bin` reads it and the stage at 0x80004000 (a `.dmb` leaves both in place), else a read-only UC3 JTAG dump (TMS
   is TP88, the rest of TP88-91 inferred); `zd1l.fw` installed on a real ZD1L, and what of our MCU firmware works
-  on its board (variant 2: the Lightning dock and the USB mux are the ZD1's code); and an owner pursuing a module-OS-on-stock-MCU route (issue #1).
+  on its board (variant 2 differs in the video only, which our firmware doesn't use: `docs/mcu/stock-firmware.md`); and an owner pursuing a module-OS-on-stock-MCU route (issue #1).
 - **The A7**: the module program is the Zeppelin's, its MCU app (`AZ1_v2-04-77.dmb`, booting on the ZD1 board model) is
   another build of the same code; a port means its pins, DSP, amp and keys from that binary, and an A7 to try it on.
   The telnet hook already ports to it: `stock-patch/patch.py --fw` handles A7 2.04.77 (`voTask`/`WRITEREG` unchanged,

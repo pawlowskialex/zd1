@@ -14,7 +14,12 @@ Variant 2 is almost certainly the Zeppelin Air with Lightning connector (ZD1L), 
 SOURCES.md`). On variant 2 the binary reports model FP35548 and no video out over iAP (variant 1:
 FP30570, video on), and only variant 2 honours the module's request to enter DFU (`docs/protocol/spi-registers.md`,
 0x27). That doesn't bring the image over the network: the MCU then waits in USB DFU for a computer on the rear port
-(`docs/mcu/bootloader-dfu.md`). The ZD1L's MCU app 2.04.35 (`ZD1L_v2-04-35.dmb` in the `.fw`) is a near-twin of this
+(`docs/mcu/bootloader-dfu.md`). The dock arms are the same part on both: interchangeable, USB only (no analog audio),
+the 30-pin one adding a pass-through for the composite video out [HW, the owner]. So what variant 2 drops is the
+video: no video over iAP, and the USB route the stock app only uses on variant 1 (request 3: PB11/PB12 low, PA19
+high; `re/mcu/work/usb_ipod_notes.txt`) is presumably the video side too. Our firmware has no dock code, uses only
+the route to the rear port (PB11 and PB17 high, PB12, PA19 and PA22 low: `board_usb_mux_device`) and never drives
+PA19 high, so nothing in it depends on the variant. The ZD1L's MCU app 2.04.35 (`ZD1L_v2-04-35.dmb` in the `.fw`) is a near-twin of this
 binary, not the same bytes: the same size (0x80008000-0x800380F4), build date ("Dec 1 2014") and model strings, but
 39132 bytes differ, almost all by exactly -4, most of them in 0x80028000-0x80037FFF (a data offset moved by 4). The
 archive.org module NAND (item `20230115_20230115_1916`, a ZZ34088 board) fits this. Its module app and resources are
@@ -132,9 +137,9 @@ updater. So the `.dmb` header (vs the ZD1's `.hex`) is for BL2/the bootloader's 
 above). For: the ZD1L app restores the same ISP word (`0x929E0870`: PA08, the ON/OFF key; `.dmb` +0x9352 and +0x9386,
 as in 2.04.05's) [RE]; on variant 2 the app sets ISP_FORCE, whose only known use is forcing DFU, and a GPLP flag
 (0x1000000) that it clears unread at boot and that the 0514 bootloader never reads, so a bootloader somewhere does
-[INF]; and the USB mux is software-driven and differs by variant (`re/mcu/work/usb_ipod_notes.txt`: request 3 is
-variant 1 only, PA19 high likewise), so a running DFU could be routed away from the rear port [INF]. Against: the
-owner saw nothing on USB in key-hold, and a 16 KB bootloader that receives the app from the module over SPI may have
+[INF]. Against: the owner saw nothing on USB in key-hold, though the ZD1's bootloader routes the USB mux to the rear
+port itself in DFU (PB11 and PB17 high: `bl.dis` 0x80001654, `mcu/src/zd1_board.c`) and the routing is the same on both boards
+apart from the video (above), so a DFU running there would have shown; and a 16 KB bootloader that receives the app from the module over SPI may have
 had USB taken out [INF]. The key-hold can't set ISP_FORCE or the GPLP flag, so 0x27 is a second, untested way in;
 ISP_FORCE survives power cycles and on a bootloader without DFU may have no way off but a finished update, so that
 test wants JTAG ready. Reading the bootloader would settle it: with our firmware running on a ZD1L (`zd1l.fw`) and its
