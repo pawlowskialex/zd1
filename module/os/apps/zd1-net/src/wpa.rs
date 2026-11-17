@@ -7,7 +7,7 @@
 
 use std::io::{self, ErrorKind};
 use std::os::unix::net::UnixDatagram;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 pub use zd1_hostlink::{WifiSecurity, WifiState};
 
 /// Where the supplicant's sockets are (`ctrl_interface` in its configuration: zd1-settings writes it).
@@ -340,6 +340,59 @@ impl Watch {
     }
 }
 
+/// When to start the Wi-Fi again (init's health check of its `wifi` service: wlan0 down and up, a new supplicant): a
+/// known network not joined for `STALL_FIRST`, then for twice as long each time, up to `STALL_MAX`, until one is
+/// joined. The radio can
+/// stop reaching the AP after the AP goes away (its restart): the module's authentication requests never arrived
+/// there for minutes, then its scans came back empty for days, until the service was started again [HW 2026-11-17,
+/// `docs/status.md`, Known problems]. A wrong key, no network to join or the Wi-Fi off don't count: a restart can't
+/// help them.
+pub struct Stall {
+    /// Not joined since then (None: joined, or nothing to join).
+    since: Option<Instant>,
+    after: Duration,
+}
+
+pub const STALL_FIRST: Duration = Duration::from_secs(5 * 60);
+pub const STALL_MAX: Duration = Duration::from_secs(40 * 60);
+
+impl Default for Stall {
+    fn default() -> Self {
+        Stall { since: None, after: STALL_FIRST }
+    }
+}
+
+impl Stall {
+    /// The Wi-Fi has started (again): unjoined from now on, the wait as it was.
+    pub fn started(&mut self) {
+        self.since = None;
+    }
+
+    /// With each poll: Some(how long it has been unjoined) when the Wi-Fi should start again now.
+    pub fn check(&mut self, now: Instant, state: WifiState) -> Option<Duration> {
+        match state {
+            WifiState::Scanning | WifiState::Connecting | WifiState::NotFound | WifiState::Failed => {
+                let since = *self.since.get_or_insert(now);
+                let unjoined = now.duration_since(since);
+                if unjoined < self.after {
+                    return None;
+                }
+                self.since = None;
+                self.after = (self.after * 2).min(STALL_MAX);
+                Some(unjoined)
+            }
+            WifiState::Connected => {
+                *self = Stall::default();
+                None
+            }
+            _ => {
+                self.since = None;
+                None
+            }
+        }
+    }
+}
+
 /// What an event means for the state, given what was known: a failure to show, or none.
 pub fn reason(event: &str, before: Option<WifiState>) -> Option<WifiState> {
     if event.starts_with("CTRL-EVENT-SSID-TEMP-DISABLED") {
@@ -458,5 +511,36 @@ mod tests {
             ),
             Some(Failed)
         );
+    }
+
+    #[test]
+    fn stall() {
+        use WifiState::*;
+        let t0 = Instant::now();
+        let at = |m: u64| t0 + Duration::from_secs(m * 60);
+        let mut s = Stall::default();
+        assert_eq!(s.check(at(0), Scanning), None);
+        assert_eq!(s.check(at(4), NotFound), None);
+        assert_eq!(s.check(at(5), Failed), Some(STALL_FIRST));
+        // the service started again: counts from there, twice as long
+        s.started();
+        assert_eq!(s.check(at(6), Scanning), None);
+        assert_eq!(s.check(at(15), Scanning), None);
+        assert_eq!(s.check(at(16), Scanning), Some(Duration::from_secs(10 * 60)));
+        for _ in 0..6 {
+            let _ = s.check(at(100), Scanning);
+            let _ = s.check(at(1000), Scanning);
+        }
+        assert_eq!(s.after, STALL_MAX);
+        // joined: back to the first wait
+        assert_eq!(s.check(at(2000), Connected), None);
+        assert_eq!(s.check(at(2001), Connecting), None);
+        assert_eq!(s.check(at(2006), Connecting), Some(STALL_FIRST));
+        // a wrong key, nothing to join, the Wi-Fi off: never
+        let mut s = Stall::default();
+        for st in [WrongKey, Idle, Off] {
+            assert_eq!(s.check(at(0), st), None);
+            assert_eq!(s.check(at(60), st), None);
+        }
     }
 }

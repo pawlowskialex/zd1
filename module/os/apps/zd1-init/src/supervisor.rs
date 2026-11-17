@@ -1,8 +1,9 @@
-//! The supervisor: starts the services in order, reaps every child, restarts what ended, answers its control socket, and stops
-//! everything for a reboot. One thread, one loop: poll(2) on the signals (a signalfd), the control socket and the
-//! pipes of the services' output (into their logs, which it keeps small: RAM), with the next timer as its timeout.
+//! The supervisor: starts the services in order, reaps every child, restarts what ended or fails its health check,
+//! answers its control socket, and stops everything for a reboot. One thread, one loop: poll(2) on the signals (a
+//! signalfd), the control socket and the pipes of the services' output (into their logs, which it keeps small: RAM),
+//! with the next timer as its timeout.
 
-use super::services::{self, Command, Ctx, Lifetime, Output, Service, Start};
+use super::services::{self, Check, Command, Ctx, Lifetime, Output, Service, Start};
 use super::start::Boot;
 use super::{Profile, say};
 use std::fs::OpenOptions;
@@ -76,6 +77,8 @@ struct Live {
     pipe: Option<(OwnedFd, Vec<u8>)>,
     /// A setting it uses changed: restarted at this moment unless another change moves it.
     restart_at: Option<Instant>,
+    /// Its health check (`Service::health`) and when it is next due (while it runs).
+    health: Option<(Box<dyn Check>, Instant)>,
 }
 
 /// A control client (zd1_svc::request) whose request hasn't all come yet: read as it comes, never waited for.
@@ -126,6 +129,7 @@ pub fn run(profile: Profile, boot: Boot) -> ! {
             ended: String::new(),
             pipe: None,
             restart_at: None,
+            health: svc.health.as_ref().map(|h| ((h.new)(), now + h.every)),
         })
         .collect();
     let mut s = Supervisor { profile, boot, live, debug: None, cursor: 0, announced: false, clients: Vec::new() };
@@ -143,6 +147,7 @@ pub fn run(profile: Profile, boot: Boot) -> ! {
                 }
                 .into_iter()
                 .chain(l.restart_at)
+                .chain(l.health.as_ref().filter(|_| l.state == State::Running).map(|(_, t)| *t))
                 .min()
             })
             .chain(s.clients.iter().map(|c| c.deadline))
@@ -266,6 +271,10 @@ impl Supervisor {
                 l.starts += 1;
                 l.state = State::Running;
                 l.note = String::new();
+                if let (Some((check, due)), Some(h)) = (&mut l.health, &l.svc.health) {
+                    check.started();
+                    *due = l.since + h.every;
+                }
                 if restarted {
                     say(&format!("{name}: started again"));
                 }
@@ -357,6 +366,10 @@ impl Supervisor {
                 say(&format!("{}: its settings changed: restarting", self.live[i].svc.name));
                 self.restart(i);
             }
+            if let Some(why) = self.check(i, now) {
+                say(&format!("{}: {why}: restarting", self.live[i].svc.name));
+                self.restart(i);
+            }
             match self.live[i].state {
                 State::Waiting(t) if t <= now => self.start(i),
                 State::Stopping { deadline, then } if deadline <= now => {
@@ -370,6 +383,18 @@ impl Supervisor {
                 _ => {}
             }
         }
+    }
+
+    /// A running service's health check, when it is due: why it should start again, if it should.
+    fn check(&mut self, i: usize, now: Instant) -> Option<String> {
+        let l = &mut self.live[i];
+        let every = l.svc.health.as_ref()?.every;
+        let (check, due) = l.health.as_mut()?;
+        if l.state != State::Running || *due > now {
+            return None;
+        }
+        *due = now + every;
+        check.check(now)
     }
 
     fn stop(&mut self, i: usize, then: Then) {

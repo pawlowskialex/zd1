@@ -2,12 +2,15 @@
 //! doesn't change when a system service does). The rescue's: services.rs, start.rs.
 
 use super::say;
-use super::services::{Backoff, Command, Ctx, Lifetime, Output, Service, Start, command, daemon, run, shell};
+use super::services::{
+    Backoff, Check, Command, Ctx, Health, Lifetime, Output, Service, Start, command, daemon, run, shell,
+};
 use super::start::{Boot, data};
 use super::supervisor::PATH;
 use std::net::Ipv4Addr;
 use std::path::Path;
-use std::time::Duration;
+use std::time::{Duration, Instant};
+use zd1_net::wpa::{Stall, Watch};
 use zd1_net::{Iface, netmask, parse_cidr, set_name_servers};
 use zd1_settings::NetMode;
 use zd1_sys::{OsRelease, cstr, write_private};
@@ -21,6 +24,7 @@ pub const SERVICES: &[Service] = &[
         lifetime: Lifetime::Once { wait: true, retry: None },
         output: Output::Log,
         settings: &[],
+        health: None,
     },
     Service {
         name: "zd1-linkd",
@@ -30,6 +34,7 @@ pub const SERVICES: &[Service] = &[
         lifetime: daemon(1000),
         output: Output::LogAndKernel,
         settings: &[],
+        health: None,
     },
     Service {
         name: "ethernet",
@@ -39,6 +44,7 @@ pub const SERVICES: &[Service] = &[
         lifetime: daemon(2000),
         output: Output::Log,
         settings: &["eth."],
+        health: None,
     },
     Service {
         name: "wifi",
@@ -48,6 +54,7 @@ pub const SERVICES: &[Service] = &[
         lifetime: daemon(5000),
         output: Output::Log,
         settings: &["wifi."],
+        health: Some(Health { every: Duration::from_secs(10), new: wifi_health }),
     },
     Service {
         name: "time",
@@ -60,6 +67,7 @@ pub const SERVICES: &[Service] = &[
         },
         output: Output::Log,
         settings: &[],
+        health: None,
     },
     Service {
         name: "snapcast",
@@ -69,6 +77,7 @@ pub const SERVICES: &[Service] = &[
         lifetime: daemon(2000),
         output: Output::Log,
         settings: &["name", "snapcast", "snapcast."],
+        health: None,
     },
     Service {
         name: "airplay",
@@ -78,6 +87,7 @@ pub const SERVICES: &[Service] = &[
         lifetime: daemon(2000),
         output: Output::Log,
         settings: &["name", "airplay", "airplay."],
+        health: None,
     },
     Service {
         name: "spotify",
@@ -87,6 +97,7 @@ pub const SERVICES: &[Service] = &[
         lifetime: daemon(2000),
         output: Output::Log,
         settings: &["name", "spotify", "spotify."],
+        health: None,
     },
     Service {
         name: "debug",
@@ -96,6 +107,7 @@ pub const SERVICES: &[Service] = &[
         lifetime: daemon(2000),
         output: Output::Log,
         settings: &[],
+        health: None,
     },
     Service {
         name: "selftest",
@@ -105,6 +117,7 @@ pub const SERVICES: &[Service] = &[
         lifetime: Lifetime::Once { wait: true, retry: None },
         output: Output::Console,
         settings: &[],
+        health: None,
     },
     Service {
         name: "console",
@@ -114,6 +127,7 @@ pub const SERVICES: &[Service] = &[
         lifetime: daemon(1000),
         output: Output::Shell,
         settings: &[],
+        health: None,
     },
 ];
 
@@ -270,6 +284,29 @@ fn wifi(c: &Ctx) -> Start {
         Err(e) => return Start::Off(e),
     }
     Start::Run(procs)
+}
+
+/// The Wi-Fi's health: a known network joined, or the radio started again (zd1-net's `wpa::Stall`: after 5 min
+/// unjoined, then ever later). The supplicant's status as zd1-linkd reads it, a few ms (at most 300 ms a request).
+struct WifiHealth {
+    watch: Watch,
+    stall: Stall,
+}
+
+fn wifi_health() -> Box<dyn Check> {
+    Box::new(WifiHealth { watch: Watch::new("wlan0"), stall: Stall::default() })
+}
+
+impl Check for WifiHealth {
+    fn started(&mut self) {
+        self.stall.started();
+    }
+
+    fn check(&mut self, now: Instant) -> Option<String> {
+        self.watch.poll();
+        let unjoined = self.stall.check(now, self.watch.state)?;
+        Some(format!("no network joined for {} min", unjoined.as_secs() / 60))
+    }
 }
 
 fn wifi_down() {

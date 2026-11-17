@@ -138,6 +138,18 @@ Work items: `backlog.md`. Checks that need a person at the unit: `units/<unit>/h
   greets again in MCU 515c689 (flashed 2026-10-30): not seen yet.
 - **Telnet from the Mac times out after a module reboot** until the module has sent the Mac a packet (a ping from the
   module console fixes it); not every time. Not understood; the MAC's address filter is right.
+- **The Wi-Fi doesn't get back on after the AP restarts** [2026-11-15, system 05cf98f]: the AP (a UniFi Dream Router 7)
+  rebooted for an update and deauthenticated the module (reason 3). The module then sent authentication requests for
+  ~8 min, all "timed out"; the AP's driver log shows none of them arriving, while other clients joined within seconds
+  of the AP coming back. After that the kernel logged nothing more and `wpa_supplicant` sat in `SCANNING` for 2.3 days
+  with empty scan results (`zd1 wifi --scan`: "no network seen"; the `sulu-wlan` IRQ ~2/s). `zd1-ctl restart wifi`
+  (wlan0 down/up) brought the scans back; the requests still went unheard for ~2.5 min, then one reached the AP and
+  the module joined at once (2026-11-17). Not reproduced by a deauthentication from the AP, a restart of the service,
+  or 4 min of the supplicant held off the AP (a BSSID nobody has): each rejoined within 1-15 s, its frames on the AP's
+  monitor interface at 1 Mb/s on its channel. So the AP going away is the trigger; why the frames then don't reach it
+  (a wrong channel? the rate?) and why the scan stops is not understood. Init's health check of the `wifi` service
+  starts it again after 5 min unjoined (`module/os/README.md`, Wi-Fi): with the supplicant held off the AP, init
+  restarted it 5 min 4 s later and the module joined again within 2 s [HW 2026-11-17, this change before its commit: system 1cd511c-dirty].
 - `sulu_eth`'s `TX packets` counter climbs at ~400/s with nothing to send (RX and IRQ counts are sane): cosmetic.
 - The boot stub's own lines arrive garbled on the module console (BL1 leaves UART1 at another divisor); Linux's
   console is clean.

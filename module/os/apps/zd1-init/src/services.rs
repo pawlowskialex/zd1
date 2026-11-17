@@ -7,7 +7,7 @@
 use super::start::Boot;
 use super::{Profile, say};
 use std::collections::BTreeMap;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 pub struct Service {
     pub name: &'static str,
@@ -19,6 +19,22 @@ pub struct Service {
     pub output: Output,
     /// The settings it uses: a change restarts it. "wifi." = every key that starts so.
     pub settings: &'static [&'static str],
+    /// Whether it does its job while it runs, beyond its processes being there: a failed check restarts it.
+    pub health: Option<Health>,
+}
+
+/// A running service's health check: asked every `every`, on init's thread, so a check answers within a few hundred
+/// ms. `new` makes the one check the service has from boot on: what it learns (a back-off) outlives a restart.
+pub struct Health {
+    pub every: Duration,
+    pub new: fn() -> Box<dyn Check>,
+}
+
+pub trait Check {
+    /// The service has started (again): what the check saw of the run before is gone.
+    fn started(&mut self);
+    /// Healthy (None), or why the service should start again.
+    fn check(&mut self, now: Instant) -> Option<String>;
 }
 
 pub enum Lifetime {
@@ -115,6 +131,7 @@ const RESCUE: &[Service] = &[
         lifetime: daemon(1000),
         output: Output::LogAndKernel,
         settings: &[],
+        health: None,
     },
     Service {
         name: "console",
@@ -124,6 +141,7 @@ const RESCUE: &[Service] = &[
         lifetime: daemon(1000),
         output: Output::Shell,
         settings: &[],
+        health: None,
     },
 ];
 
