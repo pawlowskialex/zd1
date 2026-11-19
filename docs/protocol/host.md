@@ -35,42 +35,50 @@ an install goes on without a press. `Lock` closes it, or opens it for good (kept
 EEPROM, for a unit tools drive unattended). The device can't tell which program or web page is talking to it: the
 press is its own check. `zd1` and the web page ask for the press and unlock by themselves when a request needs it.
 
+## Over the network
+
+The same messages reach the speaker over the LAN through our module OS (`net.md`): a WebSocket, a Noise session, a
+client paired once with a press of ON/OFF (`Pair`). Only the requests marked in the Network column travel: `net` ones
+our OS passes to the MCU (SPI reg 0xD9: past the gate, the pairing was the press), `our OS` ones it answers itself.
+
 ## Requests
 
 The host's timeout is the request's own: the MCU answers within it, or the host gives up.
 
-| Id | Request | Gated | Fields | Reply | Timeout | |
-|---|---|---|---|---|---|---|
-| 0x01 | Hello |  | - | HelloReply | 1 s | Which firmware this is. Also answered from the interrupt as `usb::HELLO` (no CALL needed). |
-| 0x02 | Info |  | - | InfoReply | 2 s | The speaker's state at a glance: the MCU, the source and amp, the network module. |
-| 0x0E | Unlock |  | - | Ok | 35 s | Open the gate: the MCU waits up to 30 s for a press of ON/OFF on the speaker (its LED flashes purple; the press does nothing else), then gated requests run until 10 minutes after the last one. `Error DENIED` if nobody pressed. Answered at once when the gate is open. |
-| 0x0F | Lock | gated | `open` bool: true: open for good; false: locked (and no longer open for good) | Ok | 1 s | Close the gate now, or open it for good (kept in the EEPROM across power cycles: a lab unit driven by tools unattended; the user's choice, made at the speaker since this request is gated). |
-| 0x04 | Peek | gated | `addr` u32: address<br>`len` u16: bytes, at most 248<br>`words` bool: 32-bit reads (registers): `addr` and `len` multiples of 4; the data big-endian, as in memory | Data | 1 s | Read memory (gated: the MCU's RAM passes settings through). |
-| 0x05 | Poke | gated | `addr` u32: address<br>`data` bytes <= 240: the bytes<br>`words` bool: 32-bit writes (registers): `addr` and the length multiples of 4, the data big-endian | Ok | 1 s | Write memory. |
-| 0x06 | Dfu | gated | - | Ok | 3 s | Into the B&W DFU bootloader (03EB:2FF8, ~3 s later): the module and amp made safe, ISP_FORCE set, a watchdog reset. The device leaves USB right after the reply. `Error ARG` on a ZD1L: its bootloader (B&W's "Net HBL") has no USB, its MCU firmware comes from the module (`docs/mcu/bootloader-hbl.md`). |
-| 0x07 | Reboot | gated | - | Ok | 2 s | Restart the MCU firmware (watchdog reset; the bootloader starts the app again). The module is powered off first. |
-| 0x08 | Module | gated | `op` [ModOp](#modop)<br>`timeout_s` u16: for POWER and BL2: how long to wait (0 = 120) | ModuleReply | 10 s + `timeout_s` s (0: 120) | Power and boot the network module (POWER, BL2: the first boot after a `.bcd` install takes ~46-61 s). Progress comes as text. POWER, BL2 and HOLD run from the main loop (the speaker goes on meanwhile); the reply comes when they end (HOLD: at the reset's release), and the next request waits for it. |
-| 0x1E | ModRecord |  | `record` [Record](#record): which<br>`offset` u16: byte offset into it | RecordReply | 4 s | A record of the module OS (docs/module/settings.md): `State`, the speaker as the module knows it (its settings and its status), pushed by the module on SPI reg 0xD6 and kept by the MCU, which answers at once; others the module makes when asked (the configuration channel, name `zd1/@N`). The bytes are a message of this spec (`State`), read in pieces: `offset` into them, the reply says the whole length. A record the module hasn't comes back as `!` and why. |
-| 0x09 | ModRead |  | `reg` u8: register<br>`v` bool: a V (variable-length) read | Data | 2 s | Read a module register over SPI (F: the two data bytes; V: the payload). |
-| 0x0A | ModWrite | gated | `reg` u8: register<br>`v` bool: a V write<br>`data` bytes <= 128: payload | Ok | 2 s | Write a module register over SPI (F: `data` is the two bytes b0 b1). |
-| 0x0B | GetSetting |  | `key` str <= 32: the setting | SettingReply | 6 s | A module OS setting (docs/module/settings.md: `name`, `wifi.ssid`, ...; `?` lists the keys), through the configuration channel (reg 0x45, names `zd1/KEY`). Secrets read back as `(set)` or empty. |
-| 0x10 | SetSetting | gated | `key` str <= 32: the setting<br>`value` str <= 128: the new value (empty: back to the default) | SettingReply | 8 s | Change a module OS setting: written, then read back. A refused value comes back as `!` and why. The MCU tries the write three times and the read-back three times, then waits 3 s for the answer. |
-| 0x0C | Amp | gated | `allow` bool<br>`keep` bool: also from every boot on (kept in the EEPROM): allow = the amp comes on by itself (the default), deny = locked | Ok | 1 s | The amp interlock. Allowed, the amp powers up while a source has sound and goes off after it has been silent for a while; locked, it stays off. Deny also switches the amp off at once. Without `keep` only until the MCU restarts (a boot starts allowed unless a deny with `keep` locked it). |
-| 0x0D | Debug | gated | `mode` [Debug](#debug) | Ok | 2 s | The module OS's debug services (telnet shell, memory server): the MCU keeps the choice in RAM and tells the module now and at every boot of it (reg 0xC1). |
-| 0x11 | Key | gated | `key` [Key](#key) | Ok | 1 s | A key, as if pressed on the speaker or the remote: what it does depends on the state, as with a person. |
-| 0x12 | Select | gated | `source` [Source](#source)<br>`player` [Player](#player): WIFI: the module OS's receiver to bring to the front (its sender resumes, the others pause); NONE: whichever is in front | Ok | 2 s | Play a source now, or `NONE`: standby. The amp follows (if allowed). USB and AUX only while plugged in, a receiver only with a sender connected, nothing after a protection tripped (state ERROR: only ON/OFF or standby leaves it): `Error ARG` otherwise. |
-| 0x13 | Volume | gated | `volume` u8: 0 (mute) .. 71; above the volume cap (`InfoReply.volume_cap`) it is the cap<br>`bass` u8: 0 .. 4 | Ok | 1 s | The volume and bass (kept in the EEPROM). While USB or AirPlay is the source, their own volume changes it again. |
-| 0x15 | XmFrame | gated | `offset` u16: where `data` goes in the frame buffer (1029 bytes)<br>`data` bytes <= 240: the next piece of the frame<br>`send` bool: write the buffer [0, offset + len) to 0x2D now and wait for the answer<br>`wait_ms` u16: send: how long to wait for an answer, ms (0 = none; at most 500: the MCU's watchdog allows no longer) | XmReply | 2 s | XModem to BL2 over SPI (registers 0x2D / 0x2C), for measuring and driving BL2's receiver: `data` goes into the MCU's frame buffer at `offset`; with `send`, the buffer up to the end of `data` goes to 0x2D in one V write (a 1029-byte XModem-1K frame, or 1 byte: EOT) and the MCU waits up to `wait_ms` for BL2's answer on 0x2C. The reply has every 0x2C byte since the last request: one with none yet asks again with an empty `XmFrame`. The module must be up (in BL2: `Module BL2`). |
-| 0x16 | Pipe | gated | `sink` [Sink](#sink)<br>`reset` bool: start clean: a partial buffer dropped, the counters and the CRC zeroed | PipeReply | 1 s | The bulk pipe: set where the bulk OUT endpoint's data goes, and read its counters (`reset`: from zero). |
-| 0x17 | BootState |  | - | BootReply | 1 s | Which system slot the module starts (the MCU keeps the choice in the EEPROM and tells the boot stub at every boot, SPI reg 0xC4: `docs/module/storage.md`). |
-| 0x18 | Boot | gated | `op` [BootOp](#bootop)<br>`slot` [Slot](#slot): TRY: A, B or RESCUE; GOOD: A or B<br>`restart` bool: restart the module now (as `Module RESTART`) | BootReply | 1 s | Change which slot the module starts (`BootOp`); `restart`: power-cycle the module now so it does. |
-| 0x19 | Update | gated | `op` [UpdateOp](#updateop)<br>`size` u32: BEGIN: the image's length (a gzip'd cpio of a slot's root)<br>`sha256` bytes <= 32: BEGIN: its SHA-256, checked by the module before it stamps the slot<br>`id` str <= 64: BEGIN: the stamp the slot gets (what `zd1-ctl status` shows)<br>`baud` u32: BEGIN: the console UART's speed while it runs (0 = 1000000) | UpdateReply | 2 s | Update the network module's system (`docs/module/updater.md`): BEGIN tells its updater over SPI (reg 0xC5) and points the bulk pipe at the module (sink MODULE, from zero); the image then goes to the bulk endpoint, `size` bytes, and `UpdateStatus` says how far it is. The module must run our OS (a slot or the rescue). |
-| 0x1A | UpdateStatus |  | - | UpdateReply | 1 s | How far the module's update is. |
-| 0x1D | Console | gated | `open` bool | ConsoleReply | 1 s | Open the module's console for this host (POLL's CONSOLE records: the module doc), starting afresh, or close it. The console's line is the updater's while an update runs: nothing passes then. |
-| 0x1F | ConsoleWrite | gated | `data` bytes <= 240 | ConsoleReply | 1 s | Bytes for the module's console (open: `Console`): as many as the MCU's send ring takes now (`taken`); the host sends the rest again. `Error ARG` while it isn't open. |
-| 0x1B | PipeData | gated | `data` bytes <= 240 | Ok | 1 s | Data into the bulk pipe as if it came on the bulk endpoint: the emulator's build only (its USB carries EP0 only). `Error BUSY` while both buffers are full: send it again. The emulator's build only. |
-| 0x1C | Prefs | gated | `change` u8: which of the fields after it to set (0x01 `auto_switch`, 0x02 `amp_idle_s`, 0x04 `volume_cap`)<br>`auto_switch` bool: a USB stream that starts takes the speaker from another source and wakes it from standby<br>`amp_idle_s` u16: a source silent this long switches the amp off until it has sound again, s: 60 .. 1800 (the amp runs hot: no longer), in whole minutes<br>`volume_cap` u8: the highest volume step (1 .. 71) on every source, whatever sets it: the speaker's keys, the remote, this link's `Volume`, the computer's volume (USB), the network's senders (their whole range maps onto 0 .. this). A lower cap takes the volume down to it at once. 40 unless set; the heat cap holds it lower while hot | PrefsReply | 1 s | The speaker's behaviour, kept in the EEPROM: switching to a USB stream by itself, how long a silent source keeps the amp on, the highest volume on every source. `change` says which fields to set (0: only read them). The amp's lock is `Amp`. |
-| 0x14 | Diag |  | - | DiagReply | 2 s | The firmware's internals for debugging: protections, audio path, USB audio, the module's link, the remote. |
+| Id | Request | Gated | Network | Fields | Reply | Timeout | |
+|---|---|---|---|---|---|---|---|
+| 0x01 | Hello |  | net | - | HelloReply | 1 s | Which firmware this is. Also answered from the interrupt as `usb::HELLO` (no CALL needed). |
+| 0x02 | Info |  | net | - | InfoReply | 2 s | The speaker's state at a glance: the MCU, the source and amp, the network module. |
+| 0x0E | Unlock |  |  | - | Ok | 35 s | Open the gate: the MCU waits up to 30 s for a press of ON/OFF on the speaker (its LED flashes purple; the press does nothing else), then gated requests run until 10 minutes after the last one. `Error DENIED` if nobody pressed. Answered at once when the gate is open. |
+| 0x20 | Pair |  | our OS | `name` str <= 32: what the client calls itself (the `Controllers` record): a browser, a computer | Ok | 35 s | Pair this client with the speaker (the network link: our OS answers it, docs/protocol/net.md). The MCU waits up to 30 s for a press of ON/OFF on the speaker (its LED flashes purple), whatever the gate says; pressed, the client's key is kept with `name`. `Error DENIED` if nobody pressed, `Error BUSY` while another one waits. |
+| 0x21 | SystemUpdate | gated | our OS | `op` [UpdateOp](#updateop)<br>`offset` u32: DATA: where `data` goes in the image<br>`data` bytes <= 32768: BEGIN: the header; DATA: the next piece of the image | UpdateReply | 60 s | The module's system over the network (docs/protocol/net.md; our OS answers it): BEGIN with the signed header (`protocol/release`) in `data`, refused unless a key the speaker trusts signed it and it is no older than the running system; DATA, the image in order from `offset`; END: the image checked, the slot that doesn't run stamped (DONE), then started once (ready makes it the good one). ABORT: the slot holds no system. |
+| 0x0F | Lock | gated |  | `open` bool: true: open for good; false: locked (and no longer open for good) | Ok | 1 s | Close the gate now, or open it for good (kept in the EEPROM across power cycles: a lab unit driven by tools unattended; the user's choice, made at the speaker since this request is gated). |
+| 0x04 | Peek | gated |  | `addr` u32: address<br>`len` u16: bytes, at most 248<br>`words` bool: 32-bit reads (registers): `addr` and `len` multiples of 4; the data big-endian, as in memory | Data | 1 s | Read memory (gated: the MCU's RAM passes settings through). |
+| 0x05 | Poke | gated |  | `addr` u32: address<br>`data` bytes <= 240: the bytes<br>`words` bool: 32-bit writes (registers): `addr` and the length multiples of 4, the data big-endian | Ok | 1 s | Write memory. |
+| 0x06 | Dfu | gated |  | - | Ok | 3 s | Into the B&W DFU bootloader (03EB:2FF8, ~3 s later): the module and amp made safe, ISP_FORCE set, a watchdog reset. The device leaves USB right after the reply. `Error ARG` on a ZD1L: its bootloader (B&W's "Net HBL") has no USB, its MCU firmware comes from the module (`docs/mcu/bootloader-hbl.md`). |
+| 0x07 | Reboot | gated |  | - | Ok | 2 s | Restart the MCU firmware (watchdog reset; the bootloader starts the app again). The module is powered off first. |
+| 0x08 | Module | gated |  | `op` [ModOp](#modop)<br>`timeout_s` u16: for POWER and BL2: how long to wait (0 = 120) | ModuleReply | 10 s + `timeout_s` s (0: 120) | Power and boot the network module (POWER, BL2: the first boot after a `.bcd` install takes ~46-61 s). Progress comes as text. POWER, BL2 and HOLD run from the main loop (the speaker goes on meanwhile); the reply comes when they end (HOLD: at the reset's release), and the next request waits for it. |
+| 0x1E | ModRecord |  | net | `record` [Record](#record): which<br>`offset` u16: byte offset into it | RecordReply | 4 s | A record of the module OS (docs/module/settings.md): `State`, the speaker as the module knows it (its settings and its status), pushed by the module on SPI reg 0xD6 and kept by the MCU, which answers at once; others the module makes when asked (the configuration channel, name `zd1/@N`). The bytes are a message of this spec (`State`), read in pieces: `offset` into them, the reply says the whole length. A record the module hasn't comes back as `!` and why. |
+| 0x09 | ModRead |  |  | `reg` u8: register<br>`v` bool: a V (variable-length) read | Data | 2 s | Read a module register over SPI (F: the two data bytes; V: the payload). |
+| 0x0A | ModWrite | gated |  | `reg` u8: register<br>`v` bool: a V write<br>`data` bytes <= 128: payload | Ok | 2 s | Write a module register over SPI (F: `data` is the two bytes b0 b1). |
+| 0x0B | GetSetting |  | net | `key` str <= 32: the setting | SettingReply | 6 s | A module OS setting (docs/module/settings.md: `name`, `wifi.ssid`, ...; `?` lists the keys), through the configuration channel (reg 0x45, names `zd1/KEY`). Secrets read back as `(set)` or empty. |
+| 0x10 | SetSetting | gated | net | `key` str <= 32: the setting<br>`value` str <= 128: the new value (empty: back to the default) | SettingReply | 8 s | Change a module OS setting: written, then read back. A refused value comes back as `!` and why. The MCU tries the write three times and the read-back three times, then waits 3 s for the answer. |
+| 0x0C | Amp | gated |  | `allow` bool<br>`keep` bool: also from every boot on (kept in the EEPROM): allow = the amp comes on by itself (the default), deny = locked | Ok | 1 s | The amp interlock. Allowed, the amp powers up while a source has sound and goes off after it has been silent for a while; locked, it stays off. Deny also switches the amp off at once. Without `keep` only until the MCU restarts (a boot starts allowed unless a deny with `keep` locked it). |
+| 0x0D | Debug | gated |  | `mode` [Debug](#debug) | Ok | 2 s | The module OS's debug services (telnet shell, memory server): the MCU keeps the choice in RAM and tells the module now and at every boot of it (reg 0xC1). |
+| 0x11 | Key | gated | net | `key` [Key](#key) | Ok | 1 s | A key, as if pressed on the speaker or the remote: what it does depends on the state, as with a person. |
+| 0x12 | Select | gated | net | `source` [Source](#source)<br>`player` [Player](#player): WIFI: the module OS's receiver to bring to the front (its sender resumes, the others pause); NONE: whichever is in front | Ok | 2 s | Play a source now, or `NONE`: standby. The amp follows (if allowed). USB and AUX only while plugged in, a receiver only with a sender connected, nothing after a protection tripped (state ERROR: only ON/OFF or standby leaves it): `Error ARG` otherwise. |
+| 0x13 | Volume | gated | net | `volume` u8: 0 (mute) .. 71; above the volume cap (`InfoReply.volume_cap`) it is the cap<br>`bass` u8: 0 .. 4 | Ok | 1 s | The volume and bass (kept in the EEPROM). While USB or AirPlay is the source, their own volume changes it again. |
+| 0x15 | XmFrame | gated |  | `offset` u16: where `data` goes in the frame buffer (1029 bytes)<br>`data` bytes <= 240: the next piece of the frame<br>`send` bool: write the buffer [0, offset + len) to 0x2D now and wait for the answer<br>`wait_ms` u16: send: how long to wait for an answer, ms (0 = none; at most 500: the MCU's watchdog allows no longer) | XmReply | 2 s | XModem to BL2 over SPI (registers 0x2D / 0x2C), for measuring and driving BL2's receiver: `data` goes into the MCU's frame buffer at `offset`; with `send`, the buffer up to the end of `data` goes to 0x2D in one V write (a 1029-byte XModem-1K frame, or 1 byte: EOT) and the MCU waits up to `wait_ms` for BL2's answer on 0x2C. The reply has every 0x2C byte since the last request: one with none yet asks again with an empty `XmFrame`. The module must be up (in BL2: `Module BL2`). |
+| 0x16 | Pipe | gated |  | `sink` [Sink](#sink)<br>`reset` bool: start clean: a partial buffer dropped, the counters and the CRC zeroed | PipeReply | 1 s | The bulk pipe: set where the bulk OUT endpoint's data goes, and read its counters (`reset`: from zero). |
+| 0x17 | BootState |  | net | - | BootReply | 1 s | Which system slot the module starts (the MCU keeps the choice in the EEPROM and tells the boot stub at every boot, SPI reg 0xC4: `docs/module/storage.md`). |
+| 0x18 | Boot | gated |  | `op` [BootOp](#bootop)<br>`slot` [Slot](#slot): TRY: A, B or RESCUE; GOOD: A or B<br>`restart` bool: restart the module now (as `Module RESTART`) | BootReply | 1 s | Change which slot the module starts (`BootOp`); `restart`: power-cycle the module now so it does. |
+| 0x19 | Update | gated |  | `op` [UpdateOp](#updateop)<br>`size` u32: BEGIN: the image's length (a gzip'd cpio of a slot's root)<br>`sha256` bytes <= 32: BEGIN: its SHA-256, checked by the module before it stamps the slot<br>`id` str <= 64: BEGIN: the stamp the slot gets (what `zd1-ctl status` shows)<br>`baud` u32: BEGIN: the console UART's speed while it runs (0 = 1000000) | UpdateReply | 2 s | Update the network module's system (`docs/module/updater.md`): BEGIN tells its updater over SPI (reg 0xC5) and points the bulk pipe at the module (sink MODULE, from zero); the image then goes to the bulk endpoint, `size` bytes, and `UpdateStatus` says how far it is. The module must run our OS (a slot or the rescue). |
+| 0x1A | UpdateStatus |  |  | - | UpdateReply | 1 s | How far the module's update is. |
+| 0x1D | Console | gated |  | `open` bool | ConsoleReply | 1 s | Open the module's console for this host (POLL's CONSOLE records: the module doc), starting afresh, or close it. The console's line is the updater's while an update runs: nothing passes then. |
+| 0x1F | ConsoleWrite | gated |  | `data` bytes <= 240 | ConsoleReply | 1 s | Bytes for the module's console (open: `Console`): as many as the MCU's send ring takes now (`taken`); the host sends the rest again. `Error ARG` while it isn't open. |
+| 0x1B | PipeData | gated |  | `data` bytes <= 240 | Ok | 1 s | Data into the bulk pipe as if it came on the bulk endpoint: the emulator's build only (its USB carries EP0 only). `Error BUSY` while both buffers are full: send it again. The emulator's build only. |
+| 0x1C | Prefs | gated | net | `change` u8: which of the fields after it to set (0x01 `auto_switch`, 0x02 `amp_idle_s`, 0x04 `volume_cap`)<br>`auto_switch` bool: a USB stream that starts takes the speaker from another source and wakes it from standby<br>`amp_idle_s` u16: a source silent this long switches the amp off until it has sound again, s: 60 .. 1800 (the amp runs hot: no longer), in whole minutes<br>`volume_cap` u8: the highest volume step (1 .. 71) on every source, whatever sets it: the speaker's keys, the remote, this link's `Volume`, the computer's volume (USB), the network's senders (their whole range maps onto 0 .. this). A lower cap takes the volume down to it at once. 40 unless set; the heat cap holds it lower while hot | PrefsReply | 1 s | The speaker's behaviour, kept in the EEPROM: switching to a USB stream by itself, how long a silent source keeps the amp on, the highest volume on every source. `change` says which fields to set (0: only read them). The amp's lock is `Amp`. |
+| 0x14 | Diag |  | net | - | DiagReply | 2 s | The firmware's internals for debugging: protections, audio path, USB audio, the module's link, the remote. |
 
 ## Replies
 
@@ -95,6 +103,22 @@ The host's timeout is the request's own: the MCU answers within it, or the host 
 ## The module's records
 
 Encoded by the module OS with this codec, relayed by the MCU (`ModRecord`), decoded by the host: the MCU's C has none of them. A field marked set is a setting (docs/module/settings.md): the host writes it with `SetSetting`, the key the field's name with dots for underscores, the value in its string form (bools `on` / `off`, enums by name); the module checks it against the type, the maximum and the format.
+
+### Pair (0x20)
+Pair this client with the speaker (the network link: our OS answers it, docs/protocol/net.md). The MCU waits up to 30 s for a press of ON/OFF on the speaker (its LED flashes purple), whatever the gate says; pressed, the client's key is kept with `name`. `Error DENIED` if nobody pressed, `Error BUSY` while another one waits.
+
+| Field | Type | Setting | |
+|---|---|---|---|
+| `name` | str <= 32 |  | what the client calls itself (the `Controllers` record): a browser, a computer |
+
+### SystemUpdate (0x21)
+The module's system over the network (docs/protocol/net.md; our OS answers it): BEGIN with the signed header (`protocol/release`) in `data`, refused unless a key the speaker trusts signed it and it is no older than the running system; DATA, the image in order from `offset`; END: the image checked, the slot that doesn't run stamped (DONE), then started once (ready makes it the good one). ABORT: the slot holds no system.
+
+| Field | Type | Setting | |
+|---|---|---|---|
+| `op` | [UpdateOp](#updateop) |  |  |
+| `offset` | u32 |  | DATA: where `data` goes in the image |
+| `data` | bytes <= 32768 |  | BEGIN: the header; DATA: the next piece of the image |
 
 ### State (0x60)
 The speaker as the module OS knows it: its settings (the fields marked set: written with `SetSetting`, the key the field's name with dots for underscores, the value in string form; kept on the data partition) and its status. The module pushes it when anything changes (once a second at most) and after every hello; the MCU keeps the last copy (`ModRecord State`). The same record, as JSON, is what an API on the module would serve.
@@ -137,6 +161,7 @@ The speaker as the module OS knows it: its settings (the fields marked set: writ
 | `stamp_a` | str <= 64 |  | what system slot A holds: its stamp (the version installed, as `Update.id`); empty: no system (or not read yet: the module reads both slots' stamps after it starts and after an update) |
 | `stamp_b` | str <= 64 |  | the same for slot B |
 | `boot` | str <= 12 |  | the boot image the module started from (the app partition: stub, kernel, rescue): its identity, `zd1.boot=` on the kernel command line (`zd1 image` names a .bcd's); empty: a boot image from before it had one |
+| `net` | bool | `net`, default `on` | the network link (docs/protocol/net.md): paired clients reach the speaker over the network; off, nothing listens. Written over USB only |
 
 ### ScanEntry (0x61)
 A Wi-Fi network seen by the module's radio (the `Scan` record, one entry per SSID; hidden networks are left out).
@@ -181,7 +206,17 @@ The module OS's actions: writes with no state of their own (`SetSetting` with th
 | `wifi_forget` | str <= 32 | `wifi.forget`, ssid | forget a known network: its SSID |
 | `wifi_first` | str <= 32 | `wifi.first`, ssid | put a known network first (the speaker prefers it when it sees both): its SSID |
 | `airplay_forget` | str <= 8 | `airplay.forget` | forget every controller paired with AirPlay (any value): senders pair again; the accessory stays the same |
-| `reset` | str <= 8 | `reset`, reset | back to the defaults: `settings` (every setting; the networks and AirPlay's pairings stay) or `all` (those too: as from the factory, but for the software) |
+| `reset` | str <= 8 | `reset`, reset | back to the defaults: `settings` (every setting; the networks and the pairings stay) or `all` (those too, the network's included: as from the factory, but for the software) |
+| `net_forget` | str <= 8 | `net.forget` | forget a client paired over the network (`Controllers`): its id, or `all`; its sessions end |
+
+### Controller (0x66)
+A client paired over the network (the `Controllers` record).
+
+| Field | Type | Setting | |
+|---|---|---|---|
+| `id` | str <= 8 |  | its key's first 8 hex digits (what `net.forget` takes) |
+| `name` | str <= 32 |  | the name it gave when it paired (`Pair`) |
+| `since` | str <= 16 |  | when, UTC (YYYY-MM-DD HH:MM; empty: the clock wasn't set) |
 
 ## Enums
 
@@ -262,6 +297,7 @@ A record of the module OS (`ModRecord`): `State` is pushed by the module and kep
 | 2 | NETWORKS | the Wi-Fi networks the speaker knows, the one it prefers first: a list of `KnownNetwork`; it joins the first of them it sees (`Actions`: `wifi.add`, `wifi.first`, `wifi.forget`) |
 | 3 | SERVERS | the snapservers on the speaker's networks: a list of `Snapserver`; the module answers from its last look over mDNS and looks again (read again two seconds later for it) |
 | 4 | PAIRINGS | the controllers paired with the AirPlay receiver: a list of `Pairing`, the oldest first |
+| 5 | CONTROLLERS | the clients paired over the network (docs/protocol/net.md): a list of `Controller`, the oldest first (`Actions`: `net.forget`) |
 
 ### ModState
 
@@ -332,7 +368,9 @@ What `Update` does.
 | Value | Name | |
 |---|---|---|
 | 1 | BEGIN | start the module's updater: it takes `size` bytes from the bulk pipe into the slot that doesn't run |
-| 2 | ABORT | stop sending; the module gives up on its own (10 s without data) |
+| 2 | ABORT | stop sending; the module gives up on its own (10 s without data). `SystemUpdate`: at once, the slot holds no system |
+| 3 | DATA | `SystemUpdate`: the next piece of the image |
+| 4 | END | `SystemUpdate`: that was all of it: check it, stamp the slot, start it once |
 
 ### UpdateState
 Where an update is (`UpdateReply`).

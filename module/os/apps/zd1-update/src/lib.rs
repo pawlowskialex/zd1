@@ -318,6 +318,7 @@ impl Read for Stream<'_> {
 }
 
 fn run(size: u64, baud: u32, sha: [u8; 32], id: &str) -> Result<String, String> {
+    let _one = zd1_slot::update_lock()?;
     let b = boot();
     let slot = b.target();
     let console = Console::take();

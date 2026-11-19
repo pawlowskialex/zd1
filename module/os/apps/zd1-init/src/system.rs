@@ -70,6 +70,21 @@ pub const SERVICES: &[Service] = &[
         health: None,
     },
     Service {
+        name: "net",
+        about: "the network link (zd1-netd): paired clients reach the speaker on port 80 (docs/protocol/net.md)",
+        start: |c| {
+            if c.setting("net") == "off" {
+                return Start::Off("off (the setting net)".into());
+            }
+            run(&["zd1-netd"])
+        },
+        stop: None,
+        lifetime: daemon(2000),
+        output: Output::Log,
+        settings: &["net"],
+        health: None,
+    },
+    Service {
         name: "snapcast",
         about: "the Snapcast receiver (zd1-snapcast)",
         start: snapcast,

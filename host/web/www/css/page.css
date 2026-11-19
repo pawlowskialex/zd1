@@ -160,3 +160,8 @@ main > .panel:first-of-type {
     font-size: var(--text-2xl);
   }
 }
+/* over the network (connection.js): what goes over USB only is left out, and the other way round */
+body.net .usb-only,
+body:not(.net) .net-only {
+  display: none;
+}

@@ -5,7 +5,11 @@ under images/ as a release manifest of one release (images/index.json: what the 
 docs/web.md, Releases; each image described by `zd1 image`). The images are the ones `zd1 install` takes by default:
 mcu/result (mcu/flash.sh) and emu/img/os (`nix build -o emu/img/os .#os-image`), those that exist.
 
-  zeppelin web [--port 8765]     then open http://localhost:8765 in Chrome, Edge or Brave
+  zeppelin web [--port 8765] [--key KEY]     then open http://localhost:8765 in Chrome, Edge or Brave
+
+--key: the system also signed with KEY (`zd1 keygen`; its .pub on the speaker, /data/zd1/keys), for the update over
+the network (docs/protocol/net.md). The Lightning model's .fw comes along when it is built (`nix build -o
+emu/img/zd1l-fw .#zd1l-fw`).
 """
 
 import argparse
@@ -23,17 +27,23 @@ IMAGES = {
     "system": os.path.join(REPO, "emu", "img", "os", "system.cpio.gz"),  # nix build -o emu/img/os .#os-image
     "mcu": os.path.join(REPO, "mcu", "result", "zd1.hex"),  # mcu/flash.sh, nix build .#mcu
     "bcd": os.path.join(REPO, "emu", "img", "os", "os.bcd"),
+    "fw": os.path.join(REPO, "emu", "img", "zd1l-fw", "zd1l.fw"),  # nix build -o emu/img/zd1l-fw .#zd1l-fw
 }
+SIGNED = os.path.join(REPO, "emu", "img", "system.signed")  # --key: made at the start, gitignored with emu/img
+
+
+def zd1():
+    """`zd1` (on the PATH in `nix develop`, else through nix)."""
+    return [shutil.which("zd1")] if shutil.which("zd1") else ["nix", "run", ".#zd1", "--"]
 
 
 def manifest():
     """One release: this checkout's built images (the ones that exist), described by `zd1 image` (on the PATH in
     `nix develop`, else through nix)."""
-    paths = [p for p in IMAGES.values() if os.path.exists(p)]
+    paths = [p for p in list(IMAGES.values()) + [SIGNED] if os.path.exists(p)]
     if not paths:
         return {"releases": []}
-    zd1 = [shutil.which("zd1")] if shutil.which("zd1") else ["nix", "run", ".#zd1", "--"]
-    out = subprocess.run(zd1 + ["image"] + paths, cwd=REPO, check=True, capture_output=True, text=True).stdout
+    out = subprocess.run(zd1() + ["image"] + paths, cwd=REPO, check=True, capture_output=True, text=True).stdout
     rel = {
         "version": "this computer's build",
         "date": datetime.date.today().isoformat(),
@@ -58,7 +68,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         path = self.path.split("?")[0]
         if path == "/images/index.json":
             return self.send_bytes(json.dumps(manifest()).encode(), "application/json")
-        for p in IMAGES.values():
+        for p in list(IMAGES.values()) + [SIGNED]:
             if path == "/images/" + os.path.basename(p) and os.path.exists(p):
                 return self.send_bytes(open(p, "rb").read(), "application/octet-stream")
         return super().do_GET()
@@ -91,7 +101,12 @@ def main(argv=None):
         prog="zeppelin web", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
     ap.add_argument("--port", type=int, default=8765)
+    ap.add_argument("--key", help="sign the system with this key too, for the update over the network")
     a = ap.parse_args(argv)
+    if os.path.exists(SIGNED):
+        os.remove(SIGNED)  # a signed image from another build or key: made again below, or none
+    if a.key and os.path.exists(IMAGES["system"]):
+        subprocess.run(zd1() + ["sign", IMAGES["system"], "--key", a.key, "-o", SIGNED], cwd=REPO, check=True)
     build = ["nix", "build", "--no-link", "--print-out-paths", ".#web"]
     page = subprocess.run(build, cwd=REPO, check=True, capture_output=True, text=True).stdout.strip()
     srv = http.server.ThreadingHTTPServer(("127.0.0.1", a.port), functools.partial(Handler, directory=page))

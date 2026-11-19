@@ -53,6 +53,11 @@ static volatile uint16_t rep_len, rep_seq;
 static volatile uint32_t rep_after; /* the log position the reply goes out after */
 static volatile bool rep_ready, rep_taken;
 static uint8_t poll_buf[ZD1H_POLL_MAX];
+/* a request from the network (hostif_net_request): run from the main loop like a USB one, replied on SPI reg 0xD9 */
+static uint8_t net_req[ZD1H_MSG_MAX];
+static uint16_t net_len, net_seq;
+static bool net_full;
+static bool cur_net; /* the request in hand came from the network */
 static uint8_t hello_buf[ZD1H_MSG_MAX];
 
 static void hello_fill(zd1h_hello_reply_t *h) {
@@ -201,6 +206,18 @@ UDC_DESC_STORAGE udi_api_t udi_api_hostif = {hostif_enable, pipe_disable, hostif
 
 /* ---- the main loop's side ---- */
 static void reply(const zd1h_msg_t *m, const void *s) {
+    if (cur_net) { /* to the network: u16 seq + the reply, on 0xD9 */
+        static uint8_t out[2 + ZD1H_MSG_MAX];
+        int k = zd1h_encode(m, s, out + 2, sizeof out - 2);
+        if (k < 0) {
+            zd1h_error_t e = {ZD1H_ERR_ARG, "reply too long"};
+            k = zd1h_encode(&ZD1H_ERROR, &e, out + 2, sizeof out - 2);
+        }
+        out[0] = (uint8_t)net_seq;
+        out[1] = (uint8_t)(net_seq >> 8);
+        dm870_reg_write_v(ZD1_REG_HOST, out, (uint16_t)(k + 2));
+        return;
+    }
     int n = zd1h_encode(m, s, rep, sizeof rep);
     if (n < 0) {
         zd1h_error_t e = {ZD1H_ERR_ARG, "reply too long"};
@@ -369,9 +386,10 @@ static bool gate_pass(void) {
     return true;
 }
 
+/* From the network it is our OS's `Pair`: it always waits for a press, and opens nothing on USB (the gate is USB's) */
 static void req_unlock(void) {
     uint16_t secs;
-    if (hostif_gate(&secs) != ZD1H_GATE_LOCKED) {
+    if (!cur_net && hostif_gate(&secs) != ZD1H_GATE_LOCKED) {
         ok();
         return;
     }
@@ -379,7 +397,8 @@ static void req_unlock(void) {
     confirm_until = uptime + CONFIRM_MS;
     confirm_wait = true; /* hostif_poll finishes it */
     led_flash(FLASH_PURPLE, CONFIRM_MS);
-    log_puts("[gate] press ON/OFF on the speaker within 30 s to allow the computer to change it\n");
+    log_puts(cur_net ? "[net] press ON/OFF on the speaker within 30 s to pair a client on the network\n"
+                     : "[gate] press ON/OFF on the speaker within 30 s to allow the computer to change it\n");
 }
 
 static void req_lock(void) {
@@ -685,7 +704,14 @@ static bool decoded(const zd1h_msg_t *m, const uint8_t *b, uint16_t n) {
 /* one request: past the gate, decoded, run */
 static void run(const uint8_t *b, uint16_t n) {
     uint8_t id = b[0];
-    if (zd1h_gated(id) && !gate_pass())
+    if (cur_net) {
+        /* a paired client: past the gate (its pairing was a press), the network's requests only; Unlock is our OS's
+         * Pair */
+        if (!zd1h_net(id) && id != ZD1H_ID_UNLOCK) {
+            error(ZD1H_ERR_UNKNOWN, "not over the network (docs/protocol/net.md)");
+            return;
+        }
+    } else if (zd1h_gated(id) && !gate_pass())
         return;
     switch (id) {
     case ZD1H_ID_UNLOCK:
@@ -864,6 +890,8 @@ static void run(const uint8_t *b, uint16_t n) {
     }
 }
 
+static void request_done(void);
+
 void hostif_poll(uint32_t now) {
     uptime = now;
     pipe_poll();
@@ -885,19 +913,23 @@ void hostif_poll(uint32_t now) {
         static const zd1h_ok_t ok;
         if (confirmed) {
             confirm_wait = false;
-            unlocked = true;
-            unlock_until = now + GATE_MS;
             led_flash(FLASH_GREEN, 500);
-            log_puts("[gate] unlocked on the speaker\n");
+            if (cur_net)
+                log_puts("[net] pressed: our OS pairs the client\n");
+            else {
+                unlocked = true;
+                unlock_until = now + GATE_MS;
+                log_puts("[gate] unlocked on the speaker\n");
+            }
             reply(&ZD1H_OK, &ok);
         } else if (tick_after(now, confirm_until)) {
             confirm_wait = false;
             led_flash(FLASH_RED, 500);
-            log_puts("[gate] not confirmed: still locked\n");
+            log_puts(cur_net ? "[net] not confirmed: not paired\n" : "[gate] not confirmed: still locked\n");
             error(ZD1H_ERR_DENIED, "nobody pressed ON/OFF on the speaker within 30 s");
         } else
             return;
-        req_full = false;
+        request_done();
         return;
     }
     if (module_wait) { /* a Module request: answered when its op ends */
@@ -907,7 +939,7 @@ void hostif_poll(uint32_t now) {
         zd1h_module_reply_t m = {.ok = ok, .state = dm870_state(), .status = dm870_last_status()};
         module_wait = false;
         reply(&ZD1H_MODULE_REPLY, &m);
-        req_full = false;
+        request_done();
         return;
     }
     if (query_wait) { /* a setting or a record: answered when the module does */
@@ -916,13 +948,38 @@ void hostif_poll(uint32_t now) {
             return;
         query_wait = false;
         query_reply(ok);
-        req_full = false;
+        request_done();
         return;
     }
-    if (!req_full)
+    /* the next request: USB's, else the network's (each waits while the other's runs) */
+    if (req_full) {
+        cur_net = false;
+        cur_seq = req_seq;
+        run(req, req_len);
+    } else if (net_full) {
+        cur_net = true;
+        run(net_req, net_len);
+    } else
         return;
-    cur_seq = req_seq;
-    run(req, req_len);
     if (!confirm_wait && !module_wait && !query_wait)
+        request_done();
+}
+
+/* the request in hand has its reply: its source may send the next */
+static void request_done(void) {
+    if (cur_net)
+        net_full = false;
+    else
         req_full = false;
+}
+
+void hostif_net_request(const uint8_t *b, uint16_t n) {
+    if (n < 3 || n > 2 + sizeof net_req || net_full) {
+        log_puts("[net] a request dropped (malformed, or one already in hand)\n");
+        return;
+    }
+    net_seq = (uint16_t)(b[0] | b[1] << 8);
+    net_len = (uint16_t)(n - 2);
+    memcpy(net_req, b + 2, net_len);
+    net_full = true;
 }

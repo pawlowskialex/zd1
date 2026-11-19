@@ -162,6 +162,7 @@ let
       built
       ;
     parts = module-os-parts;
+    mcu = stampMcu mcu.mcu-raw;
   };
 
   # host tools: the AirPlay test sender; zd1 (the speaker over USB, host/cli) and the web page (host/web), host/core's

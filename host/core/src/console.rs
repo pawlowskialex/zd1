@@ -3,19 +3,19 @@
 //! (`zd1 console`, the page's pane); this is what both front-ends share. BL1's escape into BL2 is the MCU's
 //! (`Module` ESC: it knows when the reset is released).
 
-use crate::usb::Usb;
+use crate::link::Link;
 use crate::{Error, Mcu, Result};
 
 /// The console open for this host, for commands on our OS's shell; [`Shell::close`] closes it.
-pub struct Shell<'a, U: Usb> {
-    pub m: &'a mut Mcu<U>,
+pub struct Shell<'a, L: Link> {
+    pub m: &'a mut Mcu<L>,
     /// A fresh line has been made (whatever was half typed dropped).
     ready: bool,
 }
 
-impl<'a, U: Usb> Shell<'a, U> {
+impl<'a, L: Link> Shell<'a, L> {
     /// Open the console (afresh).
-    pub async fn open(m: &'a mut Mcu<U>) -> Result<Self> {
+    pub async fn open(m: &'a mut Mcu<L>) -> Result<Self> {
         m.console_open(true).await?;
         Ok(Shell { m, ready: false })
     }
@@ -33,9 +33,9 @@ impl<'a, U: Usb> Shell<'a, U> {
     pub async fn read_for(&mut self, ms: u32) -> Result<Vec<u8>> {
         let t0 = crate::now_ms();
         let mut out = Vec::new();
-        while crate::now_ms() - t0 < (ms * self.m.usb.slow()) as f64 {
+        while crate::now_ms() - t0 < (ms * self.m.slow()) as f64 {
             if self.m.poll().await? == 0 {
-                self.m.usb.sleep(10).await;
+                self.m.sleep(10).await;
             }
             out.extend(self.m.console_take());
         }
@@ -54,9 +54,9 @@ impl<'a, U: Usb> Shell<'a, U> {
         let tag = format!("__zd1_{:06}__", crate::seed() % 1_000_000);
         self.m.console_write(format!("{cmd}; echo {tag}$?{tag}\n").as_bytes()).await?;
         let (t0, mut buf) = (crate::now_ms(), Vec::new());
-        while crate::now_ms() - t0 < (timeout_ms * self.m.usb.slow()) as f64 {
+        while crate::now_ms() - t0 < (timeout_ms * self.m.slow()) as f64 {
             if self.m.poll().await? == 0 {
-                self.m.usb.sleep(10).await;
+                self.m.sleep(10).await;
             }
             buf.extend(self.m.console_take());
             if let Some((at, status)) = find_status(&buf, tag.as_bytes()) {

@@ -16,6 +16,7 @@ zd1-init.workspace = true
 zd1-ctl.workspace = true
 zd1-board.workspace = true
 zd1-linkd.workspace = true
+zd1-netd.workspace = true
 zd1-persparam.workspace = true
 zd1-settings.workspace = true
 zd1-slot.workspace = true

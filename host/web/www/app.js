@@ -3,7 +3,7 @@
 // device, keep the backups and draw. This one starts it and wires the controls.
 
 import "./js/zd-speaker.js";
-import { act, connect, op, show } from "./js/connection.js";
+import { act, connect, connectNet, op, reachAgain, show } from "./js/connection.js";
 import { consoleInit } from "./js/console.js";
 import { report } from "./js/diagnostics.js";
 import { joinForm, joinWatch, scan } from "./js/network.js";
@@ -11,6 +11,7 @@ import { app } from "./js/shared.js";
 import { installMcu, installSystem, loadReleases, rollback, startFirmware } from "./js/software.js";
 import { refresh } from "./js/speaker.js";
 import { $, ask, download, fill, names, notice, readFile, stamp } from "./js/ui.js";
+import { installZd1l } from "./js/zd1l.js";
 import init, { spec } from "./pkg/zd1_web.js";
 
 // ---- wiring -------------------------------------------------------------------------------------------------------
@@ -19,22 +20,40 @@ async function main() {
   await init();
   app.S = spec();
   $("proto").textContent = app.S.proto;
-  if (!navigator.usb) {
-    $("nousb").hidden = false;
-    $("connect").disabled = true;
-    return;
-  }
-  $("connect").onclick = () => connect(true);
+  $("net-addr").value = localStorage.getItem("zd1.address") ?? "";
+  $("net-form").onsubmit = (e) => {
+    e.preventDefault();
+    op(() => connectNet($("net-addr").value));
+  };
+  $("zd1l-form").onsubmit = (e) => {
+    e.preventDefault();
+    installZd1l($("zd1l-addr").value);
+  };
   $("disconnect").onclick = () => {
     app.sp?.free();
     app.bl?.free();
     app.sp = app.bl = null;
     show("welcome");
   };
+  if (navigator.usb) usbEvents();
+  else {
+    $("nousb").hidden = false;
+    $("connect").disabled = true;
+  }
+  wire();
+  consoleInit();
+  loadReleases();
+  if (navigator.usb) await connect(false);
+}
+
+/// The speaker coming and going on USB.
+function usbEvents() {
+  $("connect").onclick = () => connect(true);
   navigator.usb.addEventListener("connect", () => {
     if (!app.sp && !app.bl && !app.busy) connect(false);
   });
   navigator.usb.addEventListener("disconnect", (e) => {
+    if (app.sp?.link() === "net") return;
     if (app.busy) return; // a flow restarts the device itself
     if (app.sp && e.device.productId === app.S.usb.pid) {
       app.sp = null;
@@ -47,6 +66,10 @@ async function main() {
       notice("The speaker's bootloader left USB.");
     }
   });
+}
+
+/// The controls.
+function wire() {
   $("dfu-start").onclick = startFirmware;
   $("grant-ok").onclick = async () => {
     const g = $("grant");
@@ -103,13 +126,17 @@ async function main() {
       $("join-form").hidden = true;
       $("scan-list").hidden = true;
       notice(`${ssid} added: the speaker joins it now.`);
+      await reachAgain();
       joinWatch(ssid);
     });
   };
   $("wifi-toggle").onclick = () =>
-    act(() =>
-      names(app.S.NetMode)[app.state.wifi_mode] === "off" ? app.sp.setSetting("wifi.mode", "dhcp") : app.sp.wifiOff(),
-    );
+    act(async () => {
+      await (names(app.S.NetMode)[app.state.wifi_mode] === "off"
+        ? app.sp.setSetting("wifi.mode", "dhcp")
+        : app.sp.wifiOff());
+      await reachAgain();
+    });
   $("auto-switch").onchange = () => act(() => app.sp.call("Prefs", { auto_switch: $("auto-switch").checked }), false);
   $("amp").onchange = () => act(() => app.sp.call("Amp", { allow: $("amp").value === "auto", keep: true }), false);
   $("amp-idle").onchange = () => act(() => app.sp.call("Prefs", { amp_idle_s: +$("amp-idle").value * 60 }), false);
@@ -129,9 +156,10 @@ async function main() {
   $("import").onchange = async () => {
     const f = await readFile($("import"));
     if (f)
-      act(async () =>
-        notice(`${await app.sp.importSettings(new TextDecoder().decode(f.data))} settings written.`, "ok"),
-      );
+      act(async () => {
+        notice(`${await app.sp.importSettings(new TextDecoder().decode(f.data))} settings written.`, "ok");
+        await reachAgain();
+      });
   };
   $("reset-settings").onclick = async () => {
     if (
@@ -141,9 +169,11 @@ async function main() {
         "Reset",
       )
     )
-      act(() =>
-        app.sp.setSetting("reset", "settings").then(() => notice("The settings are back to their defaults.", "ok")),
-      );
+      act(async () => {
+        await app.sp.setSetting("reset", "settings");
+        notice("The settings are back to their defaults.", "ok");
+        await reachAgain();
+      });
   };
   $("reset-all").onclick = async () => {
     if (
@@ -153,11 +183,11 @@ async function main() {
         "Reset everything",
       )
     )
-      act(() =>
-        app.sp
-          .setSetting("reset", "all")
-          .then(() => notice("Everything is back to the defaults: add a network to put the speaker on one.", "ok")),
-      );
+      act(async () => {
+        await app.sp.setSetting("reset", "all");
+        notice("Everything is back to the defaults: add a network to put the speaker on one.", "ok");
+        await reachAgain();
+      });
   };
   for (const [id, f] of [
     ["system-file", installSystem],
@@ -192,9 +222,6 @@ async function main() {
   }, 500);
   setInterval(() => refresh(false), 2000);
   setInterval(() => refresh(true), 10000);
-  consoleInit();
-  loadReleases();
-  await connect(false);
 }
 
 main();

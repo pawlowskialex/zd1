@@ -38,13 +38,15 @@
 #define ZD1_REG_LINK_PROTO         0xD5  /* F R: Ours: the protocol our OS speaks, b1 ([`native::PROTO`]). The MCU reads it at every hello; another value than its own makes the module no source (the base layer still works). */
 #define ZD1_REG_STATE              0xD6  /* V N: Ours, native: the State record (the host link's `State` message: the module's settings and status, encoded by the module with the host link's codec). Notified after every hello and when something in it changes (at most once a second); the MCU keeps the last copy and serves it to the host (`ModRecord State`) without asking the module. */
 #define ZD1_REG_MCU_FW             0xD7  /* F N: Ours, native: b0 = 1, our OS has an app for the MCU staged (a .dmb) and asks the MCU to go where it is taken: our preloader on the ZD1 (GPLP0, a watchdog reset), B&W's bootloader on the ZD1L (ISP_FORCE). Either powers the module again and asks it for BL2, and our OS serves the app (`docs/mcu/bootloader-hbl.md`). A ZD1 without the preloader ignores it. */
+#define ZD1_REG_TRY                0xD8  /* F N: Ours, native: b0 = a [`boot`] slot (A or B) our OS has just installed a system into itself (the signed network update, `docs/module/updater.md`): the MCU starts it once now, as the host link's `Boot` TRY with restart; its ready makes it the good slot, else the MCU goes back. */
+#define ZD1_REG_HOST               0xD9  /* V WN: Ours, native: the host link from the network (`docs/protocol/net.md`): our OS notifies a paired client's request, u16 seq (little-endian) + the message (`docs/protocol/host.md`), and the MCU writes u16 seq + its reply back, once the request has run. The MCU runs it as over USB but past the gate (the pairing was a press), and only a request the spec marks net; one request at a time, from USB or from here. */
 #define ZD1_REG_SHUTDOWN           0xE2  /* F WN: Shutdown: the MCU writes 00 00, the module answers 01 00, then power off. [RE] */
 #define ZD1_REG_DRC_ACK            0xE3  /* F RN: AirTunesPlaybackStatus: the DRC acks (b0). [RE] */
 #define ZD1_REG_VOLUME_HOST        0xE4  /* V RN: VolumeHostChange: as 0x40. [RE] */
 
 /* 'F' (2 data bytes) or 'V' (16-bit LE length + data) for every register: ours, else the stock firmware's table */
 static inline char zd1_reg_kind(uint8_t reg){
-    static const uint8_t v[32] = {0x01,0x00,0x00,0x00,0xE0,0xF0,0x08,0xF7,0xA1,0xD8,0x20,0xF3,0x7E,0x13,0xA0,0x0B,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x68,0xA9,0x47,0x30,0x10,0x00,0x00,0x00};
+    static const uint8_t v[32] = {0x01,0x00,0x00,0x00,0xE0,0xF0,0x08,0xF7,0xA1,0xD8,0x20,0xF3,0x7E,0x13,0xA0,0x0B,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x68,0xA9,0x47,0x32,0x10,0x00,0x00,0x00};
     return (v[reg >> 3] >> (reg & 7)) & 1 ? 'V' : 'F';
 }
 

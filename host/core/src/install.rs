@@ -176,7 +176,7 @@ async fn bl2_done<U: crate::usb::Usb>(m: &mut Mcu<U>) -> Result<()> {
     let t0 = crate::now_ms();
     let mut last = t0;
     while crate::now_ms() - last < 10_000.0 && crate::now_ms() - t0 < 180_000.0 {
-        m.usb.sleep(500).await;
+        m.sleep(500).await;
         if m.poll().await? > 0 {
             last = crate::now_ms();
         }
@@ -207,11 +207,11 @@ async fn wait_module<U: crate::usb::Usb>(m: &mut Mcu<U>, ms: f64) -> Result<msg:
 /// protocol, or BL2 (no image to start). Off for 30 s (the MCU gave up on it) is an error, as is nothing settled in
 /// `ms`.
 async fn settle<U: crate::usb::Usb>(m: &mut Mcu<U>, ms: f64) -> Result<msg::InfoReply> {
-    let (t0, slow) = (crate::now_ms(), m.usb.slow() as f64);
+    let (t0, slow) = (crate::now_ms(), m.slow() as f64);
     let late = |ms: f64| crate::now_ms() - t0 > ms * slow;
     let mut shown = None;
     loop {
-        m.usb.sleep(2000).await;
+        m.sleep(2000).await;
         let _ = m.poll().await; // the MCU's log: the boot as it goes
         let i = match m.call(&msg::Info).await {
             Ok(i) => i,

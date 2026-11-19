@@ -4,9 +4,11 @@
 //! `Update` BEGIN (the MCU starts zd1-update over SPI and takes the console UART at the baud), the image to the bulk
 //! endpoint (on the emulator's EP0-only bridge: `PipeData`), the MCU passing it on in frames as the module answers;
 //! the module checks the SHA-256 and stamps the slot ("VERSION SHA256[:12] LENGTH"). Then `Boot` TRY with restart,
-//! and the verdict.
+//! and the verdict. Over the network the image is signed and our OS takes it itself ([`system_signed`]).
 
 use crate::image::system_stamp;
+use crate::link::Link;
+use crate::msg::SystemUpdate;
 use crate::spec::{BootOp, Err, Slot, UpdateOp, UpdateState};
 use crate::usb::Usb;
 use crate::{Error, Mcu, Result, msg};
@@ -63,10 +65,10 @@ pub async fn system<U: Usb>(m: &mut Mcu<U>, image: &[u8], o: &Options) -> Result
         if r.state != UpdateState::Starting {
             break r;
         }
-        if crate::now_ms() - t0 > 20_000.0 * m.usb.slow() as f64 {
+        if crate::now_ms() - t0 > 20_000.0 * m.slow() as f64 {
             return Err(Error::Timeout(format!("the MCU still waits for the module's updater: {}", r.text)));
         }
-        m.usb.sleep(200).await;
+        m.sleep(200).await;
     };
     if r.state != UpdateState::Streaming {
         return Err(Error::Failed(format!("update: {}", r.text)));
@@ -74,7 +76,7 @@ pub async fn system<U: Usb>(m: &mut Mcu<U>, image: &[u8], o: &Options) -> Result
     e.step(&format!("into slot {}", r.slot));
     let (t0, mut sent, mut aborted) = (crate::now_ms(), 0usize, false);
     let streaming = |r: &msg::UpdateReply| r.state == UpdateState::Streaming;
-    if m.usb.ep0_only() {
+    if m.link.ep0_only() {
         // the emulator: EP0 only
         while sent < image.len() {
             let n = 240.min(image.len() - sent);
@@ -84,7 +86,7 @@ pub async fn system<U: Usb>(m: &mut Mcu<U>, image: &[u8], o: &Options) -> Result
                     if !streaming(&m.call(&msg::UpdateStatus).await?) {
                         break;
                     }
-                    m.usb.sleep(10).await;
+                    m.sleep(10).await;
                 }
                 Err(x) => return Err(x),
             }
@@ -114,11 +116,11 @@ pub async fn system<U: Usb>(m: &mut Mcu<U>, image: &[u8], o: &Options) -> Result
         e.wait("the module writes and checks the system", ((crate::now_ms() - t1) / 1000.0) as u64);
         let r = m.call(&msg::UpdateStatus).await?;
         if matches!(r.state, UpdateState::Done | UpdateState::Failed)
-            || crate::now_ms() - t1 > 90_000.0 * m.usb.slow() as f64
+            || crate::now_ms() - t1 > 90_000.0 * m.slow() as f64
         {
             break r;
         }
-        m.usb.sleep(500).await;
+        m.sleep(500).await;
     };
     e.step(&format!("module: {} ({:.0} s)", r.text, (crate::now_ms() - t0) / 1000.0));
     if aborted {
@@ -133,6 +135,80 @@ pub async fn system<U: Usb>(m: &mut Mcu<U>, image: &[u8], o: &Options) -> Result
     start_once(m, r.slot).await
 }
 
+/// The system over the network (docs/protocol/net.md): a signed update (`image::sign_system`: the header, then the
+/// image) through our OS into the slot that doesn't run (`SystemUpdate`: BEGIN with the header, the image in pieces,
+/// END), which it then starts once, restarting the module. The slot it went into: once the speaker answers again,
+/// [`trial`] has the verdict.
+pub async fn system_signed<L: Link>(m: &mut Mcu<L>, update: &[u8]) -> Result<Slot> {
+    const PIECE: usize = 32 * 1024;
+    let e = m.events().clone();
+    let (h, at) = crate::image::signed_system(update)
+        .ok_or_else(|| Error::Failed("not a signed system update (`zd1 sign`)".into()))?;
+    let image = &update[at..];
+    if image.len() as u64 != h.length {
+        return Err(Error::Failed(format!("{} bytes of image, its header says {}", image.len(), h.length)));
+    }
+    e.step(&format!("system {} ({}), {} bytes", h.version, h.built, h.length));
+    let ok = |r: msg::UpdateReply, want: UpdateState| {
+        if r.state == want { Ok(r) } else { Err(Error::Failed(format!("update: {}", r.text))) }
+    };
+    let begin = SystemUpdate { op: UpdateOp::Begin, offset: 0, data: update[..at].to_vec() };
+    let r = ok(m.call(&begin).await?, UpdateState::Streaming)?;
+    e.step(&format!("into slot {}", r.slot));
+    let mut sent = 0;
+    while sent < image.len() {
+        let n = PIECE.min(image.len() - sent);
+        let piece = SystemUpdate { op: UpdateOp::Data, offset: sent as u32, data: image[sent..sent + n].to_vec() };
+        ok(m.call(&piece).await?, UpdateState::Streaming)?;
+        sent += n;
+        e.progress("update", sent as u64, image.len() as u64);
+        if e.cancelled() {
+            let _ = m.call(&SystemUpdate { op: UpdateOp::Abort, offset: 0, data: Vec::new() }).await;
+            return Err(Error::Cancelled);
+        }
+    }
+    let r = ok(m.call(&SystemUpdate { op: UpdateOp::End, offset: 0, data: Vec::new() }).await?, UpdateState::Done)?;
+    e.step(&format!("slot {} installed: the speaker starts it once", r.slot));
+    Ok(r.slot)
+}
+
+/// The whole update over the network: [`system_signed`], then a fresh session (`connect`: the front-end's) again and
+/// again while the speaker restarts on the new slot, until the trial's verdict (5 minutes at most). The verdict, and
+/// the session it came over.
+pub async fn system_over_network<L: Link>(
+    mut m: Mcu<L>,
+    update: &[u8],
+    mut connect: impl AsyncFnMut() -> Result<Mcu<L>>,
+) -> Result<(Outcome, Mcu<L>)> {
+    let e = m.events().clone();
+    let slot = system_signed(&mut m, update).await?;
+    drop(m); // the speaker restarts: this session ends
+    let t0 = crate::now_ms();
+    while crate::now_ms() - t0 < 300_000.0 {
+        crate::sleep(3000).await;
+        e.wait(&format!("slot {slot} starting"), ((crate::now_ms() - t0) / 1000.0) as u64);
+        let Ok(mut m) = connect().await else { continue };
+        if let Ok(Some(o)) = trial(&mut m, slot).await {
+            return Ok((said(&*e, o, t0), m));
+        }
+    }
+    Err(Error::Timeout(format!("slot {slot}: no verdict in 300 s")))
+}
+
+/// The verdict on a slot started once, when there is one (None: it is still on trial, or not started yet): it got
+/// ready and is the good slot now, or the MCU went back to another.
+pub async fn trial<L: Link>(m: &mut Mcu<L>, slot: Slot) -> Result<Option<Outcome>> {
+    let b = m.call(&msg::BootState).await?;
+    if b.next != Slot::None || b.trial || b.last == Slot::None {
+        return Ok(None);
+    }
+    Ok(Some(if b.last == slot && b.good == slot {
+        Outcome::Running(slot)
+    } else {
+        Outcome::FellBack { slot, now: b.last }
+    }))
+}
+
 /// `Boot` TRY the slot with restart, and wait for the verdict: the try used up (the stub asked), then the boot it
 /// ended on ready: the new slot (now the good one), or another (the MCU went back: a ready clears the failures).
 pub async fn start_once<U: Usb>(m: &mut Mcu<U>, slot: Slot) -> Result<Outcome> {
@@ -140,22 +216,29 @@ pub async fn start_once<U: Usb>(m: &mut Mcu<U>, slot: Slot) -> Result<Outcome> {
     e.step(&format!("starting slot {slot} once"));
     m.call(&msg::Boot { op: BootOp::Try, slot, restart: true }).await?;
     let t0 = crate::now_ms();
-    while crate::now_ms() - t0 < 300_000.0 * m.usb.slow() as f64 {
-        m.usb.sleep(1000).await;
+    while crate::now_ms() - t0 < 300_000.0 * m.slow() as f64 {
+        m.sleep(1000).await;
         e.wait(&format!("slot {slot} starting"), ((crate::now_ms() - t0) / 1000.0) as u64);
-        let Ok(b) = m.call(&msg::BootState).await else { continue }; // the MCU busy with the module's power: again
-        if b.next != Slot::None || b.trial || b.last == Slot::None {
-            continue;
+        // an error: the MCU busy with the module's power, asked again
+        if let Ok(Some(o)) = trial(m, slot).await {
+            return Ok(said(&*e, o, t0));
         }
-        let secs = (crate::now_ms() - t0) / 1000.0;
-        if b.last == slot && b.good == slot {
-            e.step(&format!("slot {slot} is up and the good slot now ({secs:.0} s)"));
-            return Ok(Outcome::Running(slot));
-        }
-        e.step(&format!("slot {slot} didn't get ready: the module is back on slot {} ({secs:.0} s)", b.last));
-        return Ok(Outcome::FellBack { slot, now: b.last });
     }
     Err(Error::Timeout(format!("slot {slot}: no verdict in 300 s (`zd1 slot`)")))
+}
+
+/// The trial's verdict, told (the time since `t0`).
+fn said(e: &dyn crate::Events, o: Outcome, t0: f64) -> Outcome {
+    let secs = (crate::now_ms() - t0) / 1000.0;
+    e.step(&match o {
+        Outcome::FellBack { slot, now } => {
+            format!("slot {slot} didn't get ready: the module is back on slot {now} ({secs:.0} s)")
+        }
+        Outcome::Running(slot) | Outcome::Installed(slot) => {
+            format!("slot {slot} is up and the good slot now ({secs:.0} s)")
+        }
+    });
+    o
 }
 
 /// The emulator without the MCU's part: zd1-update started from the module console's shell and fed over the console

@@ -139,6 +139,8 @@ def run(a):
                     s.sleep(float(v))
                 elif kind == "send":
                     s.send(v)
+                elif kind == "press":
+                    s.press(float(v))
                 elif kind == "sh":
                     rc, out = s.sh(v, a.timeout)
                     if a.quiet:
@@ -240,6 +242,12 @@ def main(argv=None):
     g.add_argument("--sh", action=Step, metavar="CMD", help="a command in the module's shell, wait for it to end")
     g.add_argument("--send", action=Step, metavar="TEXT", help="type TEXT + CR on the module console (raw: \\xNN)")
     g.add_argument("--sleep", action=Step, metavar="SECS")
+    g.add_argument(
+        "--press",
+        action=Step,
+        metavar="SECS",
+        help="ON/OFF pressed SECS (virtual) from now, while the next steps run (a person at the speaker: pairing)",
+    )
     g.add_argument("--spi", action=Step, metavar="CMDS", help='the SPI test host (module alone): "rd 0x11 rdv 0xc0"')
     g.add_argument(
         "--host",

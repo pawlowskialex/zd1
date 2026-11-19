@@ -25,6 +25,19 @@ pub fn write(path: &Path, data: &[u8]) -> Result<()> {
     std::fs::write(path, data).map_err(|e| Error::Failed(format!("{}: {e}", path.display())))
 }
 
+/// A file only this user reads (a key), written new.
+pub fn write_private(path: &Path, data: &[u8]) -> Result<()> {
+    use std::io::Write;
+    use std::os::unix::fs::OpenOptionsExt;
+    std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(0o600)
+        .open(path)
+        .and_then(|mut f| f.write_all(data))
+        .map_err(|e| Error::Failed(format!("{}: {e}", path.display())))
+}
+
 /// A file as the release manifest describes it: `{file, kind, size, sha256, version, built|stamp}`; `kind` mcu
 /// (Intel HEX or the app region's .bin), backup (an MCU backup), system (a gzip'd cpio) or bcd (the module's boot
 /// image).
@@ -38,6 +51,23 @@ pub fn image_json(path: &Path) -> Result<String> {
             j["kind"] = "system".into();
             j["version"] = version.into();
             j["stamp"] = stamp.into();
+        }
+        Kind::Signed { version, built, stamp } => {
+            j["kind"] = "signed".into();
+            j["version"] = version.into();
+            j["built"] = built.into();
+            j["stamp"] = stamp.into();
+        }
+        Kind::Fw { bcd_ours, boot, mcu } => {
+            j["kind"] = "fw".into();
+            j["ours"] = (bcd_ours && mcu.is_some()).into();
+            if !boot.is_empty() {
+                j["boot"] = boot.into();
+            }
+            if let Some(i) = mcu {
+                j["version"] = i.version.into();
+                j["built"] = i.built.into();
+            }
         }
         Kind::Bcd { build, ours, boot } => {
             j["kind"] = "bcd".into();

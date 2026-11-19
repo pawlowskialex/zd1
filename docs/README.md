@@ -25,6 +25,8 @@ What is true now, with the evidence. Start with `status.md`.
 
 **Host to MCU (USB)**
 - `protocol/host.md`: the host link's messages (generated from `protocol/host/src/lib.rs`)
+- `protocol/net.md`: the same messages over the network: the WebSocket to our module OS, the Noise session, pairing,
+  what travels, the signed system update, the MCU following its OS, the Lightning model's first install from the page
 - `web.md`: the web page as installer and configurator: what it does, what it is to become, the supported pairings
   of the two boards, the base layer of the module link, the interlocks
 

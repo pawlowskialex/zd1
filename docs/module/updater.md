@@ -5,7 +5,8 @@ The flows, the design, what has been measured on the unit, and what is open. Tag
 
 ## Goals
 - **Everything over USB**, through the vendor interface (WebUSB-reachable), the module's console included: the
-  speaker has no serial port. The same flows from a terminal (`zd1`) and
+  speaker has no serial port. Once our OS runs, its system also updates over the network, signed
+  (`docs/protocol/net.md`). The same flows from a terminal (`zd1`) and
   from a web page (WebUSB): one implementation, `host/core` (below).
 - **Smooth**: no step that needs a person except the very first DFU entry on a stock speaker (hold ON/OFF at
   power-up). No power-cycling by hand, no waiting that a tool can't explain.
@@ -20,6 +21,7 @@ The flows, the design, what has been measured on the unit, and what is open. Tag
 | **MCU firmware** | host link `Dfu` → DFU flash → start (`mcu/flash.sh`, a backup into `units/<unit>/mcu/dfu-backups/` first) | ~15 s | in daily use |
 | **module: stub, kernel or rescue** (when a release's boot image differs from the one the module started from: State's `boot`, the `.bcd`'s `zd1.boot=`) | **`zd1 update os.bcd`** (`install::boot_image`, the page's Update): into DFU from our firmware (no key-hold), the relay, our firmware started again, the module up on its good slot; the slots, `/data` and the MCU firmware as they were. A relay that stops after BL2 erased the app partition leaves the module in BL2 with nothing to start: the flow starts our firmware all the same and writes the image through BL2's XModem (`install::boot_image_in_bl2`; `zd1 update os.bcd` on a module in BL2 does only that; the page offers it). By hand: `zd1 xmodem IMAGE.bcd`, our firmware driving BL2's XModem, then `zd1 module restart`; or `zd1 bootloader`, `zd1 dfu relay IMAGE.bcd --yes`, `zd1 dfu start` | 305 s (XModem, 2 MB); the relay 85 s | both on the unit: XModem 2026-10-27; the relay's full install 2026-10-26, its handover to BL2 against our OS (2e20f8d on) 2026-10-27 |
 | **module: everything else** (routine) | **`zd1 update`**: the image over the vendor interface's bulk endpoint → MCU → module UART at 1 Mbaud, in frames → `zd1-update` writes the slot that doesn't run → started once, kept if it gets ready | 82 s for 5 MB framed at 1 Mbaud (61 KB/s) | in daily use (2026-10-26 on) |
+| **module's system over the network** | **`zd1 --net HOST update`**, the page's Update over the network (`docs/protocol/net.md`): a signed image to our OS (`SystemUpdate`), written into the slot that doesn't run as it comes, then started once (the module asks the MCU: reg 0xD8); the MCU then follows its OS | ~40 s for 5 MB in the emulator | [EMU 2026-11-19] only |
 | BL2 broken | BL1's menu 1 ("Download Bootloader Level 2"), XModem over the UART bridge (`blobs/zd1/module/bl2.bin`, 799 KB) | ~1.5 min | untested anywhere; BL1 has none of BL2's console hotkeys (`strings`); writes a protected region: the unit owner's OK each time |
 | BL1 broken | JTAG (`docs/module/jtag.md`); none of our tools writes BL1 | | |
 

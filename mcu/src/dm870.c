@@ -425,6 +425,9 @@ static void xm_keep(const uint8_t *b, uint16_t n) {
     }
 }
 
+/* a slot our OS asked to start once (reg 0xD8; 0: none): the module restarts after the drain */
+static uint8_t try_slot;
+
 /* Up to 32 notifications, none started after DRAIN_MS (the rest stays pending: the next call) */
 #define DRAIN_MS 100
 static unsigned drain(void) {
@@ -468,6 +471,19 @@ static unsigned drain(void) {
             on_ready();
             if (dm870_native())
                 wifi_module_ready();
+            count++;
+            continue;
+        }
+        if (reg == ZD1_REG_HOST) { /* a request from the network (docs/protocol/net.md) */
+            if (dm870_native())
+                hostif_net_request(nbuf, kept);
+            count++;
+            continue;
+        }
+        if (reg == ZD1_REG_TRY) { /* our OS installed a system into a slot itself: started once, after the drain */
+            if (dm870_native() && n >= 1 && (nbuf[0] == ZD1_BOOT_SLOT_A || nbuf[0] == ZD1_BOOT_SLOT_B))
+                try_slot = nbuf[0];
+            log_puts("[notify] our OS asks for a slot on trial\n");
             count++;
             continue;
         }
@@ -640,6 +656,12 @@ void dm870_poll(void) {
         return;
     drain();
     next = tick_ms() + 50;
+    if (try_slot) { /* as the host link's Boot TRY with restart */
+        uint8_t slot = try_slot;
+        try_slot = 0;
+        if (modboot_set(ZD1H_BOOT_OP_TRY, slot))
+            dm870_op(ZD1H_MOD_OP_RESTART, 0);
+    }
 }
 
 uint8_t dm870_state(void) {

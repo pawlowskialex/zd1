@@ -26,13 +26,16 @@ pub mod flash;
 pub mod image;
 pub mod install;
 pub mod lab;
+pub mod link;
 pub mod mcu;
+pub mod net;
 pub mod settings;
 pub mod speaker;
 pub mod update;
 pub mod usb;
 pub mod xmodem;
 
+pub use link::Link;
 pub use mcu::Mcu;
 pub use zd1_hostlink as spec;
 pub use zd1_hostlink::codec::{self, Msg, Val};

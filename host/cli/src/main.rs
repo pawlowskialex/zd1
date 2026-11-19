@@ -1,9 +1,11 @@
-//! zd1: the Zeppelin Air over USB from a terminal. Every flow is host/core's (the web page runs the same ones); this
-//! is the command line around them. Real USB, or the emulator's bridge with `ZD1DFU_EMU=host:port`.
+//! zd1: the Zeppelin Air from a terminal, over USB or the network (`--net`). Every flow is host/core's (the web page
+//! runs the same ones); this is the command line around them. Real USB, or the emulator's bridge with
+//! `ZD1DFU_EMU=host:port`.
 
 mod dfu;
 mod files;
 mod fmt;
+mod net;
 mod term;
 
 use clap::builder::{PossibleValuesParser, TypedValueParser};
@@ -15,15 +17,18 @@ use std::rc::Rc;
 use term::Term;
 use zd1_host::image::McuImage;
 use zd1_host::spec::{BootOp, Key, ModOp, Slot, SpecEnum};
-use zd1_host::usb::{Bus, EmuBus, NusbBus, Usb as _};
-use zd1_host::{Error, Events, Mcu, Result, console, flash, install, lab, msg, settings, speaker, update, xmodem};
+use zd1_host::usb::{Bus, EmuBus, NusbBus};
+use zd1_host::{
+    Error, Events, Link, Mcu, Result, console, flash, install, lab, msg, settings, speaker, update, xmodem,
+};
 
 #[derive(Parser)]
 #[command(
     name = "zd1",
     version,
-    about = "The Zeppelin Air over USB: our MCU firmware's host link (docs/protocol/host.md), \
-    the module OS's settings, updates of both boards, the DFU bootloader. With ZD1DFU_EMU=host:port, the emulator's.",
+    about = "The Zeppelin Air over USB or the network: our MCU firmware's host link (docs/protocol/host.md, \
+    docs/protocol/net.md), the module OS's settings, updates of both boards, the DFU bootloader. With \
+    ZD1DFU_EMU=host:port, the emulator's.",
     after_help = "Exit status: 0 done; 1 failed (the MCU refused, a flow's verdict); 69 the speaker isn't on USB or \
     left it; 77 the gate is locked or nobody pressed ON/OFF; 124 no answer in time; 130 stopped (Ctrl-C)."
 )]
@@ -35,6 +40,11 @@ struct Cli {
     /// log: without this, those that don't report in it (`update`, `info`, ...) drop what they read.
     #[arg(long, global = true)]
     log: bool,
+    /// The speaker over the network, at HOST (its address or NAME.local; HOST:PORT): through our module OS, a client
+    /// paired with a press of ON/OFF on the speaker the first time (docs/protocol/net.md). What changes the boards'
+    /// firmware other than the system update stays USB's.
+    #[arg(long, global = true, value_name = "HOST")]
+    net: Option<String>,
     #[command(subcommand)]
     cmd: Cmd,
 }
@@ -118,6 +128,27 @@ enum Cmd {
     },
     /// The snapservers on the speaker's networks (mDNS), for `zd1 settings snapcast.server HOST:PORT`.
     Servers,
+    /// The clients paired with the speaker over the network (`--net`), or one forgotten (its id, or all).
+    Paired {
+        #[arg(long, value_name = "ID")]
+        forget: Option<String>,
+    },
+    /// A system image signed for the network update (docs/protocol/net.md): the header (its version, build date,
+    /// length and SHA-256, signed with KEY), then the image.
+    Sign {
+        /// The system image (system.cpio.gz).
+        image: PathBuf,
+        /// The signing key (`zd1 keygen`).
+        #[arg(long)]
+        key: PathBuf,
+        /// Where it goes [default: IMAGE without .cpio.gz, + .signed].
+        #[arg(short, long)]
+        out: Option<PathBuf>,
+    },
+    /// A new key to sign system updates with: OUT (secret: only this user reads it) and OUT.pub, the half a speaker
+    /// trusts (the release key's goes into the image, module/os/rootfs/etc/zd1/keys; a developer's onto one speaker,
+    /// /data/zd1/keys).
+    Keygen { out: PathBuf },
     /// The module OS's State record: every field (its settings and its status; docs/module/settings.md).
     State,
     /// Our firmware on both boards, from any state: the module's boot image through the bootloader's relay, the MCU
@@ -217,6 +248,9 @@ enum Cmd {
         /// The emulator without the MCU's part: zd1-update fed over the module console's socket (ZD1_MODCON_EMU).
         #[arg(long)]
         uart: bool,
+        /// `--net`: sign the image with this key first (over the network a system must be signed: `zd1 sign`).
+        #[arg(long)]
+        key: Option<PathBuf>,
     },
     /// Our MCU firmware onto the speaker: into DFU, a backup into UNIT/mcu/dfu-backups/, flash, verify, start, check.
     Flash {
@@ -424,9 +458,11 @@ const PEEK_MAX: u32 = 248;
 
 fn main() {
     let cli = Cli::parse();
-    let r = match EmuBus::from_env() {
-        Some(b) => block_on(run(&b, cli)),
-        None => block_on(run(&NusbBus, cli)),
+    let r = match (offline(&cli.cmd), &cli.net, EmuBus::from_env()) {
+        (Some(r), ..) => r,
+        (None, Some(addr), _) => block_on(run_net(&addr.clone(), cli)),
+        (None, None, Some(b)) => block_on(run(&b, cli)),
+        (None, None, None) => block_on(run(&NusbBus, cli)),
     };
     match r {
         Ok(c) => std::process::exit(c),
@@ -448,6 +484,115 @@ fn exit_status(e: &Error) -> i32 {
     }
 }
 
+/// The commands that need no speaker: their exit status (None: the command needs one).
+fn offline(cmd: &Cmd) -> Option<Result<i32>> {
+    let r = match cmd {
+        Cmd::Image { files } => files.iter().try_for_each(|f| files::image_json(f).map(|j| println!("{j}"))),
+        Cmd::Sign { image, key, out } => (|| {
+            let seed = signing_key(key)?;
+            let signed = zd1_host::image::sign_system(&read(image)?, &seed)?;
+            let out = out.clone().unwrap_or_else(|| {
+                let name = image.file_name().map_or("system".into(), |n| n.to_string_lossy().into_owned());
+                image.with_file_name(format!("{}.signed", name.trim_end_matches(".gz").trim_end_matches(".cpio")))
+            });
+            write(&out, &signed)?;
+            println!("{}: {}", out.display(), files::image_json(&out)?);
+            Ok(())
+        })(),
+        Cmd::Keygen { out } => (|| {
+            let mut seed = [0u8; 32];
+            std::fs::File::open("/dev/urandom")
+                .and_then(|mut f| std::io::Read::read_exact(&mut f, &mut seed))
+                .map_err(|e| Error::Failed(format!("/dev/urandom: {e}")))?;
+            let public = zd1_host::hex(&zd1_release::public_key(&seed));
+            files::write_private(out, format!("{}\n", zd1_host::hex(&seed)).as_bytes())?;
+            let pubfile = PathBuf::from(format!("{}.pub", out.display()));
+            write(&pubfile, format!("# zd1 system update key {}\n{public}\n", &public[..8]).as_bytes())?;
+            println!("{public}\n(the secret half in {}, the public one in {})", out.display(), pubfile.display());
+            Ok(())
+        })(),
+        _ => return None,
+    };
+    Some(r.map(|_| 0))
+}
+
+/// A signing key's file (`zd1 keygen`): the seed, 64 hex digits.
+fn signing_key(path: &std::path::Path) -> Result<[u8; 32]> {
+    zd1_host::text::unhex_n::<32>(&String::from_utf8_lossy(&read(path)?))
+        .ok_or_else(|| Error::Failed(format!("{}: not a signing key (64 hex digits)", path.display())))
+}
+
+/// The speaker over the network (`--net HOST`): what travels there (docs/protocol/net.md); the system update signed.
+async fn run_net(addr: &str, cli: Cli) -> Result<i32> {
+    let term = Rc::new(Term::default());
+    term.show_log(cli.log);
+    let ev: Rc<dyn Events> = term.clone();
+    match cli.cmd {
+        Cmd::Update { image, key, no_start: false, uart: false, abort_after: None, .. } => {
+            let image = read(&image.unwrap_or_else(|| repo().join("emu/img/os/system.cpio.gz")))?;
+            let signed = match (zd1_host::image::signed_system(&image), key) {
+                (Some(_), _) => image,
+                (None, Some(k)) => zd1_host::image::sign_system(&image, &signing_key(&k)?)?,
+                (None, None) => {
+                    return Err(Error::Failed(
+                        "over the network a system must be signed: --key KEY, or `zd1 sign`".into(),
+                    ));
+                }
+            };
+            term::catch_ctrl_c(); // Ctrl-C sends ABORT
+            let m = net::connect(addr, ev.clone()).await?;
+            let again = async || net::connect(addr, Rc::new(zd1_host::Quiet)).await;
+            Ok(match update::system_over_network(m, &signed, again).await?.0 {
+                update::Outcome::FellBack { .. } => 1,
+                _ => 0,
+            })
+        }
+        Cmd::Update { .. } => {
+            Err(Error::Failed("over the network: `zd1 --net HOST update [IMAGE] [--key KEY]` only".into()))
+        }
+        Cmd::Dfu { .. } | Cmd::Flash { .. } | Cmd::Install { .. } | Cmd::Rollback { .. } => {
+            Err(Error::Failed("the MCU's firmware and the boot image go over USB".into()))
+        }
+        cmd => {
+            let again = cuts_off(&cmd);
+            let mut m = net::connect(addr, ev.clone()).await?;
+            let code = match speaker_cmd(&mut m, cmd, &ev).await? {
+                Ok(code) => code,
+                Err(_) => return Err(Error::Failed("over USB only".into())),
+            };
+            drop(m);
+            if let Some(also) = again {
+                reach_again(addr, also.as_deref(), &ev).await?;
+            }
+            Ok(code)
+        }
+    }
+}
+
+/// A command that changes what can cut this client off the speaker over the network (`spec::net::provisional`): the
+/// speaker keeps it once the client connects again, else it goes back (docs/protocol/net.md). Some: it does, with the
+/// speaker's new address when the command sets one.
+fn cuts_off(cmd: &Cmd) -> Option<Option<String>> {
+    use zd1_host::spec::net::provisional;
+    match cmd {
+        Cmd::Ip { address, .. } => Some(address.split_once('/').map(|(a, _)| a.to_string())),
+        Cmd::Wifi { ssid: Some(_), .. } | Cmd::Wifi { off: true, .. } | Cmd::Reset { yes: true, .. } => Some(None),
+        Cmd::Settings { key: Some(k), value: Some(_), .. } if provisional(k) => Some(None),
+        Cmd::Settings { import: Some(_), .. } => Some(None),
+        _ => None,
+    }
+}
+
+/// Connect again after a provisional change, at `addr` or the address the command set, until the speaker answers
+/// (then the change is kept) or its time runs out (then it goes back by itself).
+async fn reach_again(addr: &str, also: Option<&str>, ev: &Rc<dyn Events>) -> Result<()> {
+    let port = addr.rsplit_once(':').map(|(_, p)| format!(":{p}")).unwrap_or_default();
+    let mut at = vec![addr.to_string()];
+    at.extend(also.filter(|a| !addr.starts_with(*a)).map(|a| format!("{a}{port}")));
+    let connect = async |a: &str| net::connect(a, Rc::new(zd1_host::Quiet)).await;
+    zd1_host::net::reach_again(&at, &**ev, connect).await.map(drop)
+}
+
 async fn run<B: Bus>(bus: &B, cli: Cli) -> Result<i32> {
     let term = Rc::new(Term::default());
     term.show_log(cli.log);
@@ -455,12 +600,6 @@ async fn run<B: Bus>(bus: &B, cli: Cli) -> Result<i32> {
     let open = |backlog| open_mcu(bus, cli.wait, ev.clone(), backlog);
     match cli.cmd {
         Cmd::Dfu { cmd } => return dfu::dfu_cmd(bus, cmd, ev.clone()).await,
-        Cmd::Image { files } => {
-            for f in files {
-                println!("{}", files::image_json(&f)?);
-            }
-            return Ok(0);
-        }
         Cmd::Flash { image, unit } => return dfu::mcu_flash(bus, image, unit, ev).await,
         Cmd::Install { bcd, no_bcd, mcu, system, unit, yes } => {
             let bcd = if no_bcd { None } else { Some(read(&bcd.unwrap_or_else(|| repo().join("emu/img/os/os.bcd")))?) };
@@ -497,8 +636,11 @@ async fn run<B: Bus>(bus: &B, cli: Cli) -> Result<i32> {
             install::rollback(bus, &bcd, &img, ev.clone(), async |b| files::save_backup(&dir, b, &*ev)).await?;
             return Ok(0);
         }
-        Cmd::Update { image, no_start, baud, abort_after, uart } => {
-            let image = read(&image.unwrap_or_else(|| repo().join("emu/img/os/system.cpio.gz")))?;
+        Cmd::Update { image, no_start, baud, abort_after, uart, .. } => {
+            let mut image = read(&image.unwrap_or_else(|| repo().join("emu/img/os/system.cpio.gz")))?;
+            if let Some((_, at)) = zd1_host::image::signed_system(&image) {
+                image.drain(..at); // over USB the image itself: the MCU's path takes any
+            }
             if image.starts_with(b"bCoD") {
                 let mut m = open(false).await?;
                 // a module in BL2 with no image to start (a boot image update that stopped): BL2's XModem, no relay
@@ -540,7 +682,33 @@ async fn run<B: Bus>(bus: &B, cli: Cli) -> Result<i32> {
                     | Cmd::Debug { .. }
             ),
     );
-    match cli.cmd {
+    match speaker_cmd(&mut m, cli.cmd, &ev).await? {
+        Ok(code) => Ok(code),
+        Err(Cmd::Bootloader) => {
+            flash::enter_dfu(bus, Some(m), ev.clone()).await?;
+            Ok(0)
+        }
+        Err(Cmd::BulkTest { mb }) => {
+            let mut data = vec![0u8; (mb * 1048576.0) as usize];
+            let mut x = zd1_host::seed() | 1; // xorshift: data the MCU can't guess
+            for b in data.iter_mut() {
+                x ^= x << 13;
+                x ^= x >> 17;
+                x ^= x << 5;
+                *b = x as u8;
+            }
+            let (ok, line) = lab::bulk_test(&mut m, &data).await?;
+            println!("{line}");
+            Ok(if ok { 0 } else { 1 })
+        }
+        Err(_) => unreachable!("handled before"),
+    }
+}
+
+/// What a command does with the speaker over either link (USB, or the network: `--net`); the command back when it is
+/// one of USB's own (the bulk pipe, the bootloader).
+async fn speaker_cmd<L: Link>(m: &mut Mcu<L>, cmd: Cmd, ev: &Rc<dyn Events>) -> Result<std::result::Result<i32, Cmd>> {
+    match cmd {
         Cmd::Info => println!("{}", fmt::info(&m.call(&msg::Info).await?)),
         Cmd::Diag => println!("{}", fmt::diag(&m.call(&msg::Diag).await?)),
         Cmd::Hello => {
@@ -606,23 +774,23 @@ async fn run<B: Bus>(bus: &B, cli: Cli) -> Result<i32> {
             m.call(&msg::Lock { open }).await?;
             println!("gate {}", if open { "open for good" } else { "locked" });
         }
-        Cmd::Settings { export: true, .. } => print!("{}", settings::export(&mut m).await?),
+        Cmd::Settings { export: true, .. } => print!("{}", settings::export(m).await?),
         Cmd::Settings { import: Some(f), .. } => {
-            let n = settings::import(&mut m, &String::from_utf8_lossy(&read(&f)?)).await?;
+            let n = settings::import(m, &String::from_utf8_lossy(&read(&f)?)).await?;
             println!("{n} settings written");
         }
         Cmd::Settings { key: None, .. } => {
-            for (k, v) in settings::list(&mut m).await? {
+            for (k, v) in settings::list(m).await? {
                 println!("{k:<16} {v}");
             }
         }
-        Cmd::Settings { key: Some(k), value: None, .. } => println!("{}", settings::get(&mut m, &k).await?),
+        Cmd::Settings { key: Some(k), value: None, .. } => println!("{}", settings::get(m, &k).await?),
         Cmd::Settings { key: Some(k), value: Some(v), .. } if zd1_host::spec::action(&k).is_some() => {
-            settings::set(&mut m, &k, &v).await?;
+            settings::set(m, &k, &v).await?;
             println!("{k}: done");
         }
         Cmd::Settings { key: Some(k), value: Some(v), .. } => {
-            println!("{k} = {}", settings::set(&mut m, &k, &v).await?)
+            println!("{k} = {}", settings::set(m, &k, &v).await?)
         }
         Cmd::Reset { all, yes } => {
             let what = if all {
@@ -633,15 +801,15 @@ async fn run<B: Bus>(bus: &B, cli: Cli) -> Result<i32> {
             if !yes {
                 return Err(Error::Failed(format!("this puts {what} back to the defaults: again with --yes")));
             }
-            settings::reset(&mut m, all).await?;
+            settings::reset(m, all).await?;
             println!("back to the defaults: {what}");
         }
         Cmd::Pairings { forget: true } => {
-            settings::set(&mut m, "airplay.forget", "yes").await?;
+            settings::set(m, "airplay.forget", "yes").await?;
             println!("AirPlay's pairings forgotten");
         }
         Cmd::Pairings { forget: false } => {
-            let p = settings::pairings(&mut m).await?;
+            let p = settings::pairings(m).await?;
             if p.is_empty() {
                 println!("no controller paired (pairing needs airplay.pin)");
             }
@@ -649,11 +817,24 @@ async fn run<B: Bus>(bus: &B, cli: Cli) -> Result<i32> {
                 println!("{}{}", c.id, if c.admin { "  (admin)" } else { "" });
             }
         }
+        Cmd::Paired { forget: Some(id) } => {
+            settings::set(m, "net.forget", &id).await?;
+            println!("forgot {id}");
+        }
+        Cmd::Paired { forget: None } => {
+            let c = settings::list_of::<_, msg::Controller>(m, zd1_host::spec::Record::Controllers).await?;
+            if c.is_empty() {
+                println!("no client paired over the network");
+            }
+            for x in c {
+                println!("{}  {:<32} {}", x.id, x.name, x.since);
+            }
+        }
         Cmd::Servers => {
-            let mut s = settings::servers(&mut m).await?;
+            let mut s = settings::servers(m).await?;
             if s.is_empty() {
                 zd1_host::sleep(2000).await;
-                s = settings::servers(&mut m).await?;
+                s = settings::servers(m).await?;
             }
             if s.is_empty() {
                 println!("no snapserver answered");
@@ -663,24 +844,24 @@ async fn run<B: Bus>(bus: &B, cli: Cli) -> Result<i32> {
             }
         }
         Cmd::State => {
-            let st = settings::state_msg(&mut m).await?;
+            let st = settings::state_msg(m).await?;
             for (f, v) in st.fields() {
                 println!("{:<16} {}{}", f.name, settings::shown(f, v), if f.set { "" } else { "  (status)" });
             }
         }
-        Cmd::Name { name: None } => println!("{}", settings::get(&mut m, "name").await?),
-        Cmd::Name { name: Some(n) } => println!("{}", settings::set(&mut m, "name", &n).await?),
+        Cmd::Name { name: None } => println!("{}", settings::get(m, "name").await?),
+        Cmd::Name { name: Some(n) } => println!("{}", settings::set(m, "name", &n).await?),
         Cmd::Wifi { off: true, .. } => {
-            settings::wifi_off(&mut m).await?;
+            settings::wifi_off(m).await?;
             println!("Wi-Fi off");
         }
         Cmd::Wifi { scan: true, .. } => {
             // the module answers from its last scan and starts one: a fresh radio's first answer is empty
-            let mut nets = settings::scan(&mut m).await?;
+            let mut nets = settings::scan(m).await?;
             if nets.is_empty() {
                 println!("scanning...");
                 zd1_host::sleep(5000).await;
-                nets = settings::scan(&mut m).await?;
+                nets = settings::scan(m).await?;
             }
             if nets.is_empty() {
                 println!("no network seen");
@@ -690,7 +871,7 @@ async fn run<B: Bus>(bus: &B, cli: Cli) -> Result<i32> {
             }
         }
         Cmd::Wifi { known: true, .. } => {
-            let n = settings::networks(&mut m).await?;
+            let n = settings::networks(m).await?;
             if n.is_empty() {
                 println!("no network known");
             }
@@ -699,16 +880,16 @@ async fn run<B: Bus>(bus: &B, cli: Cli) -> Result<i32> {
             }
         }
         Cmd::Wifi { ssid: Some(ssid), forget: true, .. } => {
-            settings::forget(&mut m, &ssid).await?;
+            settings::forget(m, &ssid).await?;
             println!("forgot {ssid}");
         }
         Cmd::Wifi { ssid: Some(ssid), first: true, .. } => {
-            settings::prefer(&mut m, &ssid).await?;
+            settings::prefer(m, &ssid).await?;
             println!("{ssid} first");
         }
         Cmd::Wifi { ssid: None, .. } => {
-            let st = settings::state(&mut m).await?;
-            let known = settings::networks(&mut m).await.unwrap_or_default();
+            let st = settings::state(m).await?;
+            let known = settings::networks(m).await.unwrap_or_default();
             println!("{}", speaker::wifi(&st, &known).0);
         }
         Cmd::Wifi { ssid: Some(ssid), open, passphrase_file, .. } => {
@@ -718,7 +899,7 @@ async fn run<B: Bus>(bus: &B, cli: Cli) -> Result<i32> {
                 (None, _) => Some(term::passphrase(&format!("passphrase for {ssid}: "))?),
             };
             let how = pw.as_deref().map_or(settings::Wifi::Open, settings::Wifi::Wpa2);
-            settings::join(&mut m, &ssid, how).await?;
+            settings::join(m, &ssid, how).await?;
             println!("Wi-Fi: {ssid} ({}); the speaker joins it now", if open { "open" } else { "WPA2" });
         }
         Cmd::Ip { address, gateway, dns, eth } => {
@@ -728,20 +909,20 @@ async fn run<B: Bus>(bus: &B, cli: Cli) -> Result<i32> {
                 _ => "static".into(),
             };
             if mode == "static" {
-                settings::set(&mut m, &format!("{i}.address"), &address).await?;
+                settings::set(m, &format!("{i}.address"), &address).await?;
                 if let Some(g) = gateway {
-                    settings::set(&mut m, &format!("{i}.gateway"), &g).await?;
+                    settings::set(m, &format!("{i}.gateway"), &g).await?;
                 }
                 if let Some(d) = dns {
-                    settings::set(&mut m, &format!("{i}.dns"), &d).await?;
+                    settings::set(m, &format!("{i}.dns"), &d).await?;
                 }
             }
-            println!("{i}.mode = {}", settings::set(&mut m, &format!("{i}.mode"), &mode).await?);
+            println!("{i}.mode = {}", settings::set(m, &format!("{i}.mode"), &mode).await?);
         }
         Cmd::Receiver { name, state } => {
             let key = name.to_possible_value().unwrap().get_name().to_string();
             let on = state.to_possible_value().unwrap().get_name().to_string();
-            println!("{key} {}", settings::set(&mut m, &key, &on).await?);
+            println!("{key} {}", settings::set(m, &key, &on).await?);
         }
         Cmd::Slot { op: None, .. } => println!("{}", fmt::boot(&m.call(&msg::BootState).await?)),
         Cmd::Slot { op: Some(op), restart } => {
@@ -768,7 +949,7 @@ async fn run<B: Bus>(bus: &B, cli: Cli) -> Result<i32> {
         Cmd::Module { op, timeout } => {
             let r = m.call(&msg::Module { op, timeout_s: timeout }).await?;
             println!("module {}, status 0x{:04x}{}", r.state, r.status, if r.ok { "" } else { " (FAILED)" });
-            return Ok(if r.ok { 0 } else { 1 });
+            return Ok(Ok(if r.ok { 0 } else { 1 }));
         }
         Cmd::Reg { op: RegOp::Read { reg, v } } => {
             let d = m.call(&msg::ModRead { reg, v }).await?.data;
@@ -803,7 +984,7 @@ async fn run<B: Bus>(bus: &B, cli: Cli) -> Result<i32> {
                 write(&path, &d)?;
                 let sha = zd1_host::hex(&zd1_host::sha256(&d));
                 println!("{} bytes from 0x{addr:08x} into {} (sha256 {sha})", d.len(), path.display());
-                return Ok(0);
+                return Ok(Ok(0));
             }
             for (i, row) in d.chunks(16).enumerate() {
                 let cells: Vec<String> = if words {
@@ -820,25 +1001,9 @@ async fn run<B: Bus>(bus: &B, cli: Cli) -> Result<i32> {
         Cmd::Reboot => {
             m.call(&msg::Reboot).await?;
         }
-        Cmd::Bootloader => {
-            flash::enter_dfu(bus, Some(m), ev.clone()).await?;
-        }
-        Cmd::BulkTest { mb } => {
-            let mut data = vec![0u8; (mb * 1048576.0) as usize];
-            let mut x = zd1_host::seed() | 1; // xorshift: data the MCU can't guess
-            for b in data.iter_mut() {
-                x ^= x << 13;
-                x ^= x >> 17;
-                x ^= x << 5;
-                *b = x as u8;
-            }
-            let (ok, line) = lab::bulk_test(&mut m, &data).await?;
-            println!("{line}");
-            return Ok(if ok { 0 } else { 1 });
-        }
-        Cmd::Console { action: None } => term::console(&mut m).await?,
+        Cmd::Console { action: None } => term::console(m).await?,
         Cmd::Console { action: Some(ConsoleAction::Run { timeout, cmds }) } => {
-            let mut sh = console::Shell::open(&mut m).await?;
+            let mut sh = console::Shell::open(m).await?;
             let mut status = 0;
             for c in &cmds {
                 let (out, s) = sh.run(c, timeout * 1000).await?;
@@ -848,7 +1013,7 @@ async fn run<B: Bus>(bus: &B, cli: Cli) -> Result<i32> {
                 status = s;
             }
             sh.close().await?;
-            return Ok(status);
+            return Ok(Ok(status));
         }
         Cmd::Console { action: Some(ConsoleAction::Log) } => {
             term::catch_ctrl_c();
@@ -856,7 +1021,7 @@ async fn run<B: Bus>(bus: &B, cli: Cli) -> Result<i32> {
             let mut o = std::io::stdout();
             while !ev.cancelled() {
                 if m.poll().await? == 0 {
-                    m.usb.sleep(20).await;
+                    m.sleep(20).await;
                 }
                 use std::io::Write as _;
                 let _ = o.write_all(&m.console_take()).and_then(|_| o.flush());
@@ -864,18 +1029,13 @@ async fn run<B: Bus>(bus: &B, cli: Cli) -> Result<i32> {
             m.console_open(false).await?;
         }
         Cmd::Xmodem { image, in_bl2, blocks } => {
-            for l in xmodem::xm_install(&mut m, &read(&image)?, in_bl2, blocks).await? {
+            for l in xmodem::xm_install(m, &read(&image)?, in_bl2, blocks).await? {
                 println!("{l}");
             }
         }
-        Cmd::Dfu { .. }
-        | Cmd::Flash { .. }
-        | Cmd::Update { .. }
-        | Cmd::Install { .. }
-        | Cmd::Rollback { .. }
-        | Cmd::Image { .. } => unreachable!(),
+        other => return Ok(Err(other)),
     }
-    Ok(0)
+    Ok(Ok(0))
 }
 
 async fn open_mcu<B: Bus>(bus: &B, wait: f64, ev: Rc<dyn Events>, backlog: bool) -> Result<Mcu<B::Dev>> {

@@ -1,8 +1,8 @@
 //! A module image through BL2's XModem receiver over SPI, driven by our MCU (`XmFrame`): the way to install one with
 //! our MCU firmware running, without the bootloader's relay.
 
+use crate::link::Link;
 use crate::spec::ModOp;
-use crate::usb::Usb;
 use crate::{Error, Mcu, Result, msg};
 
 use zd1_spi::spec::xmodem::{ACK, BLOCK_1K, CAN, EOT, START};
@@ -13,12 +13,12 @@ use zd1_spi::xmodem::block;
 /// `wait_us` then counts from there.
 const XM_WAIT_MS: u16 = 500;
 const XM_ANSWER_MS: f64 = 10_000.0;
-async fn xm_answer<U: Usb>(m: &mut Mcu<U>, mut x: msg::XmReply, sent: f64) -> Result<msg::XmReply> {
+async fn xm_answer<L: Link>(m: &mut Mcu<L>, mut x: msg::XmReply, sent: f64) -> Result<msg::XmReply> {
     if !x.answers.is_empty() {
         return Ok(x);
     }
     while x.answers.is_empty() && crate::now_ms() - sent < XM_ANSWER_MS {
-        m.usb.sleep(20).await;
+        m.sleep(20).await;
         x.answers = m.call(&msg::XmFrame::default()).await?.answers;
     }
     if !x.answers.is_empty() {
@@ -32,8 +32,8 @@ async fn xm_answer<U: Usb>(m: &mut Mcu<U>, mut x: msg::XmReply, sent: f64) -> Re
 /// 1029-byte frame goes to the MCU in pieces, then to BL2 in one write; the MCU times the write, BL2's answer and the
 /// read-out. `Module BL2` first unless `in_bl2`. BL2 erases the app partition as the download starts: stopping
 /// midway leaves it invalid. `limit`: a rehearsal of that many blocks, no EOT. Lines for a person.
-pub async fn xm_install<U: Usb>(
-    m: &mut Mcu<U>,
+pub async fn xm_install<L: Link>(
+    m: &mut Mcu<L>,
     data: &[u8],
     in_bl2: bool,
     limit: Option<usize>,
@@ -59,7 +59,7 @@ pub async fn xm_install<U: Usb>(
         if crate::now_ms() - t0 > 90_000.0 {
             return Err(Error::Timeout("no C from BL2 within 90 s: is it waiting for an XModem download?".into()));
         }
-        m.usb.sleep(200).await;
+        m.sleep(200).await;
     }
     ev.step(&format!("BL2 asks (C) after {:.1} s; {n} blocks", (crate::now_ms() - t0) / 1000.0));
     const PIECE: usize = 240;

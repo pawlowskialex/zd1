@@ -76,8 +76,10 @@ A bootloader quiet for 7 s mid-transfer gets the block again; 30 s ends it.
 - How our OS starts it: `zd1-ctl mcu-update` (or anything that writes `mcu-update` to /run/zd1link) checks the staged
   `.dmb` and notifies 0xD7 (`MCU_FW`, `docs/protocol/registers.md`); our MCU firmware then goes where it is taken
   (`mcu/src/mcufw.c`): our preloader on the ZD1 (GPLP0 bit 25, the good slot in GPLP1 for our boot stub, the module
-  off, a watchdog reset), the HBL on the ZD1L (ISP_FORCE: `selfdfu_enter`). The image stays staged; nothing yet
-  decides on its own that the MCU wants one (`docs/backlog.md`).
+  off, a watchdog reset), the HBL on the ZD1L (ISP_FORCE: `selfdfu_enter`). The image stays staged. The system
+  asks by itself when the MCU runs another version than the app it carries (`/usr/lib/zd1/mcu/zd1.dmb`, the same
+  build's), at the MCU's hello on a confirmed slot, twice per version at most: the MCU follows its OS
+  (`docs/protocol/net.md`; `zd1-linkd`, `mcufw::follow`).
 
 ## Our ZD1 preloader [EMU]
 `mcu/preloader/preloader.c`, 0x80004000-0x80007DFF (7 KB), started by B&W's DFU bootloader where the app used to start;

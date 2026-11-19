@@ -7,3 +7,4 @@ description = "The host <-> MCU protocol of the Zeppelin Air (USB, our MCU firmw
 
 [dependencies]
 zd1-spi.workspace = true
+zd1-text.workspace = true

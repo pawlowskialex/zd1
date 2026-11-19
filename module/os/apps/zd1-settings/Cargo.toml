@@ -10,3 +10,4 @@ zd1-hostlink.workspace = true
 zd1-persparam.workspace = true
 zd1-svc.workspace = true
 zd1-sys.workspace = true
+zd1-text.workspace = true

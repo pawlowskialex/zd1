@@ -119,6 +119,11 @@ None of these has been seen on the unit. Treat them as "the code does something 
   runs the app at 0x80004000 until it is flashed with the new layout).
 - **The Lightning model's image with the system as the rescue** and its first start's self-install into slot A
   (`docs/module/storage.md`).
+- **The network link** (`docs/protocol/net.md`): `zd1 --net` and the page's WebAssembly over a WebSocket to our OS,
+  paired with a press; the MCU's requests through SPI reg 0xD9, our OS's own; the network settings provisional; the
+  signed system update into the other slot over the network, started on trial (reg 0xD8). The MCU following its OS
+  (not even in the emulator end to end: its builds are `-dirty`); the ZD1L's first install from the page (its
+  requests checked against a stand-in only). `Dfu` refused on a ZD1L (its bootloader has no USB).
 
 ## Not done
 - **Spotify Connect from a Spotify app**: Spotify refuses the test account the audio key of every track

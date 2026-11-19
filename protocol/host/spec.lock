@@ -48,6 +48,12 @@ field 0x42 27 u16 amp_idle_s
 field 0x42 28 u8 volume_cap
 field 0x42 29 bool console_open
 msg 0x0E request Unlock
+msg 0x20 record Pair
+field 0x20 0 str:32 name
+msg 0x21 record SystemUpdate
+field 0x21 0 enum:UpdateOp op
+field 0x21 1 u32 offset
+field 0x21 2 bytes:32768 data
 msg 0x0F request Lock
 field 0x0F 0 bool open
 msg 0x04 request Peek
@@ -110,6 +116,7 @@ field 0x60 32 u16 spotify_bitrate
 field 0x60 33 str:64 stamp_a
 field 0x60 34 str:64 stamp_b
 field 0x60 35 str:12 boot
+field 0x60 36 bool net
 msg 0x61 record ScanEntry
 field 0x61 0 str:32 ssid
 field 0x61 1 u8 signal
@@ -130,6 +137,11 @@ field 0x65 1 str:32 wifi_forget
 field 0x65 2 str:32 wifi_first
 field 0x65 3 str:8 airplay_forget
 field 0x65 4 str:8 reset
+field 0x65 5 str:8 net_forget
+msg 0x66 record Controller
+field 0x66 0 str:8 id
+field 0x66 1 str:32 name
+field 0x66 2 str:16 since
 msg 0x09 request ModRead
 field 0x09 0 u8 reg
 field 0x09 1 bool v
@@ -309,6 +321,7 @@ enum Record 1 SCAN
 enum Record 2 NETWORKS
 enum Record 3 SERVERS
 enum Record 4 PAIRINGS
+enum Record 5 CONTROLLERS
 enum ModState 0 OFF
 enum ModState 1 RESET
 enum ModState 2 BOOTING
@@ -338,6 +351,8 @@ enum Sink 0 DISCARD
 enum Sink 1 MODULE
 enum UpdateOp 1 BEGIN
 enum UpdateOp 2 ABORT
+enum UpdateOp 3 DATA
+enum UpdateOp 4 END
 enum UpdateState 0 IDLE
 enum UpdateState 1 STARTING
 enum UpdateState 2 STREAMING

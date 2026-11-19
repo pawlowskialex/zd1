@@ -828,7 +828,7 @@ static void kinds_and_codes(void){
     CHECK(zd1_reg_kind(0xD6) == 'V', "kind %02x", 0xD6);
     CHECK(zd1_reg_kind(0xD7) == 'F', "kind %02x", 0xD7);
     CHECK(zd1_reg_kind(0xD8) == 'F', "kind %02x", 0xD8);
-    CHECK(zd1_reg_kind(0xD9) == 'F', "kind %02x", 0xD9);
+    CHECK(zd1_reg_kind(0xD9) == 'V', "kind %02x", 0xD9);
     CHECK(zd1_reg_kind(0xDA) == 'F', "kind %02x", 0xDA);
     CHECK(zd1_reg_kind(0xDB) == 'F', "kind %02x", 0xDB);
     CHECK(zd1_reg_kind(0xDC) == 'V', "kind %02x", 0xDC);

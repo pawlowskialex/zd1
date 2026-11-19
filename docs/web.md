@@ -1,6 +1,7 @@
 # The web page: installer and configurator
 
-`host/web` is the speaker for anyone with a browser and a USB cable: install, update, restore, and the settings.
+`host/web` is the speaker for anyone with a browser and a USB cable, or on the speaker's network once it runs our
+software: install, update, restore, and the settings.
 `zd1` (`host/cli`) is the same flows from a terminal; both are `host/core` (`docs/module/updater.md` has the flows'
 mechanics and measurements). This page says what the page does now, what it is to become, and the rules that keep a
 speaker in a state the tools understand. Tags: `docs/README.md`.
@@ -10,9 +11,17 @@ speaker in a state the tools understand. Tags: `docs/README.md`.
 no framework). `nix build .#web` is the page as a directory. It is hosted at https://pawlowskialex.github.io/zd1/ with the
 releases' images (below, Releases); `python3 tools/zeppelin web` serves it on localhost with this checkout's built
 images offered under `images/` instead (`index.json` names them). The three views below are built:
-- **Not connected**: Connect (the chooser filters on our firmware 03EB:2FE0 and the DFU bootloader 03EB:2FF8), and
-  a triage by what the speaker does: our firmware by its light, B&W's software (never in the list: the key-hold into
-  DFU), a stopped update, and a speaker that isn't listed (cable, browsers, Windows not yet, the Linux udev rule).
+- **Not connected**: Connect (the chooser filters on our firmware 03EB:2FE0 and the DFU bootloader 03EB:2FF8), or an
+  address to connect over the network (`docs/protocol/net.md`: the browser's Local Network Access, pairing with a
+  press the first time; `Speaker.connectNet`), and a triage by what the speaker does: our firmware by its light, B&W's
+  software (never in the list: the key-hold into DFU), the Lightning model's first install over the network (its
+  BL2's web updater, `zd1l.js`), a stopped update, and a speaker that isn't listed (cable, browsers, Windows not yet,
+  the Linux udev rule).
+- **Over the network** the app view is the same, less what is USB's (the MCU's firmware, the boot image, the console,
+  the debug services, the gate, the amp's lock, the slots' way back: hidden, `body.net .usb-only`), plus the paired
+  clients (Advanced) with Forget; the update installs the release's signed system (`system-VERSION.signed`) and the
+  connection comes back by itself; a network change connects again to keep it (`reachAgain`). [EMU 2026-11-19: the
+  page's WebAssembly over node's WebSocket, `host/web/test/net.mjs`; not yet in a browser.]
 - **Bootloader**: the boot log and the module's state, and one primary action from them: no boot of ours logged,
   **Install** the latest release (`Bootloader.install`: host/core's `install`, the `.bcd` when the release has one);
   ours ran, **Start**; ours stopped early, **Repair** (the release's MCU firmware again). Under it the backups this
@@ -202,6 +211,7 @@ what it did last. The base layer makes every refusal a reported state with its e
 | a slot trial | only slots with a stamp are offered; a slot the updater didn't finish holds no system and the trial falls back by itself | page, MCU |
 | the boot image | a relay that stops after BL2 erased the app partition leaves the module in BL2 ("Application: invalid image"): the update starts our firmware again all the same and writes the image through BL2's XModem; a page that finds our firmware with the module in BL2 offers that write ("The module's boot image is missing"). BL2 acknowledges the EOT before it is done writing (its console then says `FirmwareUpdate::processResourceData() Success`, `doFirmwareUpdate() OK`): the module is restarted once BL2's console has been quiet for 10 s, and written once more if it is in BL2 again. The page asks to stay in front meanwhile: a background tab's timers are slowed, and the relay and XModem are paced by the page [HW 2026-11-03: the hosted page's relay stopped in a background tab, BL2 left with no image; the local page's write from BL2 with a restart right after the EOT left the image invalid; with the quiet wait it booted slot B (WebUSB, 2077 blocks in 632 s)] | `host/core`, page |
 | the gate | a press of ON/OFF, as now; unattended units open it for good | unchanged |
+| over the network | a press pairs the browser (`Pair`); only the spec's `net` requests travel, refused otherwise by our OS and the MCU; the system signed, no older than the running one; network settings kept once the page reaches the speaker again (`docs/protocol/net.md`) | module, MCU, page |
 
 ## Order of work
 Done and seen on the unit: the stock dialect out, the module states, the State record, acknowledged V writes;

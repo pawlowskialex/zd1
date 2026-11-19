@@ -26,6 +26,11 @@ pub const FILE: &str = "/data/zd1/settings";
 pub const NETWORKS: &str = "/data/zd1/networks";
 /// zd1-airplay's pairing store (its `peers`: `ID HEXKEY admin|user` a line, the oldest first; its `identity`).
 pub const AIRPLAY: &str = "/data/zd1/airplay";
+/// The network link's (docs/protocol/net.md, zd1-netd): the speaker's own key (`key`) and the clients paired with it
+/// (`controllers`: `HEXKEY SINCE NAME` a line, the oldest first; SINCE `YYYY-MM-DDTHH:MM` or `-`).
+pub const NET: &str = "/data/zd1/net";
+/// The most clients paired at once: another needs one forgotten first.
+pub const CONTROLLERS_MAX: usize = 16;
 
 /// The settings: the State record's writable fields (protocol/host/src/lib.rs, `State`), in the spec's order.
 pub fn fields() -> impl Iterator<Item = &'static Field> {
@@ -313,6 +318,75 @@ pub fn pairings() -> Vec<(String, bool)> {
     pairings_in(Path::new(AIRPLAY))
 }
 
+// ---- the clients paired over the network ----
+
+/// A client paired over the network: its static key (Noise's X25519), its name, when (UTC, or empty).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Controller {
+    pub key: [u8; 32],
+    pub name: String,
+    pub since: String,
+}
+
+impl Controller {
+    /// What the `Controllers` record and `net.forget` call it (`zd1_text::key_id`).
+    pub fn id(&self) -> String {
+        zd1_text::key_id(&self.key)
+    }
+}
+
+/// The clients paired over the network, the oldest first, from `dir` (/data/zd1/net).
+pub fn controllers_in(dir: &Path) -> Vec<Controller> {
+    std::fs::read_to_string(dir.join("controllers"))
+        .unwrap_or_default()
+        .lines()
+        .filter_map(|l| {
+            let mut f = l.splitn(3, ' ');
+            let key: [u8; 32] = unhex(f.next()?)?.try_into().ok()?;
+            let since = f.next()?;
+            Some(Controller {
+                key,
+                since: if since == "-" { String::new() } else { since.replace('T', " ") },
+                name: f.next().unwrap_or_default().to_string(),
+            })
+        })
+        .collect()
+}
+
+pub fn controllers() -> Vec<Controller> {
+    controllers_in(Path::new(NET))
+}
+
+/// Pair `c` (a key paired already keeps its place, with the new name). Err: [`CONTROLLERS_MAX`] are paired.
+pub fn pair_in(dir: &Path, c: &Controller) -> Result<(), String> {
+    let mut all = controllers_in(dir);
+    if let Some(o) = all.iter_mut().find(|o| o.key == c.key) {
+        o.name = c.name.clone();
+    } else if all.len() >= CONTROLLERS_MAX {
+        return Err(format!("{CONTROLLERS_MAX} clients are paired: forget one first (net.forget)"));
+    } else {
+        all.push(c.clone());
+    }
+    save_controllers(dir, &all)
+}
+
+pub fn pair(c: &Controller) -> Result<(), String> {
+    pair_in(Path::new(NET), c)
+}
+
+fn save_controllers(dir: &Path, all: &[Controller]) -> Result<(), String> {
+    std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+    let one_line = |s: &str| s.chars().map(|c| if c.is_control() { ' ' } else { c }).collect::<String>();
+    let text: String = all
+        .iter()
+        .map(|c| {
+            let since = if c.since.is_empty() { "-".into() } else { c.since.replace(' ', "T") };
+            format!("{} {since} {}\n", hex(&c.key), one_line(&c.name))
+        })
+        .collect();
+    write_private(&dir.join("controllers").to_string_lossy(), &text)
+}
+
 // ---- the actions ----
 
 /// Do an action (`Actions` in the spec) on the module's state in `dir` (/data/zd1): checked like a setting, done, or
@@ -345,10 +419,21 @@ pub fn act_in(dir: &Path, key: &str, v: &str) -> Result<(), String> {
             save_networks(dir, &nets)
         }
         "airplay.forget" => forget_pairings(dir),
+        "net.forget" => {
+            let net = dir.join("net");
+            let mut all = controllers_in(&net);
+            let before = all.len();
+            all.retain(|c| v != "all" && c.id() != v);
+            if all.len() == before {
+                return Err(format!("{key}: no client {v} is paired"));
+            }
+            save_controllers(&net, &all)
+        }
         "reset" => {
             if v == "all" {
                 forget_pairings(dir)?;
                 remove(&dir.join("networks"))?;
+                remove(&dir.join("net").join("controllers"))?;
             }
             remove(&dir.join("settings"))
         }
@@ -461,6 +546,36 @@ mod tests {
         set_in(s, "name", "Kitchen").unwrap();
         act_in(&d, "reset", "all").unwrap();
         assert!(networks_in(&d).is_empty() && load_from(s).is_empty());
+        std::fs::remove_dir_all(&d).unwrap();
+    }
+
+    #[test]
+    fn controllers() {
+        let d = tmp("controllers");
+        let net = d.join("net");
+        let c = |k: u8, name: &str| Controller { key: [k; 32], name: name.into(), since: "2026-11-19 20:15".into() };
+        pair_in(&net, &c(1, "Chrome on a Mac")).unwrap();
+        pair_in(&net, &Controller { since: String::new(), ..c(2, "zd1\nwith a line") }).unwrap();
+        pair_in(&net, &c(1, "Chrome")).unwrap();
+        let all = controllers_in(&net);
+        assert_eq!(all.len(), 2, "a key paired again keeps its place");
+        assert_eq!(
+            (all[0].name.as_str(), all[0].since.as_str(), all[0].id().as_str()),
+            ("Chrome", "2026-11-19 20:15", "01010101")
+        );
+        assert_eq!((all[1].name.as_str(), all[1].since.as_str()), ("zd1 with a line", ""));
+        assert!(act_in(&d, "net.forget", "09090909").is_err());
+        act_in(&d, "net.forget", "01010101").unwrap();
+        assert_eq!(controllers_in(&net)[0].key, [2; 32]);
+        for k in 3..=CONTROLLERS_MAX as u8 + 1 {
+            pair_in(&net, &c(k, "x")).unwrap();
+        }
+        assert!(pair_in(&net, &c(99, "one too many")).is_err());
+        act_in(&d, "net.forget", "all").unwrap();
+        assert!(controllers_in(&net).is_empty());
+        pair_in(&net, &c(1, "again")).unwrap();
+        act_in(&d, "reset", "all").unwrap();
+        assert!(controllers_in(&net).is_empty(), "back to the factory: none paired");
         std::fs::remove_dir_all(&d).unwrap();
     }
 

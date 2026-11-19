@@ -4,10 +4,14 @@ use crate::*;
 fn host_spec_is_consistent() {
     for (i, m) in MESSAGES.iter().enumerate() {
         assert!(MESSAGES[i + 1..].iter().all(|o| o.id != m.id && o.name != m.name), "{}: id and name unique", m.name);
-        if m.module {
+        if m.module && m.reply.is_some() {
+            // a request our OS answers over the network: one WebSocket message with its call's framing and Noise's tag
+            assert!(m.net, "{}: our OS answers it over the network only", m.name);
+            assert!(m.max_size() + 2 + 16 <= net::MESSAGE_MAX, "{}: {} bytes > net::MESSAGE_MAX", m.name, m.max_size());
+        } else if m.module {
             // relayed in pieces (ModRecord), kept whole by the MCU and pushed in one SPI notification
             assert!(m.max_size() <= RECORD_MAX, "{}: {} bytes > RECORD_MAX", m.name, m.max_size());
-            assert!(m.reply.is_none() && !m.gated, "{}: a record is neither a request nor gated", m.name);
+            assert!(!m.gated && !m.net, "{}: a record is neither gated nor a request", m.name);
         } else {
             assert!(m.max_size() <= MSG_MAX, "{}: {} bytes > MSG_MAX", m.name, m.max_size());
             assert!(m.max_size() + 5 <= POLL_MAX, "{}: a reply record fits a POLL", m.name);
@@ -73,4 +77,16 @@ fn timeouts_and_masks() {
     assert_eq!(["auto_switch", "amp_idle_s", "volume_cap"].map(|f| p.mask_bit(f)), [Some(1), Some(2), Some(4)]);
     assert_eq!(p.mask_bit("change"), None);
     assert!(message("PipeData").unwrap().emu && !message("Pipe").unwrap().emu);
+}
+
+#[test]
+fn records_and_key_files() {
+    let mut b = record::encode(record::REPLY, &[7, 0, 0x7E]);
+    b.extend(record::encode(record::EVENT, b"state"));
+    let r: alloc::vec::Vec<(u8, &[u8])> = record::split(&b).collect();
+    assert_eq!(r, [(record::REPLY, &[7u8, 0, 0x7E][..]), (record::EVENT, &b"state"[..])]);
+    assert_eq!(record::split(&b[..4]).count(), 1, "a record cut short: what there is");
+    let k = net::KeyPair { private: [1; 32], public: [2; 32] };
+    assert!(net::KeyPair::from_text(&k.to_text()) == Some(k), "the key file read back");
+    assert!(net::KeyPair::from_text("01 02").is_none());
 }

@@ -106,6 +106,7 @@ serial window). A wait looks at the output since the previous step began.
 | `--sh CMD` | a command in the module's Linux shell; waits for it to end, fails the session on a nonzero exit |
 | `--send TEXT` | type TEXT + CR on the module console (KnOS shell, BL1/BL2 menus; `\xNN` for raw bytes) |
 | `--sleep S` | run S seconds |
+| `--press S` | ON/OFF pressed S (virtual) seconds from now, while the next steps run: the person at the speaker a pairing over the network waits for (`--press 5 --host 'zd1 --net 127.0.0.1:18080 info'`, with `--mcu --fwd 18080:80`; `docs/protocol/net.md`). Build `zd1` first: a `cargo run` that compiles takes longer than the press waits |
 | `--spi CMDS` | module alone: the SPI test host plays the MCU on J2 (`rd 0x11 rdv 0x25`; `wr REG B0 B1`, `wrv REG HEX`, `req`: `emu/renode/cr870/J2Link.cs`) |
 | `--host CMD` | a host command while the boards run as fast as they go (`$RUN` = the run directory, `ZD1DFU_EMU` set with `--mcu`): `--host 'zd1 module power'` drives our MCU firmware. `zd1` is on the PATH in `nix develop` only: run zemu there (`nix develop -c python3 emu/zemu run ...`), else the step fails with exit 127 |
 

@@ -1,0 +1,24 @@
+[package]
+name = "zd1-netd"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+description = "The network link: paired clients reach the speaker's host link over a WebSocket in a Noise session; the system update over the network"
+
+[dependencies]
+libc = "0.2"
+sha2 = { version = "0.10", default-features = false }
+# Noise without `std`: its std feature would pull in ring and BLAKE2, which we don't use
+snow = { version = "0.10", default-features = false, features = [
+  "use-chacha20poly1305",
+  "use-sha2",
+  "use-curve25519",
+  "use-getrandom",
+] }
+tungstenite = { version = "0.28", default-features = false, features = ["handshake"] }
+zd1-hostlink.workspace = true
+zd1-release.workspace = true
+zd1-settings.workspace = true
+zd1-slot.workspace = true
+zd1-sys.workspace = true
+zd1-text.workspace = true

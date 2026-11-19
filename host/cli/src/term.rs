@@ -139,7 +139,7 @@ impl Drop for Raw {
 }
 
 /// A terminal on the module's console (Ctrl-] leaves): the keys to it as typed, what it says to stdout.
-pub async fn console<U: zd1_host::usb::Usb>(m: &mut zd1_host::Mcu<U>) -> Result<()> {
+pub async fn console<L: zd1_host::Link>(m: &mut zd1_host::Mcu<L>) -> Result<()> {
     use std::io::Read as _;
     use std::sync::mpsc;
     m.console_open(true).await?;
@@ -168,7 +168,7 @@ pub async fn console<U: zd1_host::usb::Usb>(m: &mut zd1_host::Mcu<U>) -> Result<
                     None => m.console_write(&b).await?,
                 },
                 Err(mpsc::TryRecvError::Disconnected) => return Ok(()),
-                Err(mpsc::TryRecvError::Empty) if n == 0 => m.usb.sleep(10).await,
+                Err(mpsc::TryRecvError::Empty) if n == 0 => m.sleep(10).await,
                 Err(mpsc::TryRecvError::Empty) => {}
             }
         }

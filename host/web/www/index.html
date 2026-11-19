@@ -56,11 +56,22 @@
   <section id="welcome" class="panel">
     <h2>Connect</h2>
     <div class="panel-body">
-      <p class="lead">Plug the speaker into this computer with a USB cable and connect. The page talks to it over USB
-         only: no network, no account.</p>
+      <p class="lead">Plug the speaker into this computer with a USB cable and connect, or reach it over your network
+         once it runs our software. The page talks to the speaker itself: no account, no cloud.</p>
       <p id="nousb" class="warn" hidden>This browser has no WebUSB: open the page in Chrome, Edge, Brave or Opera.</p>
       <div class="row"><button type="button" id="connect" class="primary">Connect…</button>
         <span class="small">pick “Zeppelin Air”, or its bootloader, in the browser's list</span></div>
+      <h3>Over the network</h3>
+      <form id="net-form" class="row">
+        <label for="net-addr">Address</label>
+        <input id="net-addr" autocomplete="off" spellcheck="false" placeholder="192.0.2.20, or its name.local">
+        <button type="submit">Connect</button>
+      </form>
+      <p class="small">The speaker's address on your network (the Network panel shows it once connected over USB). The
+         browser asks once to let this page reach devices on your network; the speaker asks for a press of its ON/OFF
+         key the first time, and knows this browser from then on. Over the network the page does all but install the
+         main board's firmware and the module's boot image: those go over USB (the main board follows its system by
+         itself).</p>
       <h3>What is the speaker doing?</h3>
       <details class="triage">
         <summary>Its light shows what it plays: red breathing as it starts, dim red in standby, white for the network, sky blue for USB</summary>
@@ -72,6 +83,26 @@
         <p>B&amp;W's firmware doesn't talk to this page and never shows up in the list. Start it in its bootloader
            instead: unplug its power, hold ON/OFF, plug the power in while holding it, then connect and pick the
            bootloader (<span class="data">03EB:2FF8</span>). The page offers the install from there.</p>
+      </details>
+      <details class="triage" id="zd1l">
+        <summary>A Zeppelin Air with Lightning on B&amp;W's software: its first install, over the network</summary>
+        <p>The Lightning model takes its first install over a network cable, through the updater its network module
+           starts on its own (both chips from one file). Afterwards it is reachable over the network as above.</p>
+        <ol>
+          <li>Connect it to your router with an Ethernet cable.</li>
+          <li>Unplug its power, hold ON/OFF, plug the power in while holding it: its light goes white, and its updater
+             takes an address from your router (the router's list of devices shows it).</li>
+          <li>Its address here, then Install: the page sends the release's file to it without seeing its answers (it
+             doesn't let web pages read them), then waits for our software to answer at the same address.</li>
+        </ol>
+        <form id="zd1l-form" class="row">
+          <label for="zd1l-addr">Address</label>
+          <input id="zd1l-addr" autocomplete="off" spellcheck="false" placeholder="192.0.2.20">
+          <button type="submit">Install…</button>
+        </form>
+        <p class="small">The way back is B&amp;W's own file the same way (blobs/zd1l/zd1lv20435.fw in the repository).
+           If nothing answers within 15 minutes the speaker refused the file or took another address: its light and
+           the router's list tell which.</p>
       </details>
       <details class="triage">
         <summary>It stopped during an update, or it doesn't start</summary>
@@ -187,7 +218,7 @@ sudo udevadm control --reload-rules</pre></li>
       <div class="panel-body">
         <div class="row"><span class="cap">USB</span>
           <label class="check"><input id="auto-switch" type="checkbox"> a computer that starts playing over USB takes the speaker</label></div>
-        <div class="row"><label for="amp">Amplifier</label>
+        <div class="row usb-only"><label for="amp">Amplifier</label>
           <select id="amp">
             <option value="auto">comes on with sound</option>
             <option value="deny">locked: stays off</option>
@@ -231,8 +262,8 @@ sudo udevadm control --reload-rules</pre></li>
         <details>
           <summary>Install from a file</summary>
           <div class="row">
-            <label class="file button">A system image (.gz)…<input id="system-file" type="file" accept=".gz"></label>
-            <label class="file button">MCU firmware (.hex, .bin, .tar)…<input id="mcu-file" type="file" accept=".hex,.bin,.tar"></label>
+            <label class="file button">A system image (.gz; over the network, .signed)…<input id="system-file" type="file" accept=".gz,.signed"></label>
+            <label class="file button usb-only">MCU firmware (.hex, .bin, .tar)…<input id="mcu-file" type="file" accept=".hex,.bin,.tar"></label>
           </div>
         </details>
       </div>
@@ -243,11 +274,12 @@ sudo udevadm control --reload-rules</pre></li>
       <div class="panel-body">
         <details>
           <summary>Debug services, the gate, settings, defaults</summary>
-          <div class="row"><span class="cap">Debug</span><div id="debug" class="segmented"></div></div>
-          <p class="small">A root shell (telnet 2323) and raw memory (23) on the network for anyone on it: off unless
-             needed. Until the speaker powers off.</p>
-          <div class="row"><span class="cap">Changes</span><span id="gate-now"></span><span class="grow"></span>
+          <div class="row usb-only"><span class="cap">Debug</span><div id="debug" class="segmented"></div></div>
+          <p class="small usb-only">A root shell (telnet 2323) and raw memory (23) on the network for anyone on it: off
+             unless needed. Until the speaker powers off.</p>
+          <div class="row usb-only"><span class="cap">Changes</span><span id="gate-now"></span><span class="grow"></span>
             <button type="button" id="gate-btn" class="quiet"></button></div>
+          <div class="row net-only"><span class="cap">Paired</span><div id="controllers" class="list grow"></div></div>
           <div class="row"><span class="cap">Settings</span>
             <button type="button" id="export">Export…</button>
             <label class="file button">Import…<input id="import" type="file" accept=".txt,text/plain"></label></div>
@@ -255,7 +287,7 @@ sudo udevadm control --reload-rules</pre></li>
             <button type="button" id="reset-settings" class="danger">Settings to their defaults</button>
             <button type="button" id="reset-all" class="danger">Everything, as from the factory</button></div>
         </details>
-        <details id="console-pane">
+        <details id="console-pane" class="usb-only">
           <summary>The module's console</summary>
           <p class="small">The network module's serial console (its boot, BL1's and BL2's menus, our system's shell): a
              root shell on the module, open while this is unfolded.</p>
@@ -273,12 +305,12 @@ sudo udevadm control --reload-rules</pre></li>
 </main>
 
 <footer class="footer">zd1 · host protocol <span id="proto" class="data"></span> · this browser talks to the speaker over
-  WebUSB: no account, no cloud · <a href="design.html">design</a></footer>
+  WebUSB or your network: no account, no cloud · <a href="design.html">design</a></footer>
 
 <dialog id="press">
   <h2><i class="lamp on press-lamp"></i>Press ON/OFF on the speaker</h2>
-  <p>Its light flashes purple: a press there allows this change (and the next ones for 10 minutes). The press does
-     nothing else.</p>
+  <p id="press-what">Its light flashes purple: a press there allows this change (and the next ones for 10 minutes). The
+     press does nothing else.</p>
   <div class="row"><span class="grow"></span><button type="button" id="press-giveup" class="quiet">Give up</button></div>
 </dialog>
 

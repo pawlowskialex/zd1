@@ -119,6 +119,10 @@ registers! {
         "Ours, native: the State record (the host link's `State` message: the module's settings and status, encoded by the module with the host link's codec). Notified after every hello and when something in it changes (at most once a second); the MCU keeps the last copy and serves it to the host (`ModRecord State`) without asking the module.";
     MCU_FW = 0xD7 F [N] Payload::U16,
         "Ours, native: b0 = 1, our OS has an app for the MCU staged (a .dmb) and asks the MCU to go where it is taken: our preloader on the ZD1 (GPLP0, a watchdog reset), B&W's bootloader on the ZD1L (ISP_FORCE). Either powers the module again and asks it for BL2, and our OS serves the app (`docs/mcu/bootloader-hbl.md`). A ZD1 without the preloader ignores it.";
+    TRY = 0xD8 F [N] Payload::U16,
+        "Ours, native: b0 = a [`boot`] slot (A or B) our OS has just installed a system into itself (the signed network update, `docs/module/updater.md`): the MCU starts it once now, as the host link's `Boot` TRY with restart; its ready makes it the good slot, else the MCU goes back.";
+    HOST = 0xD9 V [W|N] Payload::Bytes { max: 258 },
+        "Ours, native: the host link from the network (`docs/protocol/net.md`): our OS notifies a paired client's request, u16 seq (little-endian) + the message (`docs/protocol/host.md`), and the MCU writes u16 seq + its reply back, once the request has run. The MCU runs it as over USB but past the gate (the pairing was a press), and only a request the spec marks net; one request at a time, from USB or from here.";
     SHUTDOWN = 0xE2 F [W|N] Payload::U16, "Shutdown: the MCU writes 00 00, the module answers 01 00, then power off. [RE]";
     DRC_ACK = 0xE3 F [R|N] Payload::U16, "AirTunesPlaybackStatus: the DRC acks (b0). [RE]";
     VOLUME_HOST = 0xE4 V [R|N] Payload::Volume, "VolumeHostChange: as 0x40. [RE]";

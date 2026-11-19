@@ -153,6 +153,14 @@ pub fn crc32(b: &[u8]) -> u32 {
 
 pub use zd1_text::{hex, unhex};
 
+/// The wall clock, UTC, as `YYYY-MM-DD HH:MM`; None while it isn't set (before 2020: the module has no clock that
+/// runs off, NTP sets it).
+pub fn utc_now() -> Option<String> {
+    let s = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).ok()?.as_secs() as i64;
+    let t = zd1_text::Utc::from_unix(s);
+    (t.year >= 2020).then(|| t.minutes())
+}
+
 /// A MAC address.
 pub type Mac = [u8; 6];
 

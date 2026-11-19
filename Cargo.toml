@@ -72,6 +72,7 @@ zd1-linkd = { path = "module/os/apps/zd1-linkd" }
 zd1-mdns = { path = "module/os/apps/zd1-mdns" }
 zd1-memsh = { path = "module/os/apps/zd1-memsh" }
 zd1-net = { path = "module/os/apps/zd1-net" }
+zd1-netd = { path = "module/os/apps/zd1-netd" }
 zd1-persparam = { path = "module/os/apps/zd1-persparam" }
 zd1-selftest = { path = "module/os/apps/zd1-selftest" }
 zd1-settings = { path = "module/os/apps/zd1-settings" }

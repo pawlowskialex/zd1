@@ -15,7 +15,9 @@
 //!                shutdown (0xE2: acked before it cuts power), HCR 0x21 -> reboot into BL2, the debug services'
 //!                mode (0xC1: only the MCU switches them, nothing on the network can), its version (0xC3), the good
 //!                system slot (0xC4 b1, at ready: /run/zd1/good), an update (0xC5: zd1-update)
-//! Apps talk to it over /run/zd1link (zd1-ctl): one text line per message, see `Cmd` and `App::event`.
+//! Apps talk to it over /run/zd1link (zd1-ctl): one text line per message, see `App::command` and `App::event`.
+//! zd1-netd passes the network's host link requests the same way (`host SEQ HEX`, docs/protocol/net.md): the module's
+//! own (settings, records) are answered here, the MCU's go through SPI reg 0xD9 (tunnel.rs).
 //! The SPI slave's pads and clock are init's to set up (zd1-board): we only check them.
 //! Polling: the SPI slave isn't bound to any kernel driver (no IRQ 20). It spins while a request or response is
 //! mid-transfer and for 3 ms after the MCU's last byte (it keeps clocking idle bytes until our response is out: they
@@ -37,16 +39,17 @@ const SOCKET: &str = "/run/zd1link";
 const NETIF_MODE: &str = "Application/NetIF/mode";
 use std::sync::{Arc, Mutex};
 use zd1_hostlink::codec::{self, Val};
-use zd1_hostlink::{Record, Slot, WifiSecurity};
+use zd1_hostlink::{Err, Record, Slot, WifiSecurity};
 use zd1_link::reg;
 use zd1_link::spi::codec::{config, net};
 use zd1_link::spi::spec::{STOCK_F, STOCK_V, boot, native, player};
 use zd1_net::Iface;
 use zd1_net::wpa::{Network, Watch, WifiState};
-use zd1_sys::{OsRelease, hex};
+use zd1_sys::{OsRelease, hex, unhex};
 use zd1_text::cut;
 
 mod mcufw;
+mod tunnel;
 
 #[derive(Clone, Default, PartialEq)]
 struct Net {
@@ -119,10 +122,43 @@ fn scan_entry(n: &Network) -> Result<Vec<u8>, codec::Error> {
     )
 }
 
+/// A setting's value as a host reads it (secrets shown as "(set)"), the keys for `?`, empty for an action, or `!` and
+/// why.
+fn setting_value(key: &str) -> String {
+    if key == "?" {
+        zd1_settings::fields().chain(zd1_hostlink::actions()).map(|f| f.key()).collect::<Vec<_>>().join(" ")
+    } else if zd1_settings::action(key).is_some() {
+        String::new() // an action: no state of its own
+    } else {
+        zd1_settings::get(key).map(|v| zd1_settings::shown(key, &v)).unwrap_or_else(|| format!("!no setting {key}"))
+    }
+}
+
+/// The Controllers record: the clients paired over the network, the oldest first.
+fn controllers_record() -> Vec<u8> {
+    let e: Vec<Vec<u8>> = zd1_settings::controllers()
+        .iter()
+        .filter_map(|c| {
+            codec::encode(
+                "Controller",
+                &[
+                    ("id", Val::from(c.id())),
+                    ("name", Val::from(cut(&c.name, 32))),
+                    ("since", Val::from(cut(&c.since, 16))),
+                ],
+            )
+            .ok()
+        })
+        .collect();
+    codec::encode_list(&fit(e))
+}
+
 struct Client {
     s: UnixStream,
     buf: Vec<u8>,
     id: u64,
+    /// it asked for the State record whenever it changes (`subscribe state`: zd1-netd)
+    state: bool,
 }
 
 /// The speaker as the MCU tells it (0xD2).
@@ -161,6 +197,9 @@ struct App {
     update: Option<std::process::Child>, // zd1-update while it runs
     hbl_peer: bool,                      // the host used the configuration channel as the MCU's bootloader does
     mcufw: Option<mcufw::Serve>,         // the MCU's own firmware going to its bootloader (we play BL2)
+    tunnel: tunnel::Tunnel,              // the network's requests for the MCU (SPI reg 0xD9)
+    pieces: Vec<(u64, u8, Vec<u8>)>,     // a record a network client reads in pieces: (client, record, its bytes)
+    state_sent: Vec<u8>,                 // the State record as the subscribers last got it
 }
 
 /// Both slots' stamps, read in a thread (the slot that doesn't run is mounted to read it: seconds of JFFS2 scan).
@@ -420,14 +459,21 @@ impl App {
     /// The State record to the MCU when it changed: once a second (the rate limit), at the hello, and after a write
     /// from the host.
     fn push_state(&mut self) {
-        if !self.greeted {
-            return;
-        }
         let r = self.state_record();
-        if r != self.state_shown {
+        if self.greeted && r != self.state_shown {
             self.notify(reg::STATE, &r);
-            self.state_shown = r;
+            self.state_shown = r.clone();
         }
+        if r != self.state_sent && self.clients.iter().any(|c| c.state) {
+            self.state_out(&r);
+            self.state_sent = r;
+        }
+    }
+
+    /// The State record to the clients that asked for it (`subscribe state`), as `state HEX`.
+    fn state_out(&mut self, r: &[u8]) {
+        let line = format!("state {}\n", hex(r));
+        self.clients.retain_mut(|c| !c.state || c.s.write_all(line.as_bytes()).is_ok());
     }
 
     /// The device name (0x58) from the settings, when it changed.
@@ -640,6 +686,15 @@ impl App {
                 self.say(&s);
             }
             "mcu-update" => self.mcu_update(),
+            "host" => self.host_request(id, arg),
+            "try" => self.try_slot(arg.trim()),
+            "subscribe" if arg.trim() == "state" => {
+                let r = self.state_record();
+                if let Some(c) = self.clients.iter_mut().find(|c| c.id == id) {
+                    c.state = true;
+                    let _ = c.s.write_all(format!("state {}\n", hex(&r)).as_bytes());
+                }
+            }
             _ => self.say(&format!("[zd1-linkd] unknown command: {line}\n")),
         }
     }
@@ -656,6 +711,11 @@ impl App {
             (reg::SELECT, false) => self.select((e.value >> 8) as u8),
             (reg::DEBUG, false) => self.debug_mode((e.value >> 8) as u8),
             (reg::UPDATE, true) => self.update(e.payload()),
+            (reg::HOST, true) => {
+                if let Some((client, seq, reply)) = self.tunnel.reply(e.payload()) {
+                    self.host_reply(client, seq, &reply);
+                }
+            }
             (reg::XM_HOST, true) if self.mcufw.is_some() => {
                 if let Some(&c) = e.payload().first() {
                     let out = self.mcufw.as_mut().unwrap().control(c, Instant::now());
@@ -672,6 +732,7 @@ impl App {
                 let _ = std::fs::create_dir_all("/run/zd1");
                 let _ = std::fs::write("/run/zd1/good", format!("{}\n", good.name()));
                 self.good = Some(good);
+                self.mcu_follow();
             }
             (reg::MCU_VERSION, true) => {
                 let v = String::from_utf8_lossy(e.payload()).trim_end_matches('\0').to_string();
@@ -708,13 +769,9 @@ impl App {
             if !req.op.is_read() {
                 return;
             }
-            let r = match n.parse::<u8>().map(Record::from) {
-                Ok(Record::State) => self.state_record(),
-                Ok(Record::Scan) => self.scan_record(),
-                Ok(Record::Networks) => self.networks_record(),
-                Ok(Record::Servers) => self.servers_record(),
-                Ok(Record::Pairings) => self.pairings_record(),
-                _ => format!("!no record {n}").into_bytes(),
+            let r = match n.parse::<u8>() {
+                Ok(n) => self.record(n),
+                Err(_) => format!("!no record {n}").into_bytes(),
             };
             self.notify(reg::CONFIG, &r);
             return;
@@ -722,41 +779,10 @@ impl App {
         if let Some(key) = name.strip_prefix("zd1/") {
             if req.op.is_read() {
                 let refused = self.setting_err.as_ref().is_some_and(|(k, _)| k == key);
-                let v = if refused {
-                    format!("!{}", self.setting_err.take().unwrap().1)
-                } else if key == "?" {
-                    zd1_settings::fields().chain(zd1_hostlink::actions()).map(|f| f.key()).collect::<Vec<_>>().join(" ")
-                } else if zd1_settings::action(key).is_some() {
-                    String::new() // an action: no state of its own
-                } else {
-                    zd1_settings::get(key)
-                        .map(|v| zd1_settings::shown(key, &v))
-                        .unwrap_or_else(|| format!("!no setting {key}"))
-                };
+                let v = if refused { format!("!{}", self.setting_err.take().unwrap().1) } else { setting_value(key) };
                 self.notify(reg::CONFIG, v.as_bytes());
-            } else {
-                let action = zd1_settings::action(key).is_some();
-                let r = if action { zd1_settings::act(key, &value) } else { zd1_settings::set(key, &value) };
-                match r {
-                    Ok(()) => {
-                        self.say(&format!(
-                            "[zd1-linkd] {} {key} = {}\n",
-                            if action { "action" } else { "setting" },
-                            zd1_settings::shown(key, &value)
-                        ));
-                        zd1_settings::apply(key);
-                        if key == "name" || key == "reset" {
-                            self.publish_name();
-                        }
-                        // the record now, not within the second: queued before the read-back's answer, so a host
-                        // that reads it after its write sees the write
-                        self.push_state();
-                    }
-                    Err(e) => {
-                        self.say(&format!("[zd1-linkd] setting refused: {e}\n"));
-                        self.setting_err = Some((key.to_string(), e));
-                    }
-                }
+            } else if let Err(e) = self.write_setting(key, &value) {
+                self.setting_err = Some((key.to_string(), e));
             }
             return;
         }
@@ -774,6 +800,159 @@ impl App {
         self.say(&format!("[zd1-linkd] config {name}: not a zd1/ setting\n"));
         if req.op.is_read() {
             self.notify(reg::CONFIG, format!("!not a zd1/ setting: {name}").as_bytes());
+        }
+    }
+
+    /// A record by its number (docs/module/settings.md), or `!` and why.
+    fn record(&mut self, n: u8) -> Vec<u8> {
+        match Record::from(n) {
+            Record::State => self.state_record(),
+            Record::Scan => self.scan_record(),
+            Record::Networks => self.networks_record(),
+            Record::Servers => self.servers_record(),
+            Record::Pairings => self.pairings_record(),
+            Record::Controllers => controllers_record(),
+            _ => format!("!no record {n}").into_bytes(),
+        }
+    }
+
+    /// Write a setting or do an action (from the MCU's configuration channel or the network), applied at once.
+    fn write_setting(&mut self, key: &str, value: &str) -> Result<(), String> {
+        let action = zd1_settings::action(key).is_some();
+        let r = if action { zd1_settings::act(key, value) } else { zd1_settings::set(key, value) };
+        if let Err(e) = r {
+            self.say(&format!("[zd1-linkd] setting refused: {e}\n"));
+            return Err(e);
+        }
+        self.say(&format!(
+            "[zd1-linkd] {} {key} = {}\n",
+            if action { "action" } else { "setting" },
+            zd1_settings::shown(key, value)
+        ));
+        zd1_settings::apply(key);
+        if key == "name" || key == "reset" {
+            self.publish_name();
+        }
+        // the record now, not within the second: queued before the read-back's answer, so a host that reads it after
+        // its write sees the write
+        self.push_state();
+        Ok(())
+    }
+
+    /// A request from the network (zd1-netd: a paired client's, `host SEQ HEX`; docs/protocol/net.md). The module's
+    /// own are answered here as the MCU answers them over USB; the MCU's go through the tunnel.
+    fn host_request(&mut self, id: u64, arg: &str) {
+        let Some((seq, msg)) = arg.split_once(' ').and_then(|(s, h)| Some((s.parse::<u16>().ok()?, unhex(h)?))) else {
+            return self.say("[zd1-linkd] host: SEQ HEX\n");
+        };
+        let m = match codec::decode(&msg) {
+            Ok(m) => m,
+            Err(e) => return self.host_reply(id, seq, &codec::error_reply(Err::Malformed, &e.to_string())),
+        };
+        let reply = match m.name() {
+            "ModRecord" => {
+                let (rec, off) = (m.n("record") as u8, m.n("offset") as usize);
+                let cached = self.pieces.iter().position(|p| p.0 == id && p.1 == rec);
+                let bytes = match cached {
+                    Some(i) if off > 0 => self.pieces[i].2.clone(),
+                    _ => {
+                        let b = self.record(rec);
+                        self.pieces.retain(|p| p.0 != id);
+                        self.pieces.push((id, rec, b.clone()));
+                        b
+                    }
+                };
+                let piece = &bytes[off.min(bytes.len())..(off + 240).min(bytes.len())];
+                codec::encode("RecordReply", &[("total", Val::N(bytes.len() as u32)), ("data", Val::from(piece))])
+            }
+            "GetSetting" => codec::encode("SettingReply", &[("value", Val::from(setting_value(&m.s("key"))))]),
+            "SetSetting" => {
+                let key = m.s("key");
+                let v = match self.write_setting(&key, &m.s("value")) {
+                    Ok(()) => setting_value(&key),
+                    Err(e) => format!("!{e}"),
+                };
+                codec::encode("SettingReply", &[("value", Val::from(v))])
+            }
+            _ if !self.greeted => Ok(codec::error_reply(Err::Module, "our MCU firmware hasn't greeted the module")),
+            name => {
+                let wait = zd1_hostlink::message(name).map_or(2000, |d| d.timeout(&m.vals)) + 3000;
+                self.tunnel.push(id, seq, msg, Duration::from_millis(wait as u64));
+                return;
+            }
+        };
+        let reply = reply.unwrap_or_else(|e| codec::error_reply(Err::Arg, &e.to_string()));
+        self.host_reply(id, seq, &reply);
+    }
+
+    /// A reply to the network's client `id` (0: gone).
+    fn host_reply(&mut self, id: u64, seq: u16, reply: &[u8]) {
+        let line = format!("host {seq} {}\n", hex(reply));
+        if let Some(c) = self.clients.iter_mut().find(|c| c.id == id) {
+            let _ = c.s.write_all(line.as_bytes());
+        }
+    }
+
+    /// The tunnel's next request to the MCU, and one it never answered.
+    fn pump_tunnel(&mut self) {
+        let now = Instant::now();
+        if let Some((id, seq)) = self.tunnel.expired(now) {
+            self.say("[zd1-linkd] the MCU didn't answer a request from the network\n");
+            self.host_reply(id, seq, &codec::error_reply(Err::Module, "the MCU didn't answer"));
+        }
+        if self.greeted
+            && let Some(p) = self.tunnel.next(now)
+        {
+            self.notify(reg::HOST, &p);
+        }
+    }
+
+    /// Start a slot once (reg 0xD8): our OS installed a system there itself (zd1-netd's update).
+    fn try_slot(&mut self, s: &str) {
+        let Some(slot) = zd1_slot::Slot::parse(s) else { return self.say("[zd1-linkd] try a|b\n") };
+        if !self.greeted {
+            return self.say("[zd1-linkd] try: no MCU firmware of ours to ask\n");
+        }
+        self.say(&format!("[zd1-linkd] asking the MCU to start slot {} once\n", slot.name()));
+        unsafe { libc::sync() };
+        self.notify(reg::TRY, &[if slot == zd1_slot::Slot::A { boot::SLOT_A } else { boot::SLOT_B }, 0]);
+    }
+
+    /// At the MCU's hello (its version, then the good slot): the MCU's app this system carries, if the MCU runs
+    /// another (docs/protocol/net.md, The MCU follows its OS), staged and asked for.
+    fn mcu_follow(&mut self) {
+        let Ok(app) = std::fs::read(mcufw::CARRIED) else { return }; // an image without one (the emulator's dev boot)
+        let Some(carried) = zd1_release::ident::find(&app).map(|i| i.version) else {
+            return self.say(&format!("[zd1-linkd] {}: no version in it\n", mcufw::CARRIED));
+        };
+        let asked = std::fs::read_to_string(mcufw::FOLLOWED).unwrap_or_default();
+        let asked = asked.split_once(' ').and_then(|(v, n)| Some((v, n.trim().parse().ok()?)));
+        let confirmed = self.slot.is_some() && self.slot == self.good;
+        match mcufw::follow(&self.mcu, &carried, asked, confirmed) {
+            mcufw::Follow::Same => {
+                let _ = std::fs::remove_file(mcufw::FOLLOWED);
+            }
+            mcufw::Follow::Not(why) => {
+                self.say(&format!("[zd1-linkd] MCU {}, this system's {carried}: left alone ({why})\n", self.mcu))
+            }
+            mcufw::Follow::GaveUp => self.say(&format!(
+                "[zd1-linkd] MCU {}: asked {} times for {carried}, it didn't take it: not again\n",
+                self.mcu,
+                mcufw::TRIES
+            )),
+            mcufw::Follow::Ask(n) => {
+                self.say(&format!(
+                    "[zd1-linkd] MCU {}: this system carries {carried}: asking for it ({n})\n",
+                    self.mcu
+                ));
+                let staged = std::fs::create_dir_all("/data/zd1/mcu")
+                    .and_then(|_| std::fs::write(mcufw::FOLLOWED, format!("{carried} {n}\n")))
+                    .and_then(|_| std::fs::write(mcufw::PENDING, &app));
+                match staged {
+                    Ok(()) => self.mcu_update(),
+                    Err(e) => self.say(&format!("[zd1-linkd] {}: {e}\n", mcufw::PENDING)),
+                }
+            }
         }
     }
 
@@ -836,7 +1015,7 @@ impl App {
         while let Ok((s, _)) = l.accept() {
             let _ = s.set_nonblocking(true);
             self.next_id += 1;
-            let mut c = Client { s, buf: Vec::new(), id: self.next_id };
+            let mut c = Client { s, buf: Vec::new(), id: self.next_id, state: false };
             let mut hello = format!("audio {}\n", if self.audio_on { "on" } else { "off" });
             if let Some(v) = self.volume {
                 hello += &format!("volume {v}\n");
@@ -851,11 +1030,11 @@ impl App {
     fn read_clients(&mut self) {
         let mut lines = Vec::new();
         let mut buf = [0u8; 512];
-        let before = self.clients.len();
+        let mut gone = Vec::new();
         self.clients.retain_mut(|c| {
-            loop {
+            let keep = loop {
                 match c.s.read(&mut buf) {
-                    Ok(0) => return false,
+                    Ok(0) => break false,
                     Ok(n) => {
                         c.buf.extend_from_slice(&buf[..n]);
                         while let Some(i) = c.buf.iter().position(|&b| b == b'\n') {
@@ -863,20 +1042,29 @@ impl App {
                             lines.push((c.id, String::from_utf8_lossy(&l).trim().to_string()));
                         }
                     }
-                    Err(e) if e.kind() == ErrorKind::WouldBlock => return true,
+                    Err(e) if e.kind() == ErrorKind::WouldBlock => break true,
                     Err(e) if e.kind() == ErrorKind::Interrupted => continue,
-                    Err(_) => return false,
+                    Err(_) => break false,
                 }
+            };
+            if !keep {
+                gone.push(c.id);
             }
+            keep
         });
         for (id, l) in lines {
             if !l.is_empty() {
                 self.command(id, &l);
             }
         }
-        if self.clients.len() != before {
+        if !gone.is_empty() {
+            // an app went: its sessions with it, its requests from the network
+            self.pieces.retain(|p| !gone.contains(&p.0));
+            for id in gone {
+                self.tunnel.forget(id);
+            }
             self.publish_player();
-        } // an app went: its sessions with it
+        }
     }
 }
 
@@ -928,6 +1116,9 @@ pub fn main() {
         update: None,
         hbl_peer: false,
         mcufw: None,
+        tunnel: tunnel::Tunnel::default(),
+        pieces: Vec::new(),
+        state_sent: Vec::new(),
     };
     read_stamps(&app.stamps);
     app.say("[zd1-linkd] MCU link up (SPI slave via /dev/mem)\n");
@@ -982,6 +1173,7 @@ pub fn main() {
             app.accept(l);
         }
         app.read_clients();
+        app.pump_tunnel();
         if last_net.elapsed() >= Duration::from_secs(1) {
             last_net = Instant::now();
             let n = net_state();

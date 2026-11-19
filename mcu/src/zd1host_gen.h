@@ -66,6 +66,7 @@
 #define ZD1H_RECORD_NETWORKS     2  /* the Wi-Fi networks the speaker knows, the one it prefers first: a list of `KnownNetwork`; it joins the first of them it sees (`Actions`: `wifi.add`, `wifi.first`, `wifi.forget`) */
 #define ZD1H_RECORD_SERVERS      3  /* the snapservers on the speaker's networks: a list of `Snapserver`; the module answers from its last look over mDNS and looks again (read again two seconds later for it) */
 #define ZD1H_RECORD_PAIRINGS     4  /* the controllers paired with the AirPlay receiver: a list of `Pairing`, the oldest first */
+#define ZD1H_RECORD_CONTROLLERS   5  /* the clients paired over the network (docs/protocol/net.md): a list of `Controller`, the oldest first (`Actions`: `net.forget`) */
 /* ModState:  */
 #define ZD1H_MOD_STATE_OFF          0  /* unpowered */
 #define ZD1H_MOD_STATE_RESET        1  /* powered, held in reset */
@@ -101,7 +102,9 @@
 #define ZD1H_SINK_MODULE       1  /* to the network module's updater over its console UART, as it grants it (`Update` sets it) */
 /* UpdateOp: What `Update` does. */
 #define ZD1H_UPDATE_OP_BEGIN        1  /* start the module's updater: it takes `size` bytes from the bulk pipe into the slot that doesn't run */
-#define ZD1H_UPDATE_OP_ABORT        2  /* stop sending; the module gives up on its own (10 s without data) */
+#define ZD1H_UPDATE_OP_ABORT        2  /* stop sending; the module gives up on its own (10 s without data). `SystemUpdate`: at once, the slot holds no system */
+#define ZD1H_UPDATE_OP_DATA         3  /* `SystemUpdate`: the next piece of the image */
+#define ZD1H_UPDATE_OP_END          4  /* `SystemUpdate`: that was all of it: check it, stamp the slot, start it once */
 /* UpdateState: Where an update is (`UpdateReply`). */
 #define ZD1H_UPDATE_STATE_IDLE         0  /* none since the MCU started */
 #define ZD1H_UPDATE_STATE_STARTING     1  /* the module's updater was asked to start: waiting for its ready */
@@ -191,7 +194,8 @@
 #define ZD1H_ID_DIAG           0x14
 #define ZD1H_ID_DIAG_REPLY     0x54
 
-/* the requests (HelloReply.requests: bit id % 8 of byte id / 8; the emulator's build has more), and the gated ones */
+/* the requests (HelloReply.requests: bit id % 8 of byte id / 8; the emulator's build has more), the gated ones, and
+ * the ones a paired client may make over the network (docs/protocol/net.md: they come through SPI reg 0xD9) */
 #ifdef ZD1_EMU
 static const uint8_t zd1h_requests[32] = {0xF6,0xFF,0xFF,0xFF,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00};
 #else
@@ -199,6 +203,10 @@ static const uint8_t zd1h_requests[32] = {0xF6,0xFF,0xFF,0xF7,0x00,0x00,0x00,0x0
 #endif
 static inline bool zd1h_gated(uint8_t id){
     static const uint8_t g[32] = {0xF0,0xB5,0x6F,0xBB,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00};
+    return (g[id >> 3] >> (id & 7)) & 1;
+}
+static inline bool zd1h_net(uint8_t id){
+    static const uint8_t g[32] = {0x06,0x08,0x9F,0x50,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00};
     return (g[id >> 3] >> (id & 7)) & 1;
 }
 

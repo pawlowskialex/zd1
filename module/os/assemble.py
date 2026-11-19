@@ -87,10 +87,11 @@ def link_programs(root, target, names):
         os.symlink(target, os.path.join(root, "bin", b))
 
 
-def make_system(cfg, parts, root, version, built, debug=False):
+def make_system(cfg, parts, root, version, built, mcu_app, debug=False):
     """A system slot's tree, the whole root the kernel mounts (read-only): busybox, the full zd1 (/usr/bin/zd1: the
     core programs and the rest, a link each; /sbin/init), /etc, Nokia's kernel modules and Wi-Fi firmware,
-    wpa_supplicant, ALSA's configuration and tools; mount points for what init mounts (/dev, /run, /tmp, /var: tmpfs;
+    wpa_supplicant, ALSA's configuration and tools, the MCU's app of the same release (/usr/lib/zd1/mcu/zd1.dmb: the
+    MCU follows its OS, docs/protocol/net.md); mount points for what init mounts (/dev, /run, /tmp, /var: tmpfs;
     /data its partition). `debug`: zd1's debug build, with its programs' links."""
     v, a = cfg["vendor"], cfg["apps"]
     vroot = os.path.join(REPO, v["root"])
@@ -139,6 +140,9 @@ def make_system(cfg, parts, root, version, built, debug=False):
     shutil.copytree(os.path.join(REPO, cfg["image"]["overlay"]), root, symlinks=True, dirs_exist_ok=True)
     open(os.path.join(root, "etc/modules"), "w").write("\n".join(v["load"]) + "\n")
     open(os.path.join(usr, "lib/os-release"), "w").write(os_release(version, built))
+    if mcu_app:
+        os.makedirs(os.path.join(usr, "lib/zd1/mcu"), exist_ok=True)
+        shutil.copyfile(mcu_app, os.path.join(usr, "lib/zd1/mcu/zd1.dmb"))
     for f in ("os-release", "resolv.conf"):  # written at run time: / is read-only
         os.symlink("/run/" + f, os.path.join(root, "etc", f))
 
@@ -201,12 +205,12 @@ def install(base_nand, image, out):
     open(out, "wb").write(nand)
 
 
-def assemble(cfg, parts, out, version, built, base_nand):
+def assemble(cfg, parts, out, version, built, base_nand, mcu_app):
     """Every image of os.toml into `out` (the nix build runs this)."""
     os.makedirs(out, exist_ok=True)
     log("system")
     sysroot = os.path.join(out, ".system")
-    make_system(cfg, parts, sysroot, version, built)
+    make_system(cfg, parts, sysroot, version, built, mcu_app)
     cpio(sysroot, out, "system", slot=True)
     # the same system as the app partition's initramfs (gzip'd: it goes to the stub's default destination), its init
     # as /init: what runs when no slot does, on both models
@@ -225,7 +229,7 @@ def assemble(cfg, parts, out, version, built, base_nand):
     bcd_image(os.path.join(out, "payload.bin"), os.path.join(out, "os-zd1l.bcd"), "zd1l", built)
     install(base_nand, os.path.join(out, "os.bcd"), os.path.join(out, "nand_os.bin"))
     log("system-debug")
-    make_system(cfg, parts, sysroot, version, built, debug=True)
+    make_system(cfg, parts, sysroot, version, built, mcu_app, debug=True)
     cpio(sysroot, out, "system-debug", slot=True)
     # the emulator's dev boot: the debug system as one plain initramfs loaded straight into SDRAM, its init as /init
     log("initramfs-dev")
@@ -272,10 +276,11 @@ def main():
     ap.add_argument("--version", help="assemble: the version in /etc/os-release")
     ap.add_argument("--built", default="", help="assemble: the build date in /etc/os-release")
     ap.add_argument("--out", help="assemble: where the images go")
+    ap.add_argument("--mcu-app", help="assemble: the MCU's app of the same release (zd1.dmb), carried by the system")
     a = ap.parse_args()
     cfg = tomllib.load(open(os.path.join(HERE, "os.toml"), "rb"))
     if a.cmd[:1] == ["assemble"]:
-        assemble(cfg, a.parts, a.out, a.version, a.built, a.base_nand)
+        assemble(cfg, a.parts, a.out, a.version, a.built, a.base_nand, a.mcu_app)
     elif a.cmd[:1] == ["mini"] and len(a.cmd) == 2:
         log(os.path.relpath(mini(a.cmd[1]), REPO))
     else:

@@ -155,7 +155,8 @@ export function drawSoftware(b) {
   const back = $("ways-back");
   back.replaceChildren();
   const other = runs === "a" ? "b" : runs === "b" ? "a" : null;
-  if (other && st[`stamp_${other}`]) {
+  const usb = app.sp.link() === "usb"; // the slots and the MCU's backups are USB's (over the network: no going back)
+  if (usb && other && st[`stamp_${other}`]) {
     const x = el("button", {
       className: "quiet",
       textContent: `Back to slot ${other.toUpperCase()} (${st[`stamp_${other}`].split(" ")[0]})`,
@@ -179,7 +180,7 @@ export function drawSoftware(b) {
   }
   backups()
     .then((l) => {
-      if (!l.length) return;
+      if (!l.length || !usb) return;
       const x = el("button", {
         className: "quiet",
         textContent: `Restore the MCU firmware ${l[0].holds} (backed up ${new Date(l[0].date).toLocaleDateString()})`,
@@ -400,6 +401,7 @@ export function drawReleases() {
 /// The speaker to a release: the system, the module's boot image (through the bootloader: the connection ends), then
 /// the MCU firmware (this order keeps the page connected longest), each only if it isn't there already.
 export async function updateTo(rel, needs, finishing = false) {
+  if (app.sp.link() === "net") return updateOverNetwork(rel, needs);
   const parts = {
     system: "the module's system goes into the slot that doesn't run (the old one stays as the way back)",
     boot: "the module's boot image (its start-up and its rescue) is rewritten through the bootloader, about 5 minutes (keep this tab in front: a browser slows a tab in the background)",
@@ -452,14 +454,53 @@ export async function updateTo(rel, needs, finishing = false) {
   return r;
 }
 
+/// Over the network: the module's system alone, the release's signed image (the speaker checks its signature); the
+/// main board follows its system by itself, and a boot image that differs needs USB (docs/protocol/net.md).
+async function updateOverNetwork(rel, needs) {
+  if (!needs.includes("system"))
+    return notice(
+      needs.includes("boot")
+        ? "This release's boot image differs from the speaker's: that goes over USB (connect it with a cable)."
+        : "The main board follows its system by itself: nothing to do over the network.",
+      "warn",
+    );
+  if (!rel.signed)
+    return notice(`Release ${rel.version} has no image signed for the network: update over USB.`, "warn");
+  if (
+    !(await ask(
+      `Update to ${rel.version}?`,
+      "The module's system goes into the slot that doesn't run (the old one stays as the way back), then the speaker " +
+        "restarts on it; the main board takes its firmware from the new system by itself. A few minutes; sound stops " +
+        "meanwhile, and this page connects again by itself.",
+      "Update",
+    ))
+  )
+    return;
+  const r = await job(`Update to ${rel.version}`, false, async () => {
+    const r = await app.sp.updateSystem(await fetchImage(rel.signed), true);
+    if (r.outcome === "fellBack")
+      throw new Error(
+        `The system in slot ${r.slot.toUpperCase()} didn't come up: the speaker is back on slot ${r.now.toUpperCase()}.`,
+      );
+    return `Done: system ${rel.signed.version} in slot ${r.slot.toUpperCase()}${needs.includes("boot") ? "; the boot image goes over USB" : ""}.`;
+  });
+  refresh(true);
+  return r;
+}
+
 export async function installRelease(rel, kind) {
+  if (kind === "system" && app.sp.link() === "net") {
+    if (!rel.signed)
+      return notice(`Release ${rel.version} has no image signed for the network: install it over USB.`, "warn");
+    kind = "signed";
+  }
   let data;
   try {
     data = await fetchImage(rel[kind]);
   } catch (e) {
     return failed(e);
   }
-  return kind === "system" ? installSystem(rel[kind].file, data) : installMcu(rel[kind].file, data);
+  return kind === "mcu" ? installMcu(rel[kind].file, data) : installSystem(rel[kind].file, data);
 }
 
 export async function installSystem(name, data) {
@@ -469,7 +510,11 @@ export async function installSystem(name, data) {
   } catch (e) {
     return failed(e);
   }
-  if (i.kind !== "system") return notice(`${name} is not a system image (a gzip'd cpio).`, "warn");
+  const net = app.sp.link() === "net";
+  if (net && i.kind !== "signed")
+    return notice(`${name}: over the network a system must be signed (a release's .signed image).`, "warn");
+  if (i.kind !== "system" && i.kind !== "signed")
+    return notice(`${name} is not a system image (a gzip'd cpio).`, "warn");
   if (
     !(await ask(
       "Install the module's system?",

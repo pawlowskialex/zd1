@@ -4,17 +4,28 @@ Open work, grouped by area, roughly in priority order within each group. Each en
 and what is known. What already works: `status.md`; checks that need a person at the unit:
 `units/<unit>/hw-checks.md` (not in git). Remove an entry when it is done (the topic doc gets the result).
 
-## Updates over the network (the scheme of 2026-11-19: `docs/mcu/bootloader-hbl.md`, `docs/module/storage.md`)
-- **On the hardware**: the module serving the MCU's app (ZD1L: B&W's bootloader; ZD1: our preloader, which first needs
-  the new layout flashed over DFU, with the owner's OK); a ZD1L's first install of `zd1l.fw` with the system as the
-  rescue and its self-install. All of it is emulator-only so far.
-- **The signed LAN update**: our OS takes a release for the slot that doesn't run over a LAN endpoint (found over
-  mDNS; `zd1 update --net`, later the page), Ed25519-signed (CI holds the key, the OS the public half; USB `zd1 update`
-  still takes unsigned dev builds); then the MCU starts the new slot on trial, as after `zd1 update` (a request from
-  the module for that is not in the protocol yet).
-- **The MCU follows its OS**: each system slot carries its MCU app (`zd1.dmb`); at the MCU's hello the OS compares
-  versions and stages and asks (`zd1-ctl mcu-update` does it by hand now). A bound on retries per version; dev builds
-  (`-dirty`) left alone.
+## Updates and control over the network (`docs/protocol/net.md`, `docs/mcu/bootloader-hbl.md`)
+- **On the unit**: everything of the network link has run in the emulator only. Both boards need the new firmware
+  (the MCU: the tunnel, reg 0xD8/0xD9; the system: zd1-netd), with the owner's OK; then the pairing, the requests,
+  the provisional network settings and the signed update into the other slot, from `zd1 --net` and from the page.
+- **The hosted page over the network in Chrome**: Local Network Access's permission and `ws://` to a private address
+  from https://pawlowskialex.github.io (Chrome 154 on: WebSockets); what Chrome says when it is refused, and that the
+  page's text matches. Then Edge, Brave, Opera.
+- **The release key**: the owner makes it (`zd1 keygen`), puts its secret half in the repository's secret
+  `ZD1_RELEASE_KEY` and its public half at `module/os/rootfs/etc/zd1/keys/release.pub`; until then releases carry no
+  signed image and speakers trust only keys put on them over USB.
+- **The MCU follows its OS on a clean build**: every emulator build here is `-dirty`, which the rule leaves alone;
+  a release's (or a temporary clean commit's) image in the emulator, then on the unit: the module serving the MCU's
+  app (ZD1L: B&W's bootloader; ZD1: our preloader, which first needs the new layout flashed over DFU, with the
+  owner's OK).
+- **The ZD1L's first install from the page** (`zd1l.js`, no-cors to BL2): a ZD1L owner in Chrome; whether BL2 takes
+  the browser's multipart upload as it takes `bl2web`'s; the system as the rescue and its self-install on a real ZD1L.
+- **A developer's key onto a speaker**: today `zd1 console run 'echo KEY > /data/zd1/keys/NAME.pub'` over USB; a
+  request of its own (gated, USB only) would make it a step of the page.
+- **Discovery**: browsers can't browse mDNS, so the page asks for an address; `zd1 --net` could find speakers
+  (`_zd1._tcp`, or the AirPlay records' host) and the page could list the addresses a USB connection reported.
+- **The page's keys** are in its origin's storage, which every page under the same GitHub Pages host shares; a
+  non-extractable WebCrypto key (X25519) would keep the secret out of reach, with snow on a resolver of its own.
 
 ## Module OS
 - **The page and the protocol's last pieces, checked on the unit** (`docs/web.md`, Order of work): on the unit since

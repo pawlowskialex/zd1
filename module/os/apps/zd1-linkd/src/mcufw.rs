@@ -17,6 +17,43 @@ use std::time::{Duration, Instant};
 
 /// The image the MCU is to get, staged by whoever wants the MCU updated (the system at ready, a host).
 pub const PENDING: &str = "/data/zd1/mcu/pending.dmb";
+/// The MCU's app this system carries (module/os/assemble.py: the release's `zd1.dmb`): the MCU follows its OS.
+pub const CARRIED: &str = "/usr/lib/zd1/mcu/zd1.dmb";
+/// How often the MCU was asked for which version (`VERSION TRIES`): a version it never takes is asked for twice.
+pub const FOLLOWED: &str = "/data/zd1/mcu/follow";
+pub const TRIES: u32 = 2;
+
+/// What to do about the MCU at its hello (docs/protocol/net.md, The MCU follows its OS).
+#[derive(Debug, PartialEq)]
+pub enum Follow {
+    /// it runs the app this system carries (or there is none to give it)
+    Same,
+    /// not now: why
+    Not(&'static str),
+    /// ask for it, the `n`th time for this version
+    Ask(u32),
+    /// asked [`TRIES`] times for this version already
+    GaveUp,
+}
+
+/// The MCU runs `has`, this system carries `carried`, asked `asked` (`FOLLOWED`: version, times) before; the system
+/// runs from a confirmed slot (`confirmed`: not the rescue, not on trial).
+pub fn follow(has: &str, carried: &str, asked: Option<(&str, u32)>, confirmed: bool) -> Follow {
+    if has == carried {
+        return Follow::Same;
+    }
+    if !confirmed {
+        return Follow::Not("not a confirmed slot (the rescue, or on trial)");
+    }
+    if has.ends_with("-dirty") || carried.ends_with("-dirty") || has.is_empty() {
+        return Follow::Not("a development build on one side");
+    }
+    match asked {
+        Some((v, n)) if v == carried && n >= TRIES => Follow::GaveUp,
+        Some((v, n)) if v == carried => Follow::Ask(n + 1),
+        _ => Follow::Ask(1),
+    }
+}
 
 use zd1_link::spi::spec::xmodem::{ACK, BLOCK, CAN, EOT, NAK, START};
 
@@ -186,6 +223,18 @@ impl Serve {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_mcu_follows_its_os() {
+        assert_eq!(follow("abc1234", "abc1234", None, false), Follow::Same);
+        assert_eq!(follow("abc1234", "def5678", None, true), Follow::Ask(1));
+        assert_eq!(follow("abc1234", "def5678", Some(("def5678", 1)), true), Follow::Ask(2));
+        assert_eq!(follow("abc1234", "def5678", Some(("def5678", 2)), true), Follow::GaveUp);
+        assert_eq!(follow("abc1234", "def5678", Some(("0000000", 2)), true), Follow::Ask(1), "another version: afresh");
+        assert!(matches!(follow("abc1234", "def5678", None, false), Follow::Not(_)), "the rescue, a trial");
+        assert!(matches!(follow("abc1234-dirty", "def5678", None, true), Follow::Not(_)));
+        assert!(matches!(follow("abc1234", "def5678-dirty", None, true), Follow::Not(_)));
+    }
 
     fn dmb(app: &[u8]) -> Vec<u8> {
         let mut h = vec![0u8; zd1_release::dmb::HEADER];

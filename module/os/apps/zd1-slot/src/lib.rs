@@ -128,6 +128,23 @@ fn lock(exclusive: bool) -> Option<fs::File> {
     Some(f)
 }
 
+/// One system update at a time, whichever way it comes (zd1-update from the MCU, zd1-netd from the network): held
+/// while it runs, Err when another one holds it.
+pub fn update_lock() -> Result<fs::File, String> {
+    let _ = fs::create_dir_all("/run/zd1");
+    let f = OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .write(true)
+        .mode(0o600)
+        .open("/run/zd1/update.lock")
+        .map_err(|e| format!("/run/zd1/update.lock: {e}"))?;
+    if unsafe { libc::flock(f.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } != 0 {
+        return Err("another update runs".into());
+    }
+    Ok(f)
+}
+
 fn holds_system(root: &str) -> Option<String> {
     let init = fs::metadata(format!("{root}/sbin/init")).ok()?;
     if init.permissions().mode() & 0o111 == 0 {

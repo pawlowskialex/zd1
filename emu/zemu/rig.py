@@ -582,6 +582,15 @@ class Session:
         self.begin()
         self.run_for(secs)
 
+    def press(self, secs, hold_ms=200):
+        """ON/OFF on the speaker, pressed `secs` (virtual) from now and held `hold_ms`: a person at the speaker while a
+        later step waits for the press (pairing over the network, docs/protocol/net.md). Returns at once."""
+        if not self.mcu:
+            raise StepFailed("--press: the main board isn't in this run (--mcu)")
+        t = int((self.r.vtime() + secs) * 1000)
+        self.r.on("zd1")
+        self.r.cmd('board Pins "%d:PA08=0,%d:PA08=1"' % (t, t + hold_ms))
+
     def send(self, text, cr=True):
         """Type into the module console (a shell, KnOS, the BL1/BL2 menus); `\\xNN` escapes reach the guest raw."""
         self.begin()

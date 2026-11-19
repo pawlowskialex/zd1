@@ -1,6 +1,6 @@
 # The module OS images (module/os/assemble.py assemble, from os.toml): the system image, the flashable os.bcd,
 # os-debug.bcd and os-zd1l.bcd (the system in the app partition too), the emulator's dev payload, and the test unit's
-# NAND with os.bcd installed.
+# NAND with os.bcd installed. The system carries the MCU's app of the same build (`mcu`: its zd1.dmb).
 {
   stdenvNoCC,
   python3,
@@ -8,6 +8,7 @@
   src,
   parts,
   test-unit,
+  mcu,
   version,
   built,
 }:
@@ -33,7 +34,7 @@ stdenvNoCC.mkDerivation {
   ];
   buildPhase = ''
     python3 -I module/os/assemble.py assemble --parts ${parts} --base-nand ${test-unit}/nand.bin \
-      --version ${version} --built "${built}" --out $out
+      --version ${version} --built "${built}" --mcu-app ${mcu}/zd1.dmb --out $out
   '';
   dontInstall = true;
   dontFixup = true;

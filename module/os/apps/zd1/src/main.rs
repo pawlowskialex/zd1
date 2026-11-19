@@ -12,6 +12,7 @@ use std::os::unix::process::CommandExt;
 const PROGRAMS: &[(&str, fn())] = &[
     ("init", zd1_init::main), // /sbin/init (/init in RAM): PID 1
     ("zd1-linkd", zd1_linkd::main),
+    ("zd1-netd", zd1_netd::main),
     ("zd1-ctl", zd1_ctl::main),
     ("zd1-board", zd1_board::main),
     ("zd1-persparam", zd1_persparam::main),

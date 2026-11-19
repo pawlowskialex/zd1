@@ -2,9 +2,11 @@
 
 Two `no_std` crates, one per link. Everything that speaks a link is built from its crate: Rust uses the crate
 directly; the MCU's C (AVR32: no Rust there) is generated from it by `gen/`, with test vectors that hold the C to it.
-Beside them, two crates every side's Rust shares, so that nothing is written twice: `release/` (`zd1-release`: the
-files a release is made of: the MCU's app as a B&W `.dmb`, the firmware's identification block, a slot's stamp) and
-`text/` (`zd1-text`, no dependencies: hex, a key's short name, a UTC date, a string cut to a field's bytes).
+The host link also travels over the network (`docs/protocol/net.md`: its `net` module has that link's constants, the
+key file both ends keep, and the records). Beside them, two crates every side's Rust shares, so that nothing is
+written twice: `release/` (`zd1-release`: the files a release is made of: the signed system update, the MCU's app as
+a B&W `.dmb`, the firmware's identification block, the Lightning model's `.fw`, a slot's stamp) and `text/`
+(`zd1-text`, no dependencies: hex, a key's short name, a UTC date, a string cut to a field's bytes).
 
 | Crate | Link | Rust that uses it | Generated (`gen/`) |
 |---|---|---|---|

@@ -1,25 +1,22 @@
-//! The host link to our MCU firmware (docs/protocol/host.md): a request is a CALL with a sequence number; the MCU
-//! runs it from its main loop and queues the reply behind the log text printed before it; POLL fetches both. HELLO
-//! answers from the interrupt (it works while the main loop is busy). Requests that change the speaker are gated:
-//! LOCKED asks for a press of ON/OFF on the speaker (`Unlock`) and sends the request again.
+//! The host link to our MCU firmware (docs/protocol/host.md), over USB or the network (a [`Link`]): a request goes
+//! with a sequence number; the MCU runs it from its main loop and queues the reply behind the log text printed before
+//! it; a poll fetches both. Requests that change the speaker are gated: LOCKED asks for a press of ON/OFF on the
+//! speaker (`Unlock` over USB, `Pair` over the network: [`Link::unlock`]) and sends the request again.
 
 use crate::codec::{self, Msg, Request, Typed, encode_msg};
+use crate::link::Link;
 use crate::spec::{self, usb};
 use crate::spec::{Err, msg};
-use crate::usb::{Bus, Iface, Setup, Usb, UsbError};
+use crate::usb::{Bus, Iface, Usb};
 use crate::{Error, Events, Result};
 use std::rc::Rc;
-
-/// bmRequestType: vendor, to the interface.
-const VENDOR_IN: u8 = 0xC1;
-const VENDOR_OUT: u8 = 0x41;
 
 /// The host link's interface, found by its class: its number moves with the interfaces before it.
 pub const IFACE: Iface = Iface::Class(usb::CLASS, usb::SUBCLASS, usb::PROTOCOL);
 
-/// Our MCU firmware on USB.
-pub struct Mcu<U: Usb> {
-    pub usb: U,
+/// Our MCU firmware, on USB or through our module OS on the network.
+pub struct Mcu<L: Link> {
+    pub link: L,
     /// What it said at the start: the firmware, its protocol, its requests.
     pub hello: msg::HelloReply,
     /// The firmware speaks another host protocol: only the base layer (`Hello`, `Dfu`) goes through.
@@ -31,6 +28,8 @@ pub struct Mcu<U: Usb> {
     pending: Vec<(u16, f64, std::result::Result<Msg, codec::Error>)>,
     /// The module's console bytes POLL brought (`Console` open), until [`Mcu::console_take`].
     console: Vec<u8>,
+    /// The last `State` record the speaker pushed (the network link's EVENT records), until [`Mcu::pushed_state`].
+    pushed: Option<Vec<u8>>,
 }
 
 /// The most console bytes kept for [`Mcu::console_take`]: older ones go.
@@ -40,44 +39,72 @@ const CONSOLE_KEEP: usize = 1 << 20;
 const STALE_MS: f64 = 60_000.0;
 
 impl<U: Usb> Mcu<U> {
-    /// Talk to `usb` (our firmware's device, its interface claimed): HELLO, the protocol checked. `backlog`: hand the
-    /// log from before (up to 4 KB) to the events; otherwise it is dropped.
-    pub async fn new(usb: U, ev: Rc<dyn Events>, backlog: bool) -> Result<Self> {
-        let h = usb
-            .control_in(
-                Setup { bm: VENDOR_IN, request: usb::HELLO, value: 0, index: usb.iface() as u16 },
-                spec::MSG_MAX as u16,
-                2000,
-            )
-            .await
-            .map_err(|e| {
-                Error::Device(format!(
-                    "the device on {:04X}:{:04X} does not answer the host link ({e}): firmware \
-                                                from before the host link? DFU still works",
-                    usb::VID,
-                    usb::PID
-                ))
-            })?;
-        let hello = typed::<msg::HelloReply>(codec::decode(&h)?)?;
-        // another protocol: the base layer still works (HELLO from the interrupt, and `Dfu`, id 0x06 since the
-        // first version), so a newer tool can always put an older firmware into the bootloader and flash it
-        let foreign = hello.proto != spec::VERSION;
-        let mut m =
-            Mcu { usb, hello, foreign, ev, seq: crate::seed() as u16, pending: Vec::new(), console: Vec::new() };
-        if !backlog {
-            let keep = std::mem::replace(&mut m.ev, Rc::new(crate::Quiet));
-            while m.poll().await? > 0 {}
-            m.ev = keep;
-        }
-        Ok(m)
-    }
-
     /// Our firmware on `bus` (None: not on USB as 03EB:2FE0).
     pub async fn open<B: Bus<Dev = U>>(bus: &B, ev: Rc<dyn Events>, backlog: bool) -> Result<Option<Self>> {
         match bus.open(usb::VID, usb::PID, IFACE).await? {
             Some(d) => Ok(Some(Mcu::new(d, ev, backlog).await?)),
             None => Ok(None),
         }
+    }
+
+    /// `data` to the bulk pipe (the endpoint `usb::BULK_OUT`; progress as `what`), 64 KB at a time with `each(self, sent)` after each
+    /// (false: stop there), then the zero-length packet the MCU needs when the data ends on a full packet inside its
+    /// 512-byte buffer (protocol/host). The bytes sent.
+    pub async fn bulk(
+        &mut self,
+        what: &str,
+        data: &[u8],
+        mut each: impl AsyncFnMut(&mut Self, usize) -> Result<bool>,
+    ) -> Result<usize> {
+        const CHUNK: usize = 64 * 1024;
+        let mut sent = 0;
+        while sent < data.len() {
+            let n = CHUNK.min(data.len() - sent);
+            sent += self
+                .link
+                .bulk_out(usb::BULK_OUT, &data[sent..sent + n], 30_000)
+                .await
+                .map_err(|e| Error::Usb("bulk OUT", e))?;
+            self.ev.progress(what, sent as u64, data.len() as u64);
+            if !each(self, sent).await? {
+                return Ok(sent);
+            }
+        }
+        if data.len() % 64 == 0 && data.len() % 512 != 0 {
+            self.link
+                .bulk_out(usb::BULK_OUT, &[], 10_000)
+                .await
+                .map_err(|e| Error::Usb("the closing zero-length packet", e))?;
+        }
+        Ok(sent)
+    }
+}
+
+impl<L: Link> Mcu<L> {
+    /// Talk to the firmware over `link`: its hello, the protocol checked. `backlog`: hand the log from before (up to
+    /// 4 KB) to the events; otherwise it is dropped.
+    pub async fn new(link: L, ev: Rc<dyn Events>, backlog: bool) -> Result<Self> {
+        let h = link.hello().await?;
+        let hello = typed::<msg::HelloReply>(codec::decode(&h)?)?;
+        // another protocol: the base layer still works (HELLO from the interrupt, and `Dfu`, id 0x06 since the
+        // first version), so a newer tool can always put an older firmware into the bootloader and flash it
+        let foreign = hello.proto != spec::VERSION;
+        let mut m = Mcu {
+            link,
+            hello,
+            foreign,
+            ev,
+            seq: crate::seed() as u16,
+            pending: Vec::new(),
+            console: Vec::new(),
+            pushed: None,
+        };
+        if !backlog {
+            let keep = std::mem::replace(&mut m.ev, Rc::new(crate::Quiet));
+            while m.poll().await? > 0 {}
+            m.ev = keep;
+        }
+        Ok(m)
     }
 
     pub fn events(&self) -> &Rc<dyn Events> {
@@ -90,23 +117,27 @@ impl<U: Usb> Mcu<U> {
         self.hello.requests.get(m.id as usize / 8).is_some_and(|b| b >> (m.id % 8) & 1 == 1)
     }
 
-    /// One POLL: the log text to the events, replies kept by sequence number (a reply that doesn't decode goes to its
+    /// Wait, in the speaker's time.
+    pub async fn sleep(&self, ms: u32) {
+        self.link.sleep(ms).await
+    }
+
+    /// How many times slower the speaker's time runs than ours (the emulator's).
+    pub fn slow(&self) -> u32 {
+        self.link.slow()
+    }
+
+    /// The `State` record the speaker pushed last (over the network, whenever it changes), taken.
+    pub fn pushed_state(&mut self) -> Option<Vec<u8>> {
+        self.pushed.take()
+    }
+
+    /// One poll: the log text to the events, replies kept by sequence number (a reply that doesn't decode goes to its
     /// call as the error). The number of records.
     pub async fn poll(&mut self) -> Result<usize> {
-        let d = self
-            .usb
-            .control_in(
-                Setup { bm: VENDOR_IN, request: usb::POLL, value: 0, index: self.usb.iface() as u16 },
-                spec::POLL_MAX as u16,
-                2000,
-            )
-            .await
-            .map_err(|e| Error::Usb("POLL", e))?;
-        let (mut i, mut n) = (0, 0);
-        while i + 3 <= d.len() {
-            let (kind, len) = (d[i], u16::from_le_bytes([d[i + 1], d[i + 2]]) as usize);
-            let body = &d[i + 3..(i + 3 + len).min(d.len())];
-            i += 3 + len;
+        let d = self.link.poll().await?;
+        let mut n = 0;
+        for (kind, body) in spec::record::split(&d) {
             if kind == spec::record::TEXT && !body.is_empty() {
                 self.ev.text(body);
                 n += 1;
@@ -114,6 +145,9 @@ impl<U: Usb> Mcu<U> {
                 self.console.extend_from_slice(body);
                 let over = self.console.len().saturating_sub(CONSOLE_KEEP);
                 self.console.drain(..over);
+                n += 1;
+            } else if kind == spec::record::EVENT && !body.is_empty() {
+                self.pushed = Some(body.to_vec());
                 n += 1;
             } else if kind == spec::record::REPLY && body.len() >= 2 {
                 let now = crate::now_ms();
@@ -143,6 +177,12 @@ impl<U: Usb> Mcu<U> {
                 spec::VERSION
             )));
         }
+        if !self.supports(name) && self.link.network() && spec::message(name).is_some_and(|d| !d.net) {
+            return Err(Error::Mcu(
+                Err::Unknown,
+                format!("{name} doesn't go over the network: USB's (docs/protocol/net.md)"),
+            ));
+        }
         if !self.supports(name) {
             return Err(Error::Mcu(
                 Err::Unknown,
@@ -155,19 +195,27 @@ impl<U: Usb> Mcu<U> {
         }
         // the firmware waits 30 s for the press; a patient program (a person at it) asks again until they press or
         // stop it
+        let (how, req) = self.link.unlock();
         loop {
-            self.ev.prompt(&format!(
-                "{name} changes the speaker: press ON/OFF on it within 30 s to allow it (its LED \
-                                     flashes purple)"
-            ));
-            match self.call_once("Unlock", &encode_msg(&msg::Unlock)?).await {
+            self.ev.prompt(&if how == "Pair" {
+                "pair with the speaker: press ON/OFF on it within 30 s (its LED flashes purple)".to_string()
+            } else {
+                format!(
+                    "{name} changes the speaker: press ON/OFF on it within 30 s to allow it (its LED flashes purple)"
+                )
+            });
+            match self.call_once(how, &req).await {
                 Err(Error::Mcu(Err::Denied, _)) if self.ev.patient() && !self.ev.cancelled() => continue,
                 Err(Error::Mcu(Err::Denied, _)) if self.ev.cancelled() => return Err(Error::Cancelled),
                 r => {
                     r?;
                 }
             }
-            self.ev.step("allowed: ON/OFF pressed on the speaker");
+            self.ev.step(if how == "Pair" {
+                "paired: ON/OFF pressed on the speaker"
+            } else {
+                "allowed: ON/OFF pressed on the speaker"
+            });
             return self.call_once(name, request).await;
         }
     }
@@ -176,23 +224,15 @@ impl<U: Usb> Mcu<U> {
         let def = spec::message(name).ok_or_else(|| Error::Codec(codec::Error::UnknownMessage(name.into())))?;
         let timeout = def.timeout(&codec::decode(request)?.vals);
         // the firmware's waits are in its time (the emulator's runs slower than ours)
-        let timeout = (timeout * self.usb.slow()) as f64;
+        let timeout = (timeout * self.link.slow()) as f64;
         self.seq = self.seq.wrapping_add(1);
         let (seq, t0) = (self.seq, crate::now_ms());
-        loop {
-            // CALL stalls while an earlier request still runs
-            let s = Setup { bm: VENDOR_OUT, request: usb::CALL, value: seq, index: self.usb.iface() as u16 };
-            match self.usb.control_out(s, request, 2000).await {
-                Ok(()) => break,
-                Err(UsbError::Gone) => return Err(Error::Usb("CALL", UsbError::Gone)),
-                Err(_) if crate::now_ms() - t0 > timeout => {
-                    return Err(Error::Timeout(format!("{name}: the MCU did not take the request (busy?)")));
-                }
-                Err(_) => {
-                    self.poll().await?;
-                    self.usb.sleep(50).await;
-                }
+        while !self.link.call(seq, request).await? {
+            if crate::now_ms() - t0 > timeout {
+                return Err(Error::Timeout(format!("{name}: the MCU did not take the request (busy?)")));
             }
+            self.poll().await?;
+            self.link.sleep(50).await;
         }
         loop {
             if let Some(i) = self.pending.iter().position(|p| p.0 == seq) {
@@ -207,41 +247,9 @@ impl<U: Usb> Mcu<U> {
                 return Err(Error::Timeout(format!("{name}: no reply within {:.0} s", timeout / 1000.0)));
             }
             if self.poll().await? == 0 {
-                self.usb.sleep(20).await;
+                self.link.sleep(20).await;
             }
         }
-    }
-
-    /// `data` to the bulk pipe (the endpoint `usb::BULK_OUT`; progress as `what`), 64 KB at a time with `each(self, sent)` after each
-    /// (false: stop there), then the zero-length packet the MCU needs when the data ends on a full packet inside its
-    /// 512-byte buffer (protocol/host). The bytes sent.
-    pub async fn bulk(
-        &mut self,
-        what: &str,
-        data: &[u8],
-        mut each: impl AsyncFnMut(&mut Self, usize) -> Result<bool>,
-    ) -> Result<usize> {
-        const CHUNK: usize = 64 * 1024;
-        let mut sent = 0;
-        while sent < data.len() {
-            let n = CHUNK.min(data.len() - sent);
-            sent += self
-                .usb
-                .bulk_out(usb::BULK_OUT, &data[sent..sent + n], 30_000)
-                .await
-                .map_err(|e| Error::Usb("bulk OUT", e))?;
-            self.ev.progress(what, sent as u64, data.len() as u64);
-            if !each(self, sent).await? {
-                return Ok(sent);
-            }
-        }
-        if data.len() % 64 == 0 && data.len() % 512 != 0 {
-            self.usb
-                .bulk_out(usb::BULK_OUT, &[], 10_000)
-                .await
-                .map_err(|e| Error::Usb("the closing zero-length packet", e))?;
-        }
-        Ok(sent)
     }
 
     /// Open the module's console for this host (afresh: [`Mcu::console_take`] starts empty) or close it.
@@ -269,11 +277,11 @@ impl<U: Usb> Mcu<U> {
                 t0 = crate::now_ms();
             }
             if taken < n {
-                if crate::now_ms() - t0 > (5000 * self.usb.slow()) as f64 {
+                if crate::now_ms() - t0 > (5000 * self.link.slow()) as f64 {
                     return Err(Error::Timeout("the module's console took no more bytes for 5 s".into()));
                 }
                 self.poll().await?;
-                self.usb.sleep(5).await;
+                self.link.sleep(5).await;
             }
         }
         Ok(())
@@ -284,7 +292,7 @@ impl<U: Usb> Mcu<U> {
         let t0 = crate::now_ms();
         while crate::now_ms() - t0 < ms as f64 && !self.ev.cancelled() {
             if self.poll().await? == 0 {
-                self.usb.sleep(50).await;
+                self.link.sleep(50).await;
             }
         }
         Ok(())
@@ -294,7 +302,7 @@ impl<U: Usb> Mcu<U> {
     pub async fn follow(&mut self) -> Result<()> {
         while !self.ev.cancelled() {
             if self.poll().await? == 0 {
-                self.usb.sleep(50).await;
+                self.link.sleep(50).await;
             }
         }
         Ok(())

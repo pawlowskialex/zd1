@@ -7,7 +7,7 @@ import { lampOf, ledLook } from "./led.js";
 import { drawSettings } from "./network.js";
 import { app } from "./shared.js";
 import { drawnKey, drawReleases, drawSoftware } from "./software.js";
-import { $, el, fill, names, segmented } from "./ui.js";
+import { $, ask, el, fill, names, segmented } from "./ui.js";
 
 // ---- the state ----------------------------------------------------------------------------------------------------
 
@@ -41,6 +41,7 @@ export async function refresh(all) {
       app.known = app.state ? await app.sp.list("Networks").catch(() => []) : [];
       if (app.state) drawSettings();
       drawSoftware(await app.sp.call("BootState", {}));
+      if (app.sp.link() === "net") drawControllers(await app.sp.list("Controllers").catch(() => []));
     }
     drawDiag(diag);
     app.led = diag.led;
@@ -135,6 +136,33 @@ export function drawBehaviour() {
     );
   }
   if (document.activeElement !== $("vol-cap")) $("vol-cap").value = i.volume_cap || 40;
+}
+
+/// Over the network: the browsers and computers paired with the speaker, each with Forget (this one too: it pairs again
+/// with a press).
+function drawControllers(list) {
+  $("controllers").replaceChildren(
+    ...list.map((c) => {
+      const f = el("button", { className: "quiet", textContent: "Forget" });
+      f.onclick = async () => {
+        if (
+          await ask(
+            `Forget “${c.name}”?`,
+            "It no longer reaches the speaker over the network until it pairs again, with a press of ON/OFF.",
+            "Forget",
+          )
+        )
+          act(() => app.sp.setSetting("net.forget", c.id));
+      };
+      return el(
+        "div",
+        { className: "row item" },
+        el("span", { textContent: c.name || c.id }),
+        el("span", { className: "small grow", textContent: c.since ? `since ${c.since} UTC` : "" }),
+        f,
+      );
+    }),
+  );
 }
 
 export function drawAdvanced() {

@@ -3,8 +3,10 @@ name = "zd1-release"
 version = "0.1.0"
 edition.workspace = true
 license.workspace = true
-description = "The files a release of ours is made of: the MCU's app as a .dmb, the firmware's identification, a slot's stamp"
+description = "The files a release of ours is made of: the signed system update, the MCU's app as a .dmb, the firmware's identification, the Lightning model's .fw, a slot's stamp"
 
 [dependencies]
+ed25519-dalek = { version = "2.2", default-features = false }
+sha2 = { version = "0.10", default-features = false }
 zd1-spi.workspace = true
 zd1-text.workspace = true
