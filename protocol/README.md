@@ -1,7 +1,10 @@
-# protocol: the MCU's two links, one definition each
+# protocol: the MCU's two links, one definition each; and what both sides share
 
 Two `no_std` crates, one per link. Everything that speaks a link is built from its crate: Rust uses the crate
 directly; the MCU's C (AVR32: no Rust there) is generated from it by `gen/`, with test vectors that hold the C to it.
+Beside them, two crates every side's Rust shares, so that nothing is written twice: `release/` (`zd1-release`: the
+files a release is made of: the MCU's app as a B&W `.dmb`, the firmware's identification block, a slot's stamp) and
+`text/` (`zd1-text`, no dependencies: hex, a key's short name, a UTC date, a string cut to a field's bytes).
 
 | Crate | Link | Rust that uses it | Generated (`gen/`) |
 |---|---|---|---|
@@ -17,6 +20,7 @@ checked frame by frame against the decompiled updater.
 | `spec.rs` | the registers (number, F/V kind, who reads / writes / notifies, payload, evidence) as a `registers!` table; DRC codes and their acks (`codes!`); the protocol's named values in groups (`consts!`: the wire's bytes, status, volume, the play XML's pattern and icons, receivers, boot slots, the native protocol). Checked against the stock MCU firmware's own kind table |
 | `framing.rs` | the wire format: every byte stuffed (headers too), idle 0xFF, the module's request parser and reply encoders, the MCU's request encoders and reply parser |
 | `codec.rs` | payloads: volume (attenuation <-> the MCU's 72 steps <-> %), play-state XML and its matcher, the configuration channel, network status |
+| `xmodem.rs` | XModem over 0x2C / 0x2D: CRC-16/XMODEM, a block built and checked (128 bytes to the MCU's bootloader, 1024 to BL2); its bytes are the spec's `xmodem` group |
 
 The MCU's side is C: `mcu/src/zd1link_gen.h` has the values (generated from the three tables); `mcu/src/zd1link.h`
 is the code on them, written by hand since the MCU can't run the Rust (stuffing, the volume conversion, net status,
@@ -51,7 +55,7 @@ cc -I mcu/src -o /tmp/h mcu/test/zd1host_gen_test.c && /tmp/h   # the host link'
 | Output | |
 |---|---|
 | `mcu/src/zd1link_gen.h` | `ZD1_REG_*`, `zd1_reg_kind()`, `ZD1_DRC_*` + `zd1_drc_ack()`, every `consts!` group as `ZD1_<GROUP>_<NAME>`: under `mcu/src/zd1link.h` |
-| `mcu/test/zd1link_gen_test.c` | the MCU's C (`zd1link.h` on `zd1link_gen.h`) against vectors computed by the Rust implementation (every byte stuffed, whole messages, every volume value both ways, kinds, acks, play icons) |
+| `mcu/test/zd1link_gen_test.c` | the MCU's C (`zd1link.h` on `zd1link_gen.h`) against vectors computed by the Rust implementation (every byte stuffed, whole messages, every volume value both ways, kinds, acks, play icons, XModem's CRC and blocks) |
 | `docs/protocol/registers.md` | the register and DRC reference |
 | `mcu/src/zd1host_gen.h` | the host link's messages as C structs, a table-driven codec (header-only, `static inline`), the constants: used by `mcu/src/hostif.c` |
 | `mcu/test/zd1host_gen_test.c` | the C codec against vectors from the codec: every message three ways (once if it has no fields), refused when short, long or over a maximum |

@@ -6,6 +6,7 @@ license.workspace = true
 description = "Spotify Connect receiver for the module (librespot, Vorbis on Warp0 or the ARM in fixed point), controlled by the speaker (zd1-linkd)"
 
 [dependencies]
+zd1-text.workspace = true
 # librespot 0.8; playback, audio, discovery and libmdns changed in our forks (the workspace's [patch.crates-io], module/os/forks.md)
 librespot-core = { version = "0.8", default-features = false, features = ["rustls-tls-webpki-roots"] }
 librespot-connect = { version = "0.8", default-features = false, features = ["rustls-tls-webpki-roots"] }

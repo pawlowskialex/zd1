@@ -216,6 +216,7 @@ let
         "tools/zeppelin/paths.py"
         "tools/zeppelin/fw/bcd.py"
         "tools/zeppelin/fw/bwfw.py"
+        "tools/zeppelin/xmodem.py"
         "tools/zeppelin/fw/ihex.py"
       ];
     in

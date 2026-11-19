@@ -44,6 +44,7 @@ use zd1_link::spi::spec::{STOCK_F, STOCK_V, boot, native, player};
 use zd1_net::Iface;
 use zd1_net::wpa::{Network, Watch, WifiState};
 use zd1_sys::{OsRelease, hex};
+use zd1_text::cut;
 
 mod mcufw;
 
@@ -93,15 +94,6 @@ fn cstr(s: &str) -> Vec<u8> {
     v
 }
 
-/// At most `max` bytes of `s`, cut at a character boundary (a field's maximum).
-fn trim(s: &str, max: usize) -> &str {
-    let mut n = s.len().min(max);
-    while !s.is_char_boundary(n) {
-        n -= 1;
-    }
-    &s[..n]
-}
-
 /// A list record's entries, as many as fit one notification (its length prefixes counted).
 fn fit(entries: Vec<Vec<u8>>) -> Vec<Vec<u8>> {
     let mut size = 0;
@@ -120,7 +112,7 @@ fn scan_entry(n: &Network) -> Result<Vec<u8>, codec::Error> {
     codec::encode(
         "ScanEntry",
         &[
-            ("ssid", Val::from(trim(&ssid, 32))),
+            ("ssid", Val::from(cut(&ssid, 32))),
             ("signal", Val::N((-n.level).clamp(0, 255) as u32)),
             ("security", Val::N(n.security().value() as u32)),
         ],
@@ -312,8 +304,8 @@ impl App {
         let mut v = zd1_settings::record_values(&zd1_settings::load());
         let wifi = self.wifi.lock().unwrap();
         let stamps = self.stamps.lock().unwrap().clone();
-        v.extend([("stamp_a", Val::from(trim(&stamps[0], 64))), ("stamp_b", Val::from(trim(&stamps[1], 64)))]);
-        v.push(("boot", Val::from(trim(&self.boot, 12))));
+        v.extend([("stamp_a", Val::from(cut(&stamps[0], 64))), ("stamp_b", Val::from(cut(&stamps[1], 64)))]);
+        v.push(("boot", Val::from(cut(&self.boot, 12))));
         let (st, fst) = self.front;
         let senders = self.sessions.iter().fold(0u8, |m, &(_, p)| m | 1 << p);
         v.extend([
@@ -392,7 +384,7 @@ impl App {
                 codec::encode(
                     "Snapserver",
                     &[
-                        ("name", Val::from(trim(&f.name, 63))),
+                        ("name", Val::from(cut(&f.name, 63))),
                         ("host", Val::from(f.addr.to_string().as_str())),
                         ("port", Val::N(f.port as u32)),
                     ],
@@ -419,7 +411,7 @@ impl App {
         let e: Vec<Vec<u8>> = zd1_settings::pairings()
             .iter()
             .filter_map(|(id, admin)| {
-                codec::encode("Pairing", &[("id", Val::from(trim(id, 63))), ("admin", Val::B(*admin))]).ok()
+                codec::encode("Pairing", &[("id", Val::from(cut(id, 63))), ("admin", Val::B(*admin))]).ok()
             })
             .collect();
         codec::encode_list(&fit(e))

@@ -10,6 +10,7 @@ use shairplay::PairingStore;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
+use zd1_text::{hex, unhex_n};
 
 /// Controllers kept at most.
 pub const MAX_CONTROLLERS: usize = 16;
@@ -35,7 +36,7 @@ impl DataStore {
             .lines()
             .filter_map(|l| {
                 let mut f = l.split(' ');
-                let (id, pk, role) = (f.next()?, unhex32(f.next()?)?, f.next());
+                let (id, pk, role) = (f.next()?, unhex_n::<32>(f.next()?)?, f.next());
                 Some((id.to_string(), pk, role != Some("user")))
             })
             .collect::<Vec<_>>();
@@ -122,22 +123,6 @@ impl PairingStore for DataStore {
     fn save_identity(&self, seed: [u8; 32]) {
         self.write("identity", &seed);
     }
-}
-
-fn hex(b: &[u8]) -> String {
-    b.iter().map(|v| format!("{v:02x}")).collect()
-}
-
-fn unhex32(s: &str) -> Option<[u8; 32]> {
-    let s = s.trim();
-    if s.len() != 64 {
-        return None;
-    }
-    let mut out = [0u8; 32];
-    for (i, o) in out.iter_mut().enumerate() {
-        *o = u8::from_str_radix(s.get(2 * i..2 * i + 2)?, 16).ok()?;
-    }
-    Some(out)
 }
 
 #[cfg(test)]

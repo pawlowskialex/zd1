@@ -16,6 +16,7 @@ stdenvNoCC.mkDerivation {
     "tools/zeppelin/paths.py"
     "tools/zeppelin/fw/bcd.py"
     "tools/zeppelin/fw/bwfw.py"
+    "tools/zeppelin/xmodem.py"
   ];
   nativeBuildInputs = [ python3 ];
   buildPhase = ''

@@ -3,7 +3,8 @@
 //! - [`spec`]: what the protocol is (registers, their kind and direction, DRC codes and their acks, status values),
 //!   from the stock firmware (evidence noted per item, docs/protocol/spi-registers.md);
 //! - [`framing`]: how it goes over the wire (byte stuffing, requests, replies), the one implementation;
-//! - [`codec`]: what the payloads mean (volume, play state, network status).
+//! - [`codec`]: what the payloads mean (volume, play state, network status);
+//! - [`xmodem`]: XModem's blocks and CRC-16 over 0x2C / 0x2D.
 //!
 //! The module side (module/link, zd1-linkd) uses this crate directly; the MCU side (C) gets `mcu/src/zd1link_gen.h`
 //! generated from it (`protocol/gen`), with the register reference and the test vectors both sides check against.
@@ -13,6 +14,7 @@
 pub mod codec;
 pub mod framing;
 pub mod spec;
+pub mod xmodem;
 
 #[cfg(test)]
 mod tests;

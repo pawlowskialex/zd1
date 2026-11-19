@@ -79,6 +79,17 @@ static inline int zd1_drc_ack(uint8_t code){
 #define ZD1_WIRE_READ_V            3
 #define ZD1_WIRE_V_MAX             0x405  /* The longest V write the stock MCU sends [RE 0x8000b910]. */
 
+/* ---- xmodem: XModem over SPI (0x2C / 0x2D): the module image to BL2 (XModem-1K, the relay and `XmFrame`), the MCU's own app to its bootloader (128-byte blocks, from our OS or BL2); blocks with CRC-16/XMODEM (`xmodem.rs`). ---- */
+#define ZD1_XMODEM_SOH             1  /* A 128-byte block: SOH n ~n, the data, its CRC-16 big-endian. */
+#define ZD1_XMODEM_STX             2  /* A 1024-byte block (XModem-1K). */
+#define ZD1_XMODEM_EOT             4
+#define ZD1_XMODEM_ACK             6
+#define ZD1_XMODEM_NAK             0x15
+#define ZD1_XMODEM_CAN             0x18
+#define ZD1_XMODEM_START           0x43  /* The receiver's start: CRC mode. */
+#define ZD1_XMODEM_BLOCK           0x80
+#define ZD1_XMODEM_BLOCK_1K        0x400
+
 /* ---- status: DM1000Status values (0x11, the 16-bit value). ---- */
 #define ZD1_STATUS_BOOTING         0x2000  /* Our boot stub, while it waits for the MCU's choice (0xC4). */
 #define ZD1_STATUS_READY           0x2100

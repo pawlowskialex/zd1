@@ -23,16 +23,6 @@
 #define MCUFW_HCR_BL2         0x2120u
 #define MCUFW_DCR_HOST_FW     0x2423u
 
-/* CRC-16/XMODEM: XModem's block check and a .dmb's app check */
-static inline uint16_t mcufw_crc16(uint16_t c, const volatile uint8_t *d, uint32_t n) {
-    while (n--) {
-        c ^= (uint16_t)(*d++ << 8);
-        for (int i = 0; i < 8; i++)
-            c = (c & 0x8000) ? (uint16_t)((c << 1) ^ 0x1021) : (uint16_t)(c << 1);
-    }
-    return c;
-}
-
 /* a .dmb header (big-endian): 00 01 00 80, +8 the app's length, +16 its CRC-16 */
 static inline uint32_t mcufw_be32(const volatile uint8_t *p) {
     return (uint32_t)p[0] << 24 | (uint32_t)p[1] << 16 | (uint32_t)p[2] << 8 | p[3];

@@ -269,6 +269,23 @@ consts! {
         V_MAX: u16 = 0x405,
     }
 
+    /// XModem over SPI (0x2C / 0x2D): the module image to BL2 (XModem-1K, the relay and `XmFrame`), the MCU's own app to
+    /// its bootloader (128-byte blocks, from our OS or BL2); blocks with CRC-16/XMODEM (`xmodem.rs`).
+    xmodem {
+        /// A 128-byte block: SOH n ~n, the data, its CRC-16 big-endian.
+        SOH: u8 = 0x01,
+        /// A 1024-byte block (XModem-1K).
+        STX: u8 = 0x02,
+        EOT: u8 = 0x04,
+        ACK: u8 = 0x06,
+        NAK: u8 = 0x15,
+        CAN: u8 = 0x18,
+        /// The receiver's start: CRC mode.
+        START: u8 = 0x43,
+        BLOCK: u16 = 128,
+        BLOCK_1K: u16 = 1024,
+    }
+
     /// DM1000Status values (0x11, the 16-bit value).
     status {
         /// Our boot stub, while it waits for the MCU's choice (0xC4).

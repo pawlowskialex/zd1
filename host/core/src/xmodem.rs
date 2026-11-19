@@ -5,16 +5,8 @@ use crate::spec::ModOp;
 use crate::usb::Usb;
 use crate::{Error, Mcu, Result, msg};
 
-fn crc16_xmodem(d: &[u8]) -> u16 {
-    let mut c = 0u16;
-    for b in d {
-        c ^= (*b as u16) << 8;
-        for _ in 0..8 {
-            c = if c & 0x8000 != 0 { c << 1 ^ 0x1021 } else { c << 1 };
-        }
-    }
-    c
-}
+use zd1_spi::spec::xmodem::{ACK, BLOCK_1K, CAN, EOT, START};
+use zd1_spi::xmodem::block;
 
 /// BL2's answer to a frame: the MCU waits for it up to `XM_WAIT_MS` itself (its watchdog allows no longer), then it
 /// is asked for again (an empty `XmFrame`) until `XM_ANSWER_MS` have passed since `sent` (when the frame went out).
@@ -47,7 +39,7 @@ pub async fn xm_install<U: Usb>(
     limit: Option<usize>,
 ) -> Result<Vec<String>> {
     let ev = m.events().clone();
-    let total = data.len().div_ceil(1024);
+    let total = data.len().div_ceil(BLOCK_1K as usize);
     let n = limit.map_or(total, |l| l.min(total));
     if !in_bl2 {
         let r = m.call(&msg::Module { op: ModOp::Bl2, timeout_s: 60 }).await?;
@@ -61,7 +53,7 @@ pub async fn xm_install<U: Usb>(
     let t0 = crate::now_ms();
     loop {
         let a = m.call(&msg::XmFrame::default()).await?;
-        if a.answers.contains(&b'C') {
+        if a.answers.contains(&START) {
             break;
         }
         if crate::now_ms() - t0 > 90_000.0 {
@@ -72,11 +64,9 @@ pub async fn xm_install<U: Usb>(
     ev.step(&format!("BL2 asks (C) after {:.1} s; {n} blocks", (crate::now_ms() - t0) / 1000.0));
     const PIECE: usize = 240;
     let (mut stats, mut retries, ts) = (Vec::new(), 0, crate::now_ms());
-    for (i, blk) in data.chunks(1024).take(n).enumerate() {
-        let k = (i + 1) as u8;
-        let mut b = blk.to_vec();
-        b.resize(1024, 0x1A);
-        let frame = [&[0x02, k, 0xFF - k][..], &b, &crc16_xmodem(&b).to_be_bytes()].concat();
+    let mut frame = vec![0u8; BLOCK_1K as usize + 5];
+    for i in 0..n {
+        block(data, i + 1, BLOCK_1K, 0x1A, &mut frame); // XModem's padding: SUB
         let th = crate::now_ms();
         let last = (frame.len() - 1) / PIECE * PIECE;
         for off in (0..last).step_by(PIECE) {
@@ -103,11 +93,11 @@ pub async fn xm_install<U: Usb>(
             };
             let x = xm_answer(m, x, sent).await?;
             match x.answers.last() {
-                Some(0x06) => {
+                Some(&ACK) => {
                     r = Some(x);
                     break;
                 }
-                Some(0x18) => {
+                Some(&CAN) => {
                     return Err(Error::Failed(format!("block {}: BL2 cancelled ({})", i + 1, crate::hex(&x.answers))));
                 }
                 _ => {
@@ -127,7 +117,7 @@ pub async fn xm_install<U: Usb>(
         None
     } else {
         let sent = crate::now_ms();
-        let x = m.call(&msg::XmFrame { offset: 0, data: vec![0x04], send: true, wait_ms: XM_WAIT_MS }).await?;
+        let x = m.call(&msg::XmFrame { offset: 0, data: vec![EOT], send: true, wait_ms: XM_WAIT_MS }).await?;
         Some(xm_answer(m, x, sent).await?)
     };
     let eot_ans = eot.map(|r| r.answers);
@@ -149,7 +139,7 @@ pub async fn xm_install<U: Usb>(
             out.push(format!("  {name:<32} median {med:6.1} ms, 95% {:6.1}, max {max:6.1}", v[v.len() * 95 / 100]));
         }
     }
-    if eot_ans.is_some_and(|a| a.last() != Some(&0x06)) {
+    if eot_ans.is_some_and(|a| a.last() != Some(&ACK)) {
         return Err(Error::Failed(out.join("\n")));
     }
     Ok(out)

@@ -4014,6 +4014,7 @@ dependencies = [
  "zd1-audio",
  "zd1-compat",
  "zd1-sys",
+ "zd1-text",
  "zd1-warp0",
 ]
 
@@ -4107,6 +4108,9 @@ dependencies = [
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "zd1-hostlink",
+ "zd1-release",
+ "zd1-spi",
+ "zd1-text",
 ]
 
 [[package]]
@@ -4150,10 +4154,12 @@ dependencies = [
  "zd1-mdns",
  "zd1-net",
  "zd1-persparam",
+ "zd1-release",
  "zd1-settings",
  "zd1-slot",
  "zd1-svc",
  "zd1-sys",
+ "zd1-text",
  "zd1-update",
 ]
 
@@ -4195,6 +4201,14 @@ version = "0.1.0"
 dependencies = [
  "zd1-hostlink",
  "zd1-spi",
+]
+
+[[package]]
+name = "zd1-release"
+version = "0.1.0"
+dependencies = [
+ "zd1-spi",
+ "zd1-text",
 ]
 
 [[package]]
@@ -4258,6 +4272,7 @@ dependencies = [
  "tracing",
  "zd1-audio",
  "zd1-compat",
+ "zd1-text",
  "zd1-warp0",
 ]
 
@@ -4270,7 +4285,12 @@ name = "zd1-sys"
 version = "0.1.0"
 dependencies = [
  "libc",
+ "zd1-text",
 ]
+
+[[package]]
+name = "zd1-text"
+version = "0.1.0"
 
 [[package]]
 name = "zd1-update"

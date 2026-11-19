@@ -9,6 +9,8 @@ members = [
   "protocol/spi",
   "protocol/host",
   "protocol/gen",
+  "protocol/release",
+  "protocol/text",
   "host/core",
   "host/cli",
   "host/web",
@@ -27,6 +29,8 @@ default-members = [
   "protocol/spi",
   "protocol/host",
   "protocol/gen",
+  "protocol/release",
+  "protocol/text",
   "host/core",
   "host/cli",
   "module/dm870",
@@ -48,6 +52,8 @@ license = "MIT"
 dm870 = { path = "module/dm870" }
 zd1-spi = { path = "protocol/spi" }
 zd1-hostlink = { path = "protocol/host" }
+zd1-release = { path = "protocol/release" }
+zd1-text = { path = "protocol/text" }
 zd1-host = { path = "host/core" }
 zd1-link = { path = "module/link" }
 zd1-aac = { path = "module/codecs/aac/rust" }

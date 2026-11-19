@@ -151,20 +151,7 @@ pub fn crc32(b: &[u8]) -> u32 {
     !crc32_update(!0, b)
 }
 
-/// Lower-case hex.
-pub fn hex(b: &[u8]) -> String {
-    b.iter().map(|x| format!("{x:02x}")).collect()
-}
-
-/// Hex (either case) back to bytes; None for an odd length or a non-hex digit.
-pub fn unhex(s: &str) -> Option<Vec<u8>> {
-    let b = s.as_bytes();
-    if b.len() % 2 != 0 {
-        return None;
-    }
-    let d = |c: u8| (c as char).to_digit(16);
-    b.chunks(2).map(|p| Some((d(p[0])? * 16 + d(p[1])?) as u8)).collect()
-}
+pub use zd1_text::{hex, unhex};
 
 /// A MAC address.
 pub type Mac = [u8; 6];

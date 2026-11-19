@@ -23,32 +23,10 @@ pub struct McuImage {
     pub mem: BTreeMap<u32, u8>,
 }
 
-/// What mcu/stamp.py put in an image: the commit (`-dirty` with uncommitted changes) and its date.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Ident {
-    pub version: String,
-    pub built: String,
-}
-
-const MAGIC: &[u8] = b"ZD1-FW-IDENT-01\0";
-
+/// What mcu/stamp.py put in an image: the commit (`-dirty` with uncommitted changes) and its date (`zd1-release`).
+pub use zd1_release::Ident;
 /// The identification in `data` (one block exactly, else None).
-pub fn ident(data: &[u8]) -> Option<Ident> {
-    let i = find(data, MAGIC)?;
-    if find(&data[i + 1..], MAGIC).is_some() {
-        return None;
-    }
-    let p = i + MAGIC.len();
-    let field = |a: usize, n: usize| {
-        let b = data.get(a..a + n)?;
-        Some(String::from_utf8_lossy(b.split(|c| *c == 0).next().unwrap_or(b)).into_owned())
-    };
-    Some(Ident { version: field(p, 41)?, built: field(p + 41, 25)? })
-}
-
-fn find(h: &[u8], n: &[u8]) -> Option<usize> {
-    h.windows(n.len()).position(|w| w == n)
-}
+pub use zd1_release::ident::find as ident;
 
 impl McuImage {
     /// Intel HEX text, a backup (its app region), or else a raw image of the app region (at 0x80004000).
@@ -257,7 +235,7 @@ pub fn system_version(image: &[u8]) -> Result<String> {
 
 /// The stamp a slot gets (what `zd1-ctl status` shows): "VERSION SHA256[:12] LENGTH".
 pub fn system_stamp(image: &[u8]) -> Result<String> {
-    Ok(format!("{} {} {}", system_version(image)?, &crate::hex(&crate::sha256(image))[..12], image.len()))
+    Ok(zd1_release::stamp(&system_version(image)?, &crate::sha256(image), image.len() as u64))
 }
 
 #[cfg(test)]
@@ -266,7 +244,7 @@ mod tests {
 
     #[test]
     fn hex_and_ident() {
-        let mut blk = MAGIC.to_vec();
+        let mut blk = zd1_release::ident::MAGIC.to_vec();
         blk.extend(b"abc1234\0".iter().chain(std::iter::repeat_n(&0, 33)));
         blk.extend(b"2026-10-30 12:00\0".iter().chain(std::iter::repeat_n(&0, 8)));
         let img = McuImage::from_bin(0x8000_4000, &[vec![0xAA; 100], blk.clone()].concat());

@@ -18,14 +18,7 @@ use std::time::{Duration, Instant};
 /// The image the MCU is to get, staged by whoever wants the MCU updated (the system at ready, a host).
 pub const PENDING: &str = "/data/zd1/mcu/pending.dmb";
 
-const SOH: u8 = 0x01;
-const EOT: u8 = 0x04;
-const ACK: u8 = 0x06;
-const NAK: u8 = 0x15;
-const CAN: u8 = 0x18;
-const START: u8 = b'C';
-const BLOCK: usize = 128;
-pub const DMB_HEADER: usize = 128;
+use zd1_link::spi::spec::xmodem::{ACK, BLOCK, CAN, EOT, NAK, START};
 
 /// HCR status (0x29) and DCR (0x2A) values and statuses (0x11) BL2 uses, as `b0 b1` words.
 pub const HCR_OK: u16 = 0x2020;
@@ -34,44 +27,15 @@ pub const STATUS_REBOOTING: u16 = 0x2000;
 pub const STATUS_BL2: u16 = 0x2300;
 pub const STATUS_FINISHED: u16 = 0x2500;
 
-/// A `.dmb`'s app, checked: the header's length and its CRC-16/XMODEM (what the bootloader checks after writing).
+/// A `.dmb`'s app checked as the bootloader checks it (`zd1-release`).
 pub fn check_dmb(f: &[u8]) -> Result<(), String> {
-    if f.len() < DMB_HEADER || f[..4] != [0x00, 0x01, 0x00, 0x80] {
-        return Err("not a .dmb (no 00 01 00 80 header)".into());
-    }
-    let len = u32::from_be_bytes(f[8..12].try_into().unwrap()) as usize;
-    if f.len() < DMB_HEADER + len {
-        return Err(format!("the header says {len} B of app, the file holds {}", f.len() - DMB_HEADER));
-    }
-    let want = u16::from_be_bytes(f[16..18].try_into().unwrap());
-    let got = crc16(&f[DMB_HEADER..DMB_HEADER + len]);
-    if got != want {
-        return Err(format!("app CRC-16 {got:04x}, the header says {want:04x}"));
-    }
-    Ok(())
+    zd1_release::dmb::app(f).map(drop)
 }
 
-/// CRC-16/XMODEM (CCITT polynomial, init 0): XModem's block check and the `.dmb` header's.
-pub fn crc16(d: &[u8]) -> u16 {
-    let mut c: u16 = 0;
-    for &b in d {
-        c ^= (b as u16) << 8;
-        for _ in 0..8 {
-            c = if c & 0x8000 != 0 { (c << 1) ^ 0x1021 } else { c << 1 };
-        }
-    }
-    c
-}
-
-/// XModem block `n` (1-based, wrapping at 256) of `data`: SOH n ~n, 128 bytes (0xFF after the end), CRC-16 big-endian.
-pub fn block(data: &[u8], n: usize) -> Vec<u8> {
-    let mut b = vec![SOH, n as u8, !(n as u8)];
-    let from = (n - 1) * BLOCK;
-    let mut chunk = [0xFFu8; BLOCK];
-    let take = data.len().saturating_sub(from).min(BLOCK);
-    chunk[..take].copy_from_slice(&data[from..from + take]);
-    b.extend_from_slice(&chunk);
-    b.extend_from_slice(&crc16(&chunk).to_be_bytes());
+/// XModem block `n` of the image: 128 bytes, erased flash (0xFF) after the end.
+fn block(data: &[u8], n: usize) -> Vec<u8> {
+    let mut b = vec![0u8; BLOCK as usize + 5];
+    zd1_link::spi::xmodem::block(data, n, BLOCK, 0xFF, &mut b);
     b
 }
 
@@ -115,7 +79,7 @@ const NAKS: u32 = 10;
 
 impl Serve {
     pub fn new(image: Vec<u8>, now: Instant) -> (Serve, Vec<Out>) {
-        let blocks = image.len().div_ceil(BLOCK);
+        let blocks = image.len().div_ceil(BLOCK as usize);
         let s = Serve { image, phase: Phase::Rebooting, since: now, last: now, blocks, naks: 0, again: 0 };
         let say =
             format!("[zd1-linkd] the MCU's bootloader asks for BL2: serving it the staged app ({blocks} blocks)\n");
@@ -224,37 +188,13 @@ mod tests {
     use super::*;
 
     fn dmb(app: &[u8]) -> Vec<u8> {
-        let mut h = vec![0u8; DMB_HEADER];
-        h[..4].copy_from_slice(&[0, 1, 0, 0x80]);
+        let mut h = vec![0u8; zd1_release::dmb::HEADER];
+        h[..4].copy_from_slice(&zd1_release::dmb::MAGIC);
         h[8..12].copy_from_slice(&(app.len() as u32).to_be_bytes());
         h[12..16].copy_from_slice(&0x8000u32.to_be_bytes());
-        h[16..18].copy_from_slice(&crc16(app).to_be_bytes());
+        h[16..18].copy_from_slice(&zd1_link::spi::xmodem::crc16(0, app).to_be_bytes());
         h.extend_from_slice(app);
         h
-    }
-
-    #[test]
-    fn crc16_is_xmodem() {
-        assert_eq!(crc16(b"123456789"), 0x31C3);
-    }
-
-    #[test]
-    fn a_dmb_is_checked_as_the_bootloader_does() {
-        let f = dmb(&[1, 2, 3]);
-        assert_eq!(check_dmb(&f), Ok(()));
-        let mut bad = f.clone();
-        bad[DMB_HEADER] ^= 1;
-        assert!(check_dmb(&bad).is_err());
-        assert!(check_dmb(&f[..DMB_HEADER + 2]).is_err());
-    }
-
-    #[test]
-    fn blocks_are_soh_128_crc() {
-        let b = block(&[0xAA; 130], 2);
-        assert_eq!(&b[..3], &[SOH, 2, 0xFD]);
-        assert_eq!(b.len(), 133);
-        assert_eq!(&b[3..5], &[0xAA, 0xAA]);
-        assert!(b[5..131].iter().all(|&x| x == 0xFF));
     }
 
     #[test]

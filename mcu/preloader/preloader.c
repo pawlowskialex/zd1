@@ -27,12 +27,6 @@
 #define PIN_MOD_RST AVR32_PIN_PA17 /* module reset, low = reset */
 #define PIN_MOD_REQ AVR32_PIN_PA20 /* module request line, high = data waiting */
 
-#define SOH 0x01
-#define EOT 0x04
-#define ACK 0x06
-#define NAK 0x15
-#define CAN 0x18
-
 /* found by the app (mcufw_preloader_present); read once in main, or --gc-sections drops it */
 static const char magic[] = MCUFW_PRELOADER_MAGIC;
 
@@ -293,45 +287,45 @@ static bool receive(void) {
     uint16_t n = 0;
     got = 0;
     have_header = false;
-    ctl('C');
+    ctl(ZD1_XMODEM_START);
     for (;;) {
         bool fresh = false;
         uint32_t end = tick_ms() + 1000; /* the module queues the next block once it has our ACK */
         while (!after(end)) {
             wait_ms(5);
             n = 0;
-            if (read_v(ZD1_REG_XM_MODULE, vbuf, sizeof vbuf, &n) && (n == 133 || (n == 1 && vbuf[0] == EOT))) {
+            if (read_v(ZD1_REG_XM_MODULE, vbuf, sizeof vbuf, &n) &&
+                (n == ZD1_XMODEM_BLOCK + 5 || (n == 1 && vbuf[0] == ZD1_XMODEM_EOT))) {
                 fresh = true;
                 break;
             }
         }
         if (fresh && n == 1) { /* EOT */
-            ctl(ACK);
+            ctl(ZD1_XMODEM_ACK);
             break;
         }
-        bool good = fresh && vbuf[0] == SOH && vbuf[2] == (uint8_t)~vbuf[1] &&
-                    mcufw_crc16(0, vbuf + 3, 128) == (uint16_t)(vbuf[131] << 8 | vbuf[132]);
+        bool good = fresh && vbuf[0] == ZD1_XMODEM_SOH && zd1_xmodem_check(vbuf, n) >= 0;
         if (good && vbuf[1] == (uint8_t)(seq - 1)) { /* our ACK was lost: the same block again */
-            ctl(ACK);
+            ctl(ZD1_XMODEM_ACK);
             continue;
         }
         if (!good || vbuf[1] != seq) {
             if (++fails > 10) {
-                ctl(CAN);
-                ctl(CAN);
+                ctl(ZD1_XMODEM_CAN);
+                ctl(ZD1_XMODEM_CAN);
                 return false;
             }
-            ctl(seq == 1 && !have_header ? 'C' : NAK);
+            ctl(seq == 1 && !have_header ? ZD1_XMODEM_START : ZD1_XMODEM_NAK);
             continue;
         }
         fails = 0;
         if (!take(vbuf + 3)) {
-            ctl(CAN);
-            ctl(CAN);
+            ctl(ZD1_XMODEM_CAN);
+            ctl(ZD1_XMODEM_CAN);
             return false;
         }
         seq++;
-        ctl(ACK);
+        ctl(ZD1_XMODEM_ACK);
     }
     if (!have_header)
         return false;
@@ -341,7 +335,7 @@ static bool receive(void) {
     }
     uint32_t len = mcufw_be32(header + 8);
     return len <= got &&
-           mcufw_crc16(0, (const volatile uint8_t *)MCUFW_APP, len) == (uint16_t)(header[16] << 8 | header[17]);
+           zd1_xmodem_crc16(0, (const volatile uint8_t *)MCUFW_APP, len) == (uint16_t)(header[16] << 8 | header[17]);
 }
 
 /* one session with the module: ready, BL2, the transfer */

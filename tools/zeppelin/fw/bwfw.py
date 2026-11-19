@@ -27,6 +27,7 @@ import zlib
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
 from zeppelin import paths  # noqa: E402
 from zeppelin.fw import bcd as bcdfmt  # noqa: E402
+from zeppelin.xmodem import crc16  # noqa: E402
 
 FLASH = 0x40000
 APP = 0x8000  # the .dmb's app goes to 0x80008000
@@ -35,22 +36,13 @@ DMB_HEADER = 128
 DMB_NAME = 20  # the name's field, at +24; the version's three bytes follow it
 
 
-def crc16_xmodem(data):
-    c = 0
-    for x in data:
-        c ^= x << 8
-        for _ in range(8):
-            c = ((c << 1) ^ 0x1021) & 0xFFFF if c & 0x8000 else (c << 1) & 0xFFFF
-    return c
-
-
 def make_dmb(app, name, version, built):
     """A .dmb (big-endian): magic, build time, the app's length, its offset in flash, its CRC-16, the name, the version
     as three bytes, then the app at +128."""
     n = name.encode()
     if len(n) >= DMB_NAME:
         raise ValueError("the .dmb's name %r is too long" % name)
-    head = DMB_MAGIC + struct.pack(">III", built, len(app), APP) + struct.pack(">H", crc16_xmodem(app))
+    head = DMB_MAGIC + struct.pack(">III", built, len(app), APP) + struct.pack(">H", crc16(app))
     head = head.ljust(24, b"\0") + n.ljust(DMB_NAME, b"\0") + bytes(version)
     return head.ljust(DMB_HEADER, b"\0") + app
 

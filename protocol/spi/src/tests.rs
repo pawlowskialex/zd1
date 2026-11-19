@@ -121,3 +121,22 @@ fn native_volume_shares_are_exact_for_every_step() {
         assert_eq!(percent_from_step(cap + 5, cap), 100);
     }
 }
+
+#[test]
+fn xmodem_blocks() {
+    use crate::xmodem::{block, check, crc16};
+    assert_eq!(crc16(0, b"123456789"), 0x31C3, "CRC-16/XMODEM's check value");
+    assert_eq!(crc16(crc16(0, b"1234"), b"56789"), 0x31C3, "in pieces");
+    let data = [0xAAu8; 130];
+    let mut b = [0u8; 133];
+    assert_eq!(block(&data, 2, 128, 0xFF, &mut b), 133);
+    assert_eq!(&b[..3], &[xmodem::SOH, 2, 0xFD]);
+    assert_eq!((&b[3..5], b[5]), (&[0xAA, 0xAA][..], 0xFF), "the end padded");
+    assert_eq!(check(&b), Some(2));
+    b[10] ^= 1;
+    assert_eq!(check(&b), None);
+    let mut k = [0u8; 1029];
+    assert_eq!(block(&data, 1, 1024, 0x1A, &mut k), 1029);
+    assert_eq!((k[0], k[3 + 130]), (xmodem::STX, 0x1A));
+    assert_eq!(check(&k), Some(1));
+}

@@ -414,13 +414,7 @@ struct Hex(Vec<u8>);
 
 /// Hex digits (spaces between them allowed) as bytes.
 fn hex(s: &str) -> std::result::Result<Hex, String> {
-    let d: Vec<u8> = s.bytes().filter(|c| !c.is_ascii_whitespace()).collect();
-    d.chunks(2)
-        .map(|p| match p {
-            [a, b] => Some(((*a as char).to_digit(16)? << 4 | (*b as char).to_digit(16)?) as u8),
-            _ => None,
-        })
-        .collect::<Option<Vec<u8>>>()
+    zd1_host::text::unhex(&s.split_whitespace().collect::<String>())
         .map(Hex)
         .ok_or_else(|| "hex digits, two per byte".into())
 }
