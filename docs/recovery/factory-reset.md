@@ -54,7 +54,7 @@ settings, the Wi-Fi network and its key) stay on the NAND, unused by the stock a
 
 **As from the factory** (a speaker to give away, or a test of the whole install), with our firmware on both boards
 [HW 2026-11-03, `units/<unit>/logs/`]:
-1. `zd1 slot try rescue --restart`: the rescue, which mounts nothing but `/data`.
+1. `zd1 slot try rescue --restart`: the rescue, the system from RAM: it mounts no slot.
 2. `zd1 console run 'umount /data' 'zd1-slot erase system-a' 'zd1-slot erase system-b' 'zd1-slot erase data'`: the
    three partitions erased (bad blocks left alone), as a stock NAND has them above 32 MB. A rescue older than
    `zd1-slot erase` gets a new `os.bcd` first (`zd1 bootloader`, `zd1 dfu relay`, `zd1 dfu start`).

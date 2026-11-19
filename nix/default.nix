@@ -124,7 +124,6 @@ let
     # cross set's would build a GCC for the module just to unpack it, its buildPackages link statically)
     craneLib = (crane.mkLib pkgsArm).overrideToolchain (_: rust);
     busybox = self.callPackage ./module/busybox.nix { };
-    busybox-rescue = self.busybox.override { rescue = true; };
     alsa-lib = self.callPackage ./module/alsa-lib.nix { };
     alsa-utils = self.callPackage ./module/alsa-utils.nix { };
     wpa_supplicant = self.callPackage ./module/wpa_supplicant.nix { };
@@ -133,7 +132,6 @@ let
       src = warp0Src;
     };
     apps = self.callPackage ./module/apps.nix { };
-    apps-core = self.apps.override { core = true; };
     apps-debug = self.apps.override { debug = true; };
     debug-tools = self.callPackage ./module/debug-tools.nix { };
   });
@@ -148,12 +146,10 @@ let
     inherit boot;
     inherit (module)
       busybox
-      busybox-rescue
       alsa-lib
       alsa-utils
       wpa_supplicant
       apps
-      apps-core
       apps-debug
       ;
   };
@@ -241,13 +237,11 @@ in
       ;
     inherit (module)
       busybox
-      busybox-rescue
       alsa-lib
       alsa-utils
       wpa_supplicant
       warp0-fw
       apps
-      apps-core
       apps-debug
       debug-tools
       ;

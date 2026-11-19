@@ -1,11 +1,9 @@
 //! The services: what runs once the early start is done, in this order, and how each behaves. A service's `start`
 //! looks at the settings and the command line when it is (re)started and says what to run, or why not, or when to try
 //! again; the supervisor does the rest.
-// The rescue's build uses only part of this vocabulary (the system's table, system.rs, the rest).
-#![cfg_attr(not(feature = "full"), allow(dead_code))]
 
+use super::say;
 use super::start::Boot;
-use super::{Profile, say};
 use std::collections::BTreeMap;
 use std::time::{Duration, Instant};
 
@@ -110,57 +108,17 @@ pub(super) const fn daemon(again_after_ms: u64) -> Lifetime {
     Lifetime::Daemon { again_after: Duration::from_millis(again_after_ms) }
 }
 
-/// The system's table is in `system` (the full build only): the rescue's build, which runs only RESCUE, doesn't
-/// change when a system service does.
-pub fn table(profile: Profile) -> &'static [Service] {
-    match profile {
-        #[cfg(feature = "full")]
-        Profile::System => super::system::SERVICES,
-        #[cfg(not(feature = "full"))]
-        Profile::System => RESCUE,
-        Profile::Rescue => RESCUE,
-    }
+/// The services, in the order they start (system.rs).
+pub fn table() -> &'static [Service] {
+    super::system::SERVICES
 }
 
-const RESCUE: &[Service] = &[
-    Service {
-        name: "zd1-linkd",
-        about: "the MCU link: \"zd1-os VERSION rescue\", and zd1-update when it asks",
-        start: |_| run(&["zd1-linkd"]),
-        stop: None,
-        lifetime: daemon(1000),
-        output: Output::LogAndKernel,
-        settings: &[],
-        health: None,
-    },
-    Service {
-        name: "console",
-        about: "a shell on the console",
-        start: shell,
-        stop: None,
-        lifetime: daemon(1000),
-        output: Output::Shell,
-        settings: &[],
-        health: None,
-    },
-];
-
-/// Once every service has been started: what the emulator and the docs wait for. The slots' stamps aren't read here:
-/// reading one mounts its slot, which PID 1 doesn't do (`zd1-ctl status`, and the State record, have them).
-pub fn up(profile: Profile) {
-    match profile {
-        Profile::System => say("up"),
-        Profile::Rescue => {
-            let b = zd1_slot::boot();
-            let name = |s: Option<zd1_slot::Slot>| s.map(|s| s.name()).unwrap_or("?");
-            say(&format!("good slot: {}", name(b.good)));
-            say("waiting for a system (zd1 update); a shell on the console");
-        }
-    }
+/// Once every service has been started: what the emulator and the docs wait for.
+pub fn up() {
+    say("up");
 }
 
-// ---- the rescue's starts (the system's: system.rs) ----
-
+/// A shell on the console.
 pub(super) fn shell(_: &Ctx) -> Start {
     Start::Run(vec![Command { argv: vec!["/bin/sh".into()], arg0: Some("-sh") }])
 }

@@ -114,6 +114,11 @@ None of these has been seen on the unit. Treat them as "the code does something 
 - **Recovery tiers** not listed above (`docs/recovery/factory-reset.md`), the upgrade path stock -> ours -> stock.
 - B&W's recovery-utility MCU image (erases the user page, sends HCR 0x2421, holds PB01 high); BL2's handling of HCR
   0x2421 and of the strap.
+- **The MCU's app from the module** (`docs/mcu/bootloader-hbl.md`): our OS playing BL2 to the ZD1L's B&W bootloader
+  and to our ZD1 preloader, `zd1-ctl mcu-update`; the app at 0x80008000 behind the preloader on the ZD1 (this unit
+  runs the app at 0x80004000 until it is flashed with the new layout).
+- **The Lightning model's image with the system as the rescue** and its first start's self-install into slot A
+  (`docs/module/storage.md`).
 
 ## Not done
 - **Spotify Connect from a Spotify app**: Spotify refuses the test account the audio key of every track

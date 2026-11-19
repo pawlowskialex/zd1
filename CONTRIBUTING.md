@@ -76,7 +76,7 @@ speaker without building it.
 | `zd1l-fw` | `zd1l.fw`, both chips of a Zeppelin Air with Lightning in one B&W `.fw` for its BL2 web updater (`os-zd1l.bcd` + `mcu`'s `zd1app.bin`; `docs/mcu/stock-firmware.md`) |
 | `avr32-toolchain` | Microchip's AVR32 GNU toolchain the MCU builds with (below) |
 | `test-unit` | the emulator's factory-fresh unit (MCU flash, EEPROM, NAND) from `blobs/` |
-| `module-os-parts`, `busybox` `busybox-rescue` `alsa-lib` `alsa-utils` `wpa_supplicant` `apps` `apps-core` `apps-debug` `boot` `warp0-fw` | what the OS image is made of, together and one by one (`-rescue`, `-core`: the rescue's; `-debug`: the debug system's) |
+| `module-os-parts`, `busybox` `alsa-lib` `alsa-utils` `wpa_supplicant` `apps` `apps-debug` `boot` `warp0-fw` | what the OS image is made of, together and one by one (`-debug`: the debug system's) |
 | `debug-tools` | tools to copy to the module: the probes in `module/os/debug` |
 | `telnet-hook` | the hook `stock-patch/patch.py` splices into the stock MCU firmware (`stock-patch/build.sh` refreshes the committed one) |
 | `zd1` `web` | the speaker over USB from a terminal (`nix run .#zd1 -- --help`; `nix develop` has `zd1` from the checkout), the web page as a directory (`python3 tools/zeppelin web` serves it) |

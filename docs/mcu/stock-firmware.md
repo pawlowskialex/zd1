@@ -100,47 +100,27 @@ sections app/CnE/resources, so no update carries a BL2). Ours (2010-09-27) serve
 [EMU 2026-11-08] and rejects a whole `.fw`; the ZD1L's serves them and **takes the whole `.fw`, flashing both the
 module `.bcd` and the MCU `.dmb`** — which answers "what happens to a `.fw`'s MCU part" below.
 
-**How the MCU part is delivered — answered.** The ZD1L's BL2 flashes it over SPI, not USB: BL2 stages the `.dmb` in
-RAM (`MemoryBlobFirmwareUpdateService`) and transmits it to the MCU with `XModemOverSPI` (XModem-1K over registers
-0x2C/0x2D, HCR 0x2520 GET_FILE), the mirror of our module-image relay (`docs/protocol/sequences.md`, "MCU (host)
-firmware over SPI"). The MCU-side receiver is the stock app's `voBcoMgrXmodemTask` (dead code in the app; live in the
-ZD1L's MCU bootloader). Proven on hardware: a ZD1L flashed the stock-patch telnet-hook `.dmb` through BL2's web
-updater. So the `.dmb` header (vs the ZD1's `.hex`) is for BL2/the bootloader's XModem consumer, not a DFU tool.
+**How the MCU part is delivered.** The ZD1L's BL2 sends it over SPI, not USB, to the MCU's bootloader: B&W's "Net
+HBL", which has no USB at all (`bootloader-hbl.md`). BL2 stages the `.dmb` in RAM (`MemoryBlobFirmwareUpdateService`),
+ends the bootloader's wait with DCR 0x2423 and sends 128-byte XModem blocks on 0x2C, the bootloader answering on 0x2D
+[EMU 2026-11-19, the real BL2 and bootloader; RE]. Proven on hardware by every `.fw` the owners installed. The `.dmb`
+header (vs the ZD1's `.hex`) is that bootloader's: it checks the app's length and CRC-16, nothing else.
 
-**Is USB DFU on the MCU there at all?** Still open, and no longer needed for the LAN update (that goes over SPI,
-above). For: the ZD1L app restores the same ISP word (`0x929E0870`: PA08, the ON/OFF key; `.dmb` +0x9352 and +0x9386,
-as in 2.04.05's) [RE]; on variant 2 the app sets ISP_FORCE, whose only known use is forcing DFU, and a GPLP flag
-(0x1000000) that it clears unread at boot and that the 0514 bootloader never reads, so a bootloader somewhere does
-[INF]; and the USB mux is software-driven and differs by variant (`re/mcu/work/usb_ipod_notes.txt`: request 3 is
-variant 1 only, PA19 high likewise), so a running DFU could be routed away from the rear port [INF]. Against: the
-owner saw nothing on USB in key-hold, and a 16 KB bootloader that receives the app from the module over SPI may have
-had USB taken out [INF]. The key-hold can't set ISP_FORCE or the GPLP flag, so 0x27 is a second, untested way in;
-ISP_FORCE survives power cycles and on a bootloader without DFU may have no way off but a finished update, so that
-test wants JTAG ready. Reading the bootloader would settle it: with our firmware running on a ZD1L (`zd1l.fw`) and its
-USB reaching the MCU, `zd1 peek 0x80000000 0x8000 --out boot.bin` reads it and the stage at 0x80004000, which a
-`.dmb` leaves in place (`zd1 peek 0x80800000 512 --out user.bin`: the user page) [EMU 2026-11-17: the dump matched
-the emulated flash]; else a read-only UC3 JTAG dump (GitHub issue #1).
-
-**Our firmware as a `.dmb`**: the stock app region starts with one branch (`e0 8f 20 00`, to 0x80008000) and zeros, and
-a `.dmb` only holds what follows. `nix build .#mcu-dmb` links our firmware at 0x80008000 for that (72 KB; up to
-0x37E00 B; `.#mcu-emu-dmb` is the emulator's build). Packed with `os.bcd`, cut again, started by the ZD1's bootloader through the stock branch, on board
-variant 2, it runs and the module goes slot A, slot B, rescue as on a first install [EMU 2026-11-08: `bwfw.py --pack
-OUT.fw os.bcd zd1emudmb.bin --name ZD1L_v2-04-35.dmb --version 2.04.35 --hwid 0xBE`, `bwfw.py OUT.fw DIR`, `zemu run
-DIR/module.bcd --mcu DIR/mcu_flash.bin --renode 'zd1:board Adc "2:0x300"' --allow-panic`]. That the Lightning unit has
-the same branch at 0x80004000 is inferred from every `.dmb` starting at 0x8000.
+**Our firmware as a `.dmb`**: the ZD1L's bootloader starts the app at 0x80008000 directly (no branch at 0x80004000:
+that is bootloader code there) and a `.dmb` holds that app. Our app is linked at 0x80008000 on both models since the ZD1
+got our preloader (`bootloader-hbl.md`): `nix build .#mcu` gives `zd1.dmb` and `zd1app.bin` alongside the ZD1's image.
 
 **Our firmware for a ZD1L, both chips in one `.fw`**: `nix build .#zd1l-fw` (`result/zd1l.fw`, 6.9 MB; `nix/zd1l-fw.nix`).
-The module part is `os-zd1l.bcd`: the boot stub, the kernel and the whole release system as one initramfs (no slots,
-no rescue: `docs/module/storage.md`, "The full image"), built from its parts (`mkbcd`): B&W's preloader and the ZD1L's
+The module part is `os-zd1l.bcd`: the boot stub, the kernel and the whole release system as one initramfs in the
+rescue's place (the stub asks the MCU for a slot as on the ZD1; with both slots empty, on its first install, the
+system runs from RAM and copies itself into slot A: `docs/module/storage.md`, "The Lightning model's image"), built from its parts (`mkbcd`): B&W's preloader and the ZD1L's
 factory CnE from `blobs/`, no resources (an empty section: the ZD1L's BL2 writes the partition empty, and our OS
-doesn't read it), HWID 0xBE, our build date. The MCU part is `.#mcu-dmb` under B&W's name and
+doesn't read it), HWID 0xBE, our build date. The MCU part is our app (`.#mcu`'s `zd1app.bin`) under B&W's name and
 version (`ZD1L_v2-04-35.dmb`, 2.04.35, release 20435), as the telnet-hook `.fw` the ZD1L's BL2 burned. It goes in
 through BL2's web updater from key-hold, with the expert confirm (`docs/module/boot-chain.md`, "The ZD1L BL2": BL2
 sends the MCU part first and needs the MCU's bootloader for it): `python3 tools/zeppelin bl2web IP zd1l.fw --yes`; the
-way back is the same with `blobs/zd1l/zd1lv20435.fw`. In the emulator, the same file with `.#mcu-emu-dmb`, cut by `bwfw.py` and booted on
-board variant 2, runs: no slot, every service up, the MCU link ready, 13.5 MB of 28.4 MB free with the receivers
-running (the root holds ~10 MB of RAM) [EMU 2026-11-17: `zemu run DIR/module.bcd --nand --mcu DIR/mcu_flash.bin
---renode 'zd1:board Adc "2:0x300"'`]. Not yet on a ZD1L.
+way back is the same with `blobs/zd1l/zd1lv20435.fw`. The image of 2026-11-17 (the system as the boot initramfs, no
+slots) runs on ZD1Ls [HW, the owners]; the one with the system in the rescue's place, emulator only so far.
 
 **A telnet hook on the stock 2.04.35, repacked as a `.fw`** (`stock-patch/`, `patch.py --fw`): a way to a shell on a
 stock ZD1L without replacing its firmware, e.g. to read BL2 out (`fburn rd`, the reverse-SPI code the relay needs). The

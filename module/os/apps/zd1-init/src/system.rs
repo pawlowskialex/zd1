@@ -110,6 +110,16 @@ pub const SERVICES: &[Service] = &[
         health: None,
     },
     Service {
+        name: "self-install",
+        about: "the system, booted from RAM as the rescue (the Lightning model's image), into an empty slot: once",
+        start: self_install,
+        stop: None,
+        lifetime: Lifetime::Once { wait: false, retry: None },
+        output: Output::LogAndKernel,
+        settings: &[],
+        health: None,
+    },
+    Service {
         name: "selftest",
         about: "the userspace self test (zd1.selftest on the command line)",
         start: selftest,
@@ -153,6 +163,22 @@ fn switched_off(c: &Ctx, switch: &str, setting: &str) -> Option<String> {
 /// The kernel's entropy pool reads 0 on this board (no driver feeds it): anything that waits for /dev/random (the
 /// AirPlay pairing keys, libsodium) would wait forever. zd1-entropy credits it from CPU timing jitter, ~0.2 s
 /// (docs/streaming.md).
+/// The Lightning model's image is the whole system as the rescue (BL2's web updater installs it; docs/module/storage.md):
+/// booted that way (the MCU's answer: no slot holds a system yet) it copies itself into the slot an update would
+/// take, so that the next start is a slot's.
+fn self_install(c: &Ctx) -> Start {
+    let b = zd1_slot::boot();
+    if !c.boot.switch("zd1.rescue") || b.running.is_some() {
+        return Start::Off("not the full system booted as the rescue".into());
+    }
+    let to = b.target();
+    if zd1_slot::stamp(to).is_some() {
+        return Start::Off(format!("slot {} holds a system", to.name()));
+    }
+    let id = zd1_sys::OsRelease::read("/etc/os-release").get("VERSION_ID").to_string();
+    run(&["zd1-slot", "install-self", to.name(), &id])
+}
+
 fn entropy(_: &Ctx) -> Start {
     match installed("zd1-entropy") {
         Some(p) => run(&[&p]),
@@ -415,7 +441,7 @@ pub fn early(boot: &Boot, kernel: &str) {
         release.get("BUILD_DATE"),
         where_we_run(boot)
     ));
-    data(true);
+    data();
     modules();
     loopback();
 }

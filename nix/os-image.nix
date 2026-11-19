@@ -1,5 +1,6 @@
-# The module OS images (module/os/assemble.py assemble, from os.toml): the system image, the rescue, the flashable
-# os.bcd and os-debug.bcd, the emulator's dev payload, and the test unit's NAND with each installed.
+# The module OS images (module/os/assemble.py assemble, from os.toml): the system image, the flashable os.bcd,
+# os-debug.bcd and os-zd1l.bcd (the system in the app partition too), the emulator's dev payload, and the test unit's
+# NAND with os.bcd installed.
 {
   stdenvNoCC,
   python3,
@@ -28,7 +29,7 @@ stdenvNoCC.mkDerivation {
   ];
   nativeBuildInputs = [
     python3
-    nix # nix-hash: the boot image's and the rescue's identity by content (assemble.py, content_id)
+    nix # nix-hash: the boot image's identity by content (assemble.py, content_id)
   ];
   buildPhase = ''
     python3 -I module/os/assemble.py assemble --parts ${parts} --base-nand ${test-unit}/nand.bin \

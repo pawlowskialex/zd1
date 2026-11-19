@@ -161,37 +161,6 @@ applets = [
   "nslookup",
   "traceroute",
 ]
-# The rescue's: a look around on its console (zd1-init runs it; zd1-slot writes the slots)
-rescue_applets = [
-  "ash",
-  "sh",
-  "[",
-  "[[",
-  "test",
-  "echo",
-  "printf",
-  "true",
-  "false",
-  "cat",
-  "tee",
-  "grep",
-  "sed",
-  "mkdir",
-  "mv",
-  "rm",
-  "ls",
-  "sleep",
-  "mount",
-  "umount",
-  "mknod",
-  "sync",
-  "dmesg",
-  "reboot",
-  "ps",
-  "free",
-  "uname",
-]
-
 [alsa]
 # alsa-lib + alsa-utils (aplay, speaker-test, amixer), static against musl: the Nokia ALSA driver (snd-sulu on
 # av-device) is the audio output. Hashes: first download, 2026-10-20.
@@ -210,10 +179,8 @@ config = "module/os/wpa_supplicant.config"
 
 [apps]
 # Rust crates in module/os/apps (one workspace, std, armv5te-unknown-linux-musleabi). Installed as one executable
-# (apps/zd1, busybox style: one copy of std and the libraries) with a link per program: the core build in the rescue
-# (/bin/zd1, `rescue` in /bin: only what the rescue runs, so it changes only when that does), the full build in the
-# system (/usr/bin/zd1: `core` in /bin, `bins` in /usr/bin), and in the system's debug build `debug` too.
-# `init` is PID 1 (/sbin/init; the rescue's /init).
+# (apps/zd1, busybox style: one copy of std and the libraries) with a link per program (/usr/bin/zd1: `core` in /bin,
+# `bins` in /usr/bin), and in the system's debug build `debug` too. `init` is PID 1 (/sbin/init; /init in RAM).
 workspace = "module/os/apps"
 multicall = "zd1"
 core = [
@@ -228,7 +195,6 @@ core = [
   "zd1-slot",
   "zd1-update",
 ]
-rescue = ["init", "zd1-linkd", "zd1-ctl", "zd1-board", "zd1-persparam", "zd1-settings", "zd1-slot", "zd1-update"]
 bins = ["zd1-snapcast", "zd1-airplay", "zd1-spotify"]
 debug = ["zd1-selftest", "zd1-memsh"]
 

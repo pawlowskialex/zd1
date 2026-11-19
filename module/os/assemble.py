@@ -14,18 +14,18 @@ The images (emu/img/os/; docs/module/storage.md):
     system.cpio.gz          a system slot's root (busybox, the full zd1, /etc, Nokia's modules and firmware, ALSA,
                             Wi-Fi): what `zd1 update` installs (deterministic: sorted, root-owned, mtime 0)
     system-debug.cpio.gz    the same with zd1's debug build (os.toml [image.debug])
-    rescue.cpio(.gz)        the rescue, the app partition's initramfs: its busybox, the core programs, /init
+    initramfs-full.cpio.gz  the same system (release) as an initramfs, its init as /init: the app partition's copy
+    payload.bin, os.bcd     the flashable app image (B&W's preloader + our stub, the kernel and that initramfs; the
+                            relay, BL2): the stub asks the MCU for a slot; with no slot that gets ready the system runs
+                            from RAM, and with the slots empty (a first install) copies itself into one
+                            (zd1-slot install-self)
+    os-zd1l.bcd             the same for the Zeppelin Air with Lightning (its HWID and CnE, no resources): the module
+                            part of its B&W .fw for BL2's web updater (`nix build .#zd1l-fw`)
+    payload_debug.bin, os-debug.bcd   os.bcd with the debug services on by default (os.toml [image.debug])
+    nand_os.bin             the emulator's test unit with os.bcd installed, slots empty (`zemu run os --nand --mcu`:
+                            slot A and B fail, the system from RAM fills slot A)
     payload_dev.bin         emulator dev boot (`zemu run os`): the debug system as one plain initramfs at
                             0x61000000, zd1.selftest zd1.debug
-    payload.bin, os.bcd     the flashable app image (B&W's preloader + our stub/kernel/gzip rescue; the relay, BL2):
-                            the system goes into a slot with `zd1 update`
-    payload_full.bin        the whole system (release) as the boot initramfs, no slots and no rescue: for a speaker
-                            whose updates come as one file for both chips (docs/module/storage.md)
-    os-zd1l.bcd             that for the Zeppelin Air with Lightning (its HWID and CnE, no resources): the module part of
-                            its B&W .fw for BL2's web updater (`nix build .#zd1l-fw`)
-    nand_os.bin             the emulator's test unit with os.bcd installed, slots empty (`zemu run os --nand --mcu`:
-                            the rescue; then `--host 'zd1 update --uart'`)
-    os-debug.bcd            os.bcd with the debug services on by default (os.toml [image.debug]), for the unit
 """
 
 import argparse
@@ -68,8 +68,7 @@ def copy_tree(src, dst):
 
 # ---- assembly ----------------------------------------------------------------------------------------------------
 def os_release(version, built):
-    """The system's identification, /usr/lib/os-release (init adds the variant: the image's command line decides; the
-    rescue has its own, make_rescue)."""
+    """The system's identification, /usr/lib/os-release (init adds the variant: the image's command line decides)."""
     return 'NAME="zd1 module OS"\nID=zd1\nVERSION_ID="%s"\nBUILD_DATE="%s"\n' % (version, built)
 
 
@@ -86,26 +85,6 @@ def link_programs(root, target, names):
     zd1-slot checks a new slot's /sbin/init that way."""
     for b in names:
         os.symlink(target, os.path.join(root, "bin", b))
-
-
-def make_rescue(cfg, parts, root):
-    """The rescue, the app partition's initramfs (docs/module/storage.md): the rescue's busybox, the core build of zd1
-    (init, the MCU link, settings, the slot writer, the system image's reader); /init is init (its rescue profile:
-    /etc/os-release says VARIANT_ID=rescue). Its version is its content (content_id), not the commit or the build date:
-    the core build holds only what the rescue runs, so a commit that doesn't change that builds the same rescue, and
-    the app partition only needs rewriting when it does."""
-    a = cfg["apps"]
-    copy_tree(os.path.join(parts, "busybox-rescue"), root)
-    for d in ("dev", "proc", "sys", "tmp", "var", "run", "data", "etc"):
-        os.makedirs(os.path.join(root, d), exist_ok=True)
-    mc = os.path.join(root, "bin", a["multicall"])
-    shutil.copyfile(os.path.join(parts, "apps-core", "bin", a["multicall"]), mc)
-    os.chmod(mc, 0o755)
-    link_programs(root, a["multicall"], a["rescue"])
-    os.symlink("bin/" + a["multicall"], os.path.join(root, "init"))
-    open(os.path.join(root, "etc/os-release"), "w").write(
-        'NAME="zd1 module OS"\nID=zd1\nVERSION_ID="%s"\nVARIANT_ID=rescue\n' % content_id(root)
-    )
 
 
 def make_system(cfg, parts, root, version, built, debug=False):
@@ -175,15 +154,15 @@ def cpio(root, out, name, slot=False):
 
 
 def payload(cfg, parts, initrd, out, cmdline_extra="", how="slots"):
-    """The stub + kernel + initramfs as one app payload (mkpayload.py). `how`: "slots", the rescue's, the stub starting
-    a system slot unless the MCU says otherwise (--slots); "full", the initramfs the system, started as it is; "dev",
-    the emulator's direct boot, the same with a plain initramfs loaded lower.
+    """The stub + kernel + initramfs as one app payload (mkpayload.py). `how`: "slots", the stub asking the MCU what to
+    start, a system slot or the initramfs (--slots); "dev", the emulator's direct boot, the initramfs started as it is,
+    a plain one loaded lower.
     The kernel goes in deflated (half the size): the stub inflates it. The command line ends in `zd1.boot=ID`, the boot
     image's identity: the content_id of what goes in (stub, kernel, initramfs, how, the command line before it), so a
     commit that changes none of them builds the same one. The OS reports it (the State record's `boot`), `zd1 image`
     reads it from a .bcd, and the page rewrites the app partition only when they differ."""
     k = cfg["kernel"]
-    args = {"slots": ["--slots"], "full": [], "dev": ["--initrd-at", "0x61000000"]}[how] + ["--deflate-kernel"]
+    args = {"slots": ["--slots"], "dev": ["--initrd-at", "0x61000000"]}[how] + ["--deflate-kernel"]
     files = [os.path.join(parts, "boot", "linuxboot.bin"), os.path.join(REPO, k["image"]), initrd]
     cmdline = (k["cmdline"] + " " + cmdline_extra).strip()
     with tempfile.TemporaryDirectory() as d:
@@ -229,30 +208,25 @@ def assemble(cfg, parts, out, version, built, base_nand):
     sysroot = os.path.join(out, ".system")
     make_system(cfg, parts, sysroot, version, built)
     cpio(sysroot, out, "system", slot=True)
-    # the same system as the boot initramfs (gzip'd: it goes to the stub's default destination), its init as /init
+    # the same system as the app partition's initramfs (gzip'd: it goes to the stub's default destination), its init
+    # as /init: what runs when no slot does, on both models
     log("initramfs-full")
     os.symlink("sbin/init", os.path.join(sysroot, "init"))
     cpio(sysroot, out, "initramfs-full")
     shutil.rmtree(sysroot)
-    payload(cfg, parts, os.path.join(out, "initramfs-full.cpio.gz"), os.path.join(out, "payload_full.bin"), how="full")
-    bcd_image(os.path.join(out, "payload_full.bin"), os.path.join(out, "os-zd1l.bcd"), "zd1l", built)
-    log("system-debug")
-    make_system(cfg, parts, sysroot, version, built, debug=True)
-    cpio(sysroot, out, "system-debug", slot=True)
-    log("rescue")
-    tmp = os.path.join(out, ".rootfs")
-    make_rescue(cfg, parts, tmp)
-    cpio(tmp, out, "rescue")
-    shutil.rmtree(tmp)
     img = cfg["image"]
     variants = [("", "")]
     if img.get("debug"):  # the debug image: its debug services on by default
         variants.append(("-debug", img["debug"]["cmdline"]))
     for suffix, cmdline in variants:
         p = os.path.join(out, "payload%s.bin" % suffix.replace("-", "_"))
-        payload(cfg, parts, os.path.join(out, "rescue.cpio.gz"), p, cmdline)
+        payload(cfg, parts, os.path.join(out, "initramfs-full.cpio.gz"), p, cmdline)
         bcd_image(p, os.path.join(out, "os%s.bcd" % suffix), "zd1", built)
+    bcd_image(os.path.join(out, "payload.bin"), os.path.join(out, "os-zd1l.bcd"), "zd1l", built)
     install(base_nand, os.path.join(out, "os.bcd"), os.path.join(out, "nand_os.bin"))
+    log("system-debug")
+    make_system(cfg, parts, sysroot, version, built, debug=True)
+    cpio(sysroot, out, "system-debug", slot=True)
     # the emulator's dev boot: the debug system as one plain initramfs loaded straight into SDRAM, its init as /init
     log("initramfs-dev")
     os.symlink("sbin/init", os.path.join(sysroot, "init"))

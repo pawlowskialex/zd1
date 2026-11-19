@@ -1,11 +1,12 @@
 //! zd1-slot: the system slots (docs/module/storage.md; the library has how they work). What they hold: `zd1-ctl status`.
 //!   zd1-slot mtd NAME           the MTD number of partition NAME (system-a, system-b, data, vendor), its nodes made
 //!   zd1-slot install SLOT ID    a gzip'd cpio of a root on stdin into SLOT (a, b), stamped ID
+//!   zd1-slot install-self SLOT ID   the system that runs from RAM (the Lightning model's full-system rescue) into SLOT
 //!   zd1-slot erase NAME         partition NAME (system-a, system-b, data) erased as from the factory, but for the
 //!                               cleanmarkers (bad blocks left alone); refused while it is mounted. The vendor's: never
 //! Which slot starts is the MCU's (`zd1 slot`).
 
-use crate::{Slot, boot, erase, install, mtd};
+use crate::{Slot, boot, erase, install, install_running, mtd};
 
 pub fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -18,6 +19,13 @@ pub fn main() {
         ["install", s, id] => {
             let Some(s) = Slot::parse(s) else { die("SLOT: a or b") };
             match install(s, id, &mut std::io::stdin().lock(), &mut |_| Ok(())) {
+                Ok(m) => println!("{m}"),
+                Err(e) => die(&e),
+            }
+        }
+        ["install-self", s, id] => {
+            let Some(s) = Slot::parse(s) else { die("SLOT: a or b") };
+            match install_running(s, id) {
                 Ok(m) => println!("{m}"),
                 Err(e) => die(&e),
             }
@@ -37,7 +45,9 @@ pub fn main() {
             }
         }
         _ => {
-            eprintln!("usage: zd1-slot mtd NAME | install SLOT ID < IMAGE | erase system-a|system-b|data");
+            eprintln!(
+                "usage: zd1-slot mtd NAME | install SLOT ID < IMAGE | install-self SLOT ID | erase system-a|system-b|data"
+            );
             std::process::exit(2);
         }
     }

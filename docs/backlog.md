@@ -4,6 +4,20 @@ Open work, grouped by area, roughly in priority order within each group. Each en
 and what is known. What already works: `status.md`; checks that need a person at the unit:
 `units/<unit>/hw-checks.md` (not in git). Remove an entry when it is done (the topic doc gets the result).
 
+## Updates over the network (the scheme of 2026-11-19: `docs/mcu/bootloader-hbl.md`, `docs/module/storage.md`)
+- **On the hardware**: the module serving the MCU's app (ZD1L: B&W's bootloader; ZD1: our preloader, which first needs
+  the new layout flashed over DFU, with the owner's OK); a ZD1L's first install of `zd1l.fw` with the system as the
+  rescue and its self-install. All of it is emulator-only so far.
+- **The signed LAN update**: our OS takes a release for the slot that doesn't run over a LAN endpoint (found over
+  mDNS; `zd1 update --net`, later the page), Ed25519-signed (CI holds the key, the OS the public half; USB `zd1 update`
+  still takes unsigned dev builds); then the MCU starts the new slot on trial, as after `zd1 update` (a request from
+  the module for that is not in the protocol yet).
+- **The MCU follows its OS**: each system slot carries its MCU app (`zd1.dmb`); at the MCU's hello the OS compares
+  versions and stages and asks (`zd1-ctl mcu-update` does it by hand now). A bound on retries per version; dev builds
+  (`-dirty`) left alone.
+- **The host's DFU commands on a ZD1L** (`zd1 bootloader`, `flash`, `dfu ...`): its bootloader has no USB; they end in
+  the HBL and BL2 with nothing on USB. Refuse them there (the MCU knows: `mcufw_hbl_present`).
+
 ## Module OS
 - **The page and the protocol's last pieces, checked on the unit** (`docs/web.md`, Order of work): on the unit since
   2026-11-01 (4f2215a), the Wi-Fi's status and the scan seen working; the page in a browser, the actions, the

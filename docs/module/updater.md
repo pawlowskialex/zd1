@@ -15,7 +15,7 @@ The flows, the design, what has been measured on the unit, and what is open. Tag
 
 | When | Path | Time | State |
 |---|---|---|---|
-| **first install** on a stock speaker | **`zd1 install`** (`host/core/src/install.rs`, the page's Install): key-hold DFU → the relay of `os.bcd` (stub, kernel, rescue) → MCU firmware over DFU with a backup → start → the module's first boot (slots A and B empty → the rescue) → the system into a slot, started once. `--no-bcd`: the boot image is there (a repair) | ~5 min (the relay 85 s, the first boot up to ~3, the update ~1.5) | the flow without the relay on the unit (2026-10-31, `--no-bcd`); each step with the relay on the unit (2026-10-26); the whole flow with the relay: not yet |
+| **first install** on a stock speaker | **`zd1 install`** (`host/core/src/install.rs`, the page's Install): key-hold DFU → the relay of `os.bcd` (stub, kernel, rescue) → MCU firmware over DFU with a backup → start → the module's first boot (slots A and B empty → the rescue, the system from RAM, which copies itself into slot A) → the system into a slot, started once. `--no-bcd`: the boot image is there (a repair) | ~5 min (the relay 85 s, the first boot up to ~3, the update ~1.5) | the flow without the relay on the unit (2026-10-31, `--no-bcd`); each step with the relay on the unit (2026-10-26); the whole flow with the relay: not yet |
 | **back to stock** | **`zd1 rollback STOCK.bcd STOCK.hex`**: the same order, the stock `.bcd` through the relay (6.5 min), then the stock MCU firmware (or a backup's `app_flash.bin`) with a backup first; the speaker comes up unconfigured | ~7 min | as one flow on the unit from our firmware (v0.1.0) [HW 2026-11-03]: into DFU by itself, BL2 ready 32.6 s after coproc-init, the stock `.bcd` in 286 s (23.4 KB/s), the backup, the stock MCU firmware verified and started (on USB as B&W's 19B5:0005, version 2.04) |
 | **MCU firmware** | host link `Dfu` → DFU flash → start (`mcu/flash.sh`, a backup into `units/<unit>/mcu/dfu-backups/` first) | ~15 s | in daily use |
 | **module: stub, kernel or rescue** (when a release's boot image differs from the one the module started from: State's `boot`, the `.bcd`'s `zd1.boot=`) | **`zd1 update os.bcd`** (`install::boot_image`, the page's Update): into DFU from our firmware (no key-hold), the relay, our firmware started again, the module up on its good slot; the slots, `/data` and the MCU firmware as they were. A relay that stops after BL2 erased the app partition leaves the module in BL2 with nothing to start: the flow starts our firmware all the same and writes the image through BL2's XModem (`install::boot_image_in_bl2`; `zd1 update os.bcd` on a module in BL2 does only that; the page offers it). By hand: `zd1 xmodem IMAGE.bcd`, our firmware driving BL2's XModem, then `zd1 module restart`; or `zd1 bootloader`, `zd1 dfu relay IMAGE.bcd --yes`, `zd1 dfu start` | 305 s (XModem, 2 MB); the relay 85 s | both on the unit: XModem 2026-10-27; the relay's full install 2026-10-26, its handover to BL2 against our OS (2e20f8d on) 2026-10-27 |
@@ -30,7 +30,7 @@ rarely. Everything that changes often lives in **system slots** on our own MTD p
 How the module boots from them: `docs/module/storage.md` (The boot).
 
 ```
-app partition (BL2 / relay only): boot stub + the kernel (deflated) + the RESCUE initramfs (1.8 MB of 10 MB)
+app partition (BL2 / relay only): boot stub + the kernel (deflated) + the system as the RESCUE initramfs (6.6 MB of 10 MB)
       stub: asks the MCU (reg 0xC4) -> root=/dev/mtdblock1|2 (a slot), or the rescue
 NAND 32-64 MB  system-a  (mtd1)    a whole root: busybox, zd1, /etc, /usr
 NAND 64-96 MB  system-b  (mtd2)
@@ -48,7 +48,7 @@ host ──bulk OUT 0x05──── MCU ──USART1, the baud─── ttyS1 �
    module, takes USART1 from the console passthrough at the baud (`modcon_take`; the divisor in eighths: 1 and 2
    Mbaud exact, 115200 / 230400 / 460800 within 0.16 %; a baud it can't make within 2 % is refused) and points
    the bulk pipe at itself (sink `MODULE`, from zero). `zd1-linkd` starts `zd1-update SIZE BAUD SHA256 ID`
-   (`module/os/apps/zd1-update`, in the core: the system and the rescue have it).
+   (`module/os/apps/zd1-update`; the rescue is the same system).
 2. **`zd1-update` takes the console**: the processes reading it stopped (the shell), the kernel's console level 1,
    ttyS1 raw at the baud with the low-latency flag; `0x02 zd1-update ready SLOT \n`. SLOT: the one that
    doesn't run (from the rescue: the good one).
@@ -132,7 +132,8 @@ Opera on a desktop.
   the rescue (`zd1 slot try rescue --restart`, `zd1 update --no-start`: into the good slot, 5.1 MB in 75 s, then
   `zd1 module restart` back to it) [HW 2026-11-01, rescue 34fb38ea617d, MCU 4f2215a; 2026-11-02, rescue 2bcb3098d4d7, MCU 7840b81, after the relay: 72 s]. A trial that fails and falls
   back: [EMU 2026-10-26] only.
-- **The `.bcd`** is 2 MB (the stub, the kernel deflated, the rescue); the stub's inflate takes 2717 ms on the unit
+- **The `.bcd`** is 6.6 MB (the stub, the kernel deflated, the system as the rescue; 2 MB with the barebones rescue
+  of before 2026-11-19); the stub's inflate takes 2717 ms on the unit
   (D-cache off; 399 ms in the emulator).
 - **BL2's paths, for recovery**: the relay (9 MB in 382 s, 23.4 KB/s; `os.bcd` in 85 s); our MCU driving BL2's SPI
   XModem (`zd1 xmodem`, `XmFrame`: HCR 0x2220 starts BL2's receiver; 9.5 KB/s, BL2 itself needs 18 ms
@@ -152,7 +153,7 @@ Opera on a desktop.
 - `zd1 install` with the relay as one flow on the unit (each piece has run there; `install --no-bcd` has), and the page's Install and Roll back.
 
 Fallback when the MCU's update path doesn't work: the `.bcd` through BL2's web updater or the bootloader's relay
-puts the rescue back, and `zd1 update` installs a system from it. (`zd1 update --uart`, `zd1-update` fed over the
+puts the rescue back (the system, which fills an empty slot by itself), and `zd1 update` installs a newer one. (`zd1 update --uart`, `zd1-update` fed over the
 console, is the emulator's, for the module alone; on the unit it went over the CDC port, 442 s for 5 MB, until the port
 went.)
 
@@ -168,7 +169,7 @@ went.)
   bootloader and the relay, `lab.rs` `bulk-test`, `xmodem.rs`, `usb.rs` nusb and the emulator's bridge); its
   front-ends `host/cli` (`zd1`) and `host/web` (the page). `host/core/src/console.rs` (`run`) drives the module's console
   over the host link.
-- Module OS: `module/os/` (`os.toml`, `assemble.py`, `apps/zd1-init` (PID 1 of the system and the rescue), `apps/zd1-slot`,
+- Module OS: `module/os/` (`os.toml`, `assemble.py`, `apps/zd1-init` (PID 1), `apps/zd1-slot`,
   `apps/zd1-update`, `apps/zd1-linkd`); the stub `module/boot/src/bin/linuxboot.rs`; the MCU's choice
   `mcu/src/modboot.c` (hooks in `dm870.c`: `stub_check`, `on_ready`, the bring-up's deadline).
 - The unit: `units/<unit>/status.md` (not in git). Images: `units/<unit>/module/images/`.
