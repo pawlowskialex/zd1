@@ -17,6 +17,7 @@ MODULE_STOCK_BCD = os.path.join(BLOBS, "zd1", "module", "app_DMP.bcd")  # stock 
 ZD1_CNE = os.path.join(BLOBS, "zd1", "module", "cne.bin")  # its factory CnE
 # the Zeppelin Air with Lightning (ZD1L)
 ZD1L_STOCK_FW = os.path.join(BLOBS, "zd1l", "zd1lv20435.fw")  # B&W's last release, both chips: the way back
+ZD1L_MCU_BOOTLOADER = os.path.join(BLOBS, "zd1l", "mcu", "bootloader.bin")  # "Net HBL": 0x80000000-0x80007FFF
 ZD1L_BL2 = os.path.join(BLOBS, "zd1l", "module", "bl2.bin")  # its NAND 0xA0000 partition
 ZD1L_CNE = os.path.join(BLOBS, "zd1l", "module", "cne.bin")  # its factory CnE
 # both: the module's DM870 and Nokia's Linux for it

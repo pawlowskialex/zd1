@@ -7,9 +7,10 @@
     python3 -I tools/zeppelin/fw/bwfw.py --selftest FILE.fw...     # each rebuilt from its parts, byte for byte
 
 OUTDIR gets module.bcd, mcu.bin (the MCU part as it is) and, when the MCU part is an AVR32 .dmb (A7, ZD1L),
-mcu_flash.bin: a 256 KB flash image for `zemu run OUTDIR/module.bcd --mcu OUTDIR/mcu_flash.bin` = B&W's ZD1 bootloader,
-0x80004000-0x80007FFF from the ZD1's stock app (its jump to 0x80008000; the .dmb starts there) and the .dmb's app.
-The bootloader is the ZD1's: the other models' are in no .fw. Emulation only, never flashed.
+mcu_flash.bin: a 256 KB flash image for `zemu run OUTDIR/module.bcd --mcu OUTDIR/mcu_flash.bin`, the .dmb's app at
+0x80008000 behind a bootloader: the ZD1L's own ("Net HBL", blobs/zd1l/mcu/bootloader.bin: it starts 0x80008000) for
+a ZD1L .dmb; for the A7's, whose bootloader no one has read, B&W's ZD1 bootloader with 0x80004000-0x80007FFF from the
+ZD1's stock app (its jump to 0x80008000). Emulation only, never flashed.
 
 --pack takes an app linked at 0x80008000 (`nix build .#mcu-dmb`: a .dmb has no room for 0x80004000-0x80007FFF). What
 reads a .fw's MCU part on a real speaker has not been seen: a packed file says nothing about whether one would take it.
@@ -101,9 +102,13 @@ def parse(d):
     return w, bcd, mcu, dmb
 
 
-def flash(app):
-    bl, stock = open(paths.MCU_BOOTLOADER, "rb").read(), paths.stock_mcu_app()
-    img = bl + stock[: APP - len(bl)] + app
+def flash(app, zd1l=False):
+    """256 KB: a bootloader and `app` at 0x80008000: the ZD1L's HBL (zd1l), else the ZD1's with its stock jump."""
+    if zd1l:
+        img = open(paths.ZD1L_MCU_BOOTLOADER, "rb").read() + app
+    else:
+        bl, stock = open(paths.MCU_BOOTLOADER, "rb").read(), paths.stock_mcu_app()
+        img = bl + stock[: APP - len(bl)] + app
     return img + b"\xff" * (FLASH - len(img))
 
 
@@ -172,7 +177,7 @@ def main():
         open(os.path.join(a.out, "module.bcd"), "wb").write(bcd)
         open(os.path.join(a.out, "mcu.bin"), "wb").write(mcu)
         if dmb:
-            open(os.path.join(a.out, "mcu_flash.bin"), "wb").write(flash(dmb[1]))
+            open(os.path.join(a.out, "mcu_flash.bin"), "wb").write(flash(dmb[1], dmb[0].startswith("ZD1L")))
 
 
 if __name__ == "__main__":
