@@ -2,7 +2,7 @@
 
 The MCU's 16 KB bootloader at 0x80000000-0x80003FFF ("ZD1 Bootloader version 0514", DevID 7904) is the way back from
 anything that can go wrong with the app. It is Atmel's FLIP-style USB DFU bootloader with B&W extensions, including a
-relay that forwards network-module firmware over SPI. `blobs/mcu/bootloader.bin` is a copy read from our unit over
+relay that forwards network-module firmware over SPI. `blobs/zd1/mcu/bootloader.bin` is a copy read from our unit over
 DFU: BOOTPROT blocks writes and erases, not reads; LOCK is unset [HW]. The disassembly is
 `re/mcu/work/bootloader/bl.dis` (its DFU core runs from SRAM 0x4000 = flash 0x80000228 + offset). Tags:
 `docs/README.md`.
@@ -47,6 +47,9 @@ else (BOD, other warm reset):
    never reads GPLP [RE `bl.dis`, direct calls; the relay code has no indirect ones].
 3. **Any DFU session** sets ISP_FORCE itself (the DNLOAD handler, so a reset mid-programming comes back to DFU); the
    start-app commands clear it [RE]. A unit that was left in a DFU session boots into DFU again.
+
+All of this is the 30-pin model's bootloader. The Lightning model's is unknown, and its key-hold is reported to start
+BL2 on Ethernet with nothing on USB (`docs/mcu/stock-firmware.md`).
 
 ## DFU protocol (USB 03EB:2FF8, interface 0)
 Atmel FLIP v2 framing. `host/core/src/dfu.rs` implements it (`zd1 dfu`, `zd1 flash`, the web page), checked frame
@@ -113,6 +116,6 @@ BL2 then answers XModem 'C' on register 0x2C and the bootloader streams the imag
   The tools refuse.
 - Every backup (`zd1 dfu backup`, and the one `zd1 flash`, the installs and the page take first) reads the bootloader
   region too, as `bootloader.bin` in the tar: for the record, since another unit's (B&W's other models) may differ
-  from `blobs/mcu/bootloader.bin` and only JTAG could put one back [EMU: byte-identical to it].
+  from `blobs/zd1/mcu/bootloader.bin` and only JTAG could put one back [EMU: byte-identical to it].
 - After a `flash`, `restore` or `userpage-write`, the tool reads back and verifies.
 - A raw `.bin` app image is based at 0x80004000; a verify must read back independently of the map that wrote it.

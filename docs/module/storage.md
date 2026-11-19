@@ -24,7 +24,7 @@ Nothing of the vendor's chain reads them: BL2's updater erases and writes only i
 
 | | Size (gzip), and the room | |
 |---|---|---|
-| app partition: the boot stub, the kernel (deflated: the stub inflates it), the rescue | 1.8 MB: kernel 1.40, rescue 0.40, stub 0.02 (`os.bcd` 2.0 MB with the stock preloader, CnE and resources); the vendor's app slot is 10 MB (0x240000-0xC3FFFF, `boot-chain.md`) | the rescue (an initramfs, RAM only while it runs): the rescue's busybox (27 applets, `os.toml [busybox] rescue_applets`), the core build of `zd1` (`/bin/zd1`: only what the rescue runs, `os.toml [apps] rescue`: `init`'s rescue profile, `zd1-linkd`, `zd1-update`, `zd1-slot`, `zd1-settings`, ...; the system's services and early start, `zd1-init/src/system.rs`, aren't in it), `/init`: 0.73 MB unpacked |
+| app partition: the boot stub, the kernel (deflated: the stub inflates it), the rescue | 1.8 MB: kernel 1.40, rescue 0.40, stub 0.02 (`os.bcd` 1.9 MB with B&W's preloader and the CnE, no resources); the vendor's app slot is 10 MB (0x240000-0xC3FFFF, `boot-chain.md`) | the rescue (an initramfs, RAM only while it runs): the rescue's busybox (27 applets, `os.toml [busybox] rescue_applets`), the core build of `zd1` (`/bin/zd1`: only what the rescue runs, `os.toml [apps] rescue`: `init`'s rescue profile, `zd1-linkd`, `zd1-update`, `zd1-slot`, `zd1-settings`, ...; the system's services and early start, `zd1-init/src/system.rs`, aren't in it), `/init`: 0.73 MB unpacked |
 | a system slot (`/`) | 5.1 MB (10.3 MB unpacked) of the slot's 32 MB | busybox (106 applets, `os.toml [busybox] applets`), the full `zd1` (`/usr/bin/zd1`: init and the core programs in `/bin`, the receivers, the self test, the Warp and memory probes in `/usr/bin`), `/etc` (`module/os/rootfs`), Nokia's kernel modules and Wi-Fi firmware, `wpa_supplicant`, ALSA's configuration and tools |
 | data partition (`/data`) | | `/data/zd1/settings` |
 
@@ -84,6 +84,11 @@ leftovers) is formatted once. It is never reformatted for a new image, newer or 
 
 The emulator's dev boot (`zemu run`) is the system as one initramfs, `/init` its `/sbin/init`, without the slots flag
 in the payload: the stub boots it as it is (`zd1-ctl status`: no slot).
+
+**The full image** (`payload_full.bin`; `os-zd1l.bcd` for a speaker updated by one file for both chips: the Lightning model's `.fw`,
+`docs/mcu/stock-firmware.md`) is the same for the unit: the release system as one gzip'd initramfs (5.1 MB, 10 MB in
+RAM while it runs), no slots flag and no rescue, so the MCU is never asked for a slot. The slots stay empty; `/data` is
+used as on a slot boot. An update is a whole new image.
 
 ## How the system gets there
 `zd1 update` (`docs/module/updater.md`): the image (`system.cpio.gz`, a slot's root) over USB through the MCU to

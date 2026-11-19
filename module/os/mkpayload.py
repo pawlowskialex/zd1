@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Pack a Linux kernel for the DM870 app slot: the stage-2 payload the stock preloader loads to and enters at
-0x60008000 (then `tools/zeppelin/fw/mkbcd.py` wraps it into a .bcd with the stock preloader + checksums).
+0x60008000 (then `tools/zeppelin/fw/mkbcd.py` builds the .bcd around it: B&W's preloader, a CnE, the checksums).
 
 Layout (offsets from 0x60008000):
   0x000  trampoline: copies the stub to 0x61F00000 and jumps there (position independent, 12 words)

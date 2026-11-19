@@ -8,7 +8,7 @@ mod term;
 
 use clap::builder::{PossibleValuesParser, TypedValueParser};
 use clap::{Parser, Subcommand, ValueEnum};
-use files::{read, repo};
+use files::{read, repo, write};
 use futures_lite::future::block_on;
 use std::path::PathBuf;
 use std::rc::Rc;
@@ -143,7 +143,7 @@ enum Cmd {
         yes: bool,
     },
     /// The stock firmware back on both boards, the module first: the stock .bcd through the relay (~6.5 min), then
-    /// the stock MCU firmware (blobs/mcu/zd1-2.04.05.hex, or a backup's app_flash.bin), with a backup of what is on
+    /// the stock MCU firmware (blobs/zd1/mcu/zd1-2.04.05.hex, or a backup's app_flash.bin), with a backup of what is on
     /// the MCU first. The speaker comes up unconfigured, as from the factory.
     Rollback {
         /// The stock module image (.bcd).
@@ -259,15 +259,19 @@ enum Cmd {
         #[arg(value_parser = spec_enum::<zd1_host::spec::Debug>())]
         mode: zd1_host::spec::Debug,
     },
-    /// Read the MCU's memory.
+    /// Read the MCU's memory: a hex dump, or with --out the bytes into a file (e.g. `zd1 peek 0x80000000 0x8000 --out
+    /// boot.bin`: the bootloader and the stage behind it, which a B&W .dmb leaves in place).
     Peek {
         #[arg(value_parser = number::<u32>)]
         addr: u32,
-        #[arg(value_parser = number::<u16>, default_value = "16")]
-        len: u16,
+        #[arg(value_parser = number::<u32>, default_value = "16")]
+        len: u32,
         /// 32-bit reads (registers).
         #[arg(short, long)]
         words: bool,
+        /// Write the bytes to this file instead of printing them.
+        #[arg(long)]
+        out: Option<PathBuf>,
     },
     /// Write the MCU's memory.
     Poke {
@@ -420,6 +424,9 @@ fn hex(s: &str) -> std::result::Result<Hex, String> {
         .map(Hex)
         .ok_or_else(|| "hex digits, two per byte".into())
 }
+
+/// The most bytes one Peek reads (the spec's `Data`, `Bytes[248]`; a multiple of 4 for --words).
+const PEEK_MAX: u32 = 248;
 
 fn main() {
     let cli = Cli::parse();
@@ -787,8 +794,23 @@ async fn run<B: Bus>(bus: &B, cli: Cli) -> Result<i32> {
             m.call(&msg::Debug { mode }).await?;
             println!("the module OS's debug services: {mode}");
         }
-        Cmd::Peek { addr, len, words } => {
-            let d = m.call(&msg::Peek { addr, len, words }).await?.data;
+        Cmd::Peek { addr, len, words, out } => {
+            let mut d = Vec::with_capacity(len as usize);
+            while (d.len() as u32) < len {
+                let at = addr + d.len() as u32;
+                let n = (len - d.len() as u32).min(PEEK_MAX) as u16;
+                d.extend(m.call(&msg::Peek { addr: at, len: n, words }).await?.data);
+                if out.is_some() {
+                    eprint!("\r  read {}/{} bytes", d.len(), len);
+                }
+            }
+            if let Some(path) = out {
+                eprintln!();
+                write(&path, &d)?;
+                let sha = zd1_host::hex(&zd1_host::sha256(&d));
+                println!("{} bytes from 0x{addr:08x} into {} (sha256 {sha})", d.len(), path.display());
+                return Ok(0);
+            }
             for (i, row) in d.chunks(16).enumerate() {
                 let cells: Vec<String> = if words {
                     row.chunks(4).map(zd1_host::hex).collect()

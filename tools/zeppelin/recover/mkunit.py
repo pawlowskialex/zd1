@@ -12,7 +12,7 @@ Outputs (DIR is per-unit data: keep it out of git, the MAC is in it):
   eeprom.bin      256 B blank 24C02: the stock app writes its default record on first boot.
   manifest.json   sha256 of every file, sources, GP fuse word, what each region is.
 
-Sources (generic, not per unit): blobs/mcu/{bootloader.bin,zd1-2.04.05.hex}, blobs/module/{bl1.enc,bl2.bin}
+Sources (generic, not per unit): blobs/zd1/mcu/{bootloader.bin,zd1-2.04.05.hex}, blobs/zd1/module/{bl1.enc,bl2.bin}
 and the vendor app_DMP.bcd (untrusted data: parsed, never executed). Partition headers (MetaInfo) are generated from
 the .bcd the way BL2 writes them; --check compares the generated NAND region by region with a reference image.
 """

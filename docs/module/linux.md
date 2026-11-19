@@ -77,7 +77,7 @@ kHz, 256-frame periods; `speaker-test` programs the AV PLL, port 2 and SuluDMA c
 block-moved from the ALSA buffer into an SRAM packet (header `0x26000804`, then L/R words with the sample in [31:8],
 port format 0x29) [EMU].
 
-How the driver plays [RE: `snd-sulu.ko`, `av-device.ko`, the kernel's `newdma_*` from `blobs/module/nokia-hd1/kernel.bin`
+How the driver plays [RE: `snd-sulu.ko`, `av-device.ko`, the kernel's `newdma_*` from `blobs/nokia-hd1/kernel.bin`
 at 0xC0008000, symbols from `tools/zeppelin/jtag/kallsyms.py`]: SuluDMA moves two SRAM packets in turn to the PTU FIFO,
 all the time, silence (a block move from 0xB2000000) while nothing plays; ALSA's start and stop only set a flag and
 reset the period counter (`sulu_av_cmd`), so the I2S never stops. Each finished packet interrupts

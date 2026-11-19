@@ -52,7 +52,7 @@ fn r32(a: usize) -> u32 {
     unsafe { read_volatile(a as *const u32) }
 }
 
-/// Nokia's 2.6.24 mach-sulu kernel (blobs/module/nokia-hd1) spins in its idle loop at 240 MIPS: default_idle disables
+/// Nokia's 2.6.24 mach-sulu kernel (blobs/nokia-hd1) spins in its idle loop at 240 MIPS: default_idle disables
 /// IRQs, loads TIF_NEED_RESCHED, ignores it and returns (arch_idle is empty). With that build's exact words in place
 /// it becomes mainline's: `tst r3, #2; bleq cpu_arm926_do_idle` (WFI, which a masked IRQ ends), IRQs on again. The
 /// emulator applies the same patch (emu/renode/cr870/CR870.cs, PatchLinuxIdle). Physical addresses (VA - 0x60000000).

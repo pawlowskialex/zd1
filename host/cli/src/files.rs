@@ -21,6 +21,10 @@ pub fn read(path: &Path) -> Result<Vec<u8>> {
     std::fs::read(path).map_err(|e| Error::Failed(format!("{}: {e}", path.display())))
 }
 
+pub fn write(path: &Path, data: &[u8]) -> Result<()> {
+    std::fs::write(path, data).map_err(|e| Error::Failed(format!("{}: {e}", path.display())))
+}
+
 /// A file as the release manifest describes it: `{file, kind, size, sha256, version, built|stamp}`; `kind` mcu
 /// (Intel HEX or the app region's .bin), backup (an MCU backup), system (a gzip'd cpio) or bcd (the module's boot
 /// image).

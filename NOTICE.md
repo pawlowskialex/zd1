@@ -41,8 +41,8 @@ The module's system (`nix build .#os-image`, `os.bcd`):
 | Part | License | Source |
 |---|---|---|
 | boot stub, `zd1` (init, the link, the receivers), the Warp0 images | MIT, with shairplay-rust and the LGPL files above | this repo |
-| Linux 2.6.24.7 (`mach-sulu`), Nokia's build, unmodified | GPL-2.0 | Nokia's binary from the HD-1 (`blobs/module/nokia-hd1/kernel.bin`, provenance in `blobs/README.md`). This repo has no source for it |
-| Nokia's kernel modules and the Wi-Fi firmware (`module/os/os.toml` `[vendor]`) | Nokia's / BridgeCo's, binary | `blobs/module/nokia-hd1/rootfs/` |
+| Linux 2.6.24.7 (`mach-sulu`), Nokia's build, unmodified | GPL-2.0 | Nokia's binary from the HD-1 (`blobs/nokia-hd1/kernel.bin`, provenance in `blobs/README.md`). This repo has no source for it |
+| Nokia's kernel modules and the Wi-Fi firmware (`module/os/os.toml` `[vendor]`) | Nokia's / BridgeCo's, binary | `blobs/nokia-hd1/rootfs/` |
 | busybox 1.36.1 | GPL-2.0 | https://busybox.net/downloads/busybox-1.36.1.tar.bz2, configured by `module/os/busybox.config` and `os.toml` `[busybox]` |
 | alsa-lib 1.2.12 | LGPL-2.1-or-later | https://www.alsa-project.org/files/pub/lib/alsa-lib-1.2.12.tar.bz2 (linked statically into `zd1`) |
 | alsa-utils 1.2.12 (`aplay`, `amixer`, `speaker-test`) | GPL-2.0-or-later | https://www.alsa-project.org/files/pub/utils/alsa-utils-1.2.12.tar.bz2 |

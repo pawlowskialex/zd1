@@ -46,7 +46,7 @@ the unit's history, where its files are.
 | `python3 -I tools/zeppelin/jtag/kmsg.py --pc` | (hardware, J-Link on the carrier) the running kernel's log from RAM, no console needed (`docs/module/jtag.md`) |
 | `zd1 update [IMAGE]` | (hardware, with OK) the module's system (`emu/img/os/system.cpio.gz`) over USB into the slot that doesn't run, then started once: kept if it gets ready, else the MCU goes back (`docs/module/updater.md`). Emulator: `--uart` without the MCU's part |
 | `zd1 slot [try a\|b\|rescue \| good a\|b] [--restart]` | which system slot the MCU starts the module with (`docs/module/storage.md`); changing it is gated |
-| `python3 tools/zeppelin bl2web <ip> <image.bcd> --yes` | (hardware, with OK) install a module image through BL2's web updater |
+| `python3 tools/zeppelin bl2web <ip> <image> --yes` | (hardware, with OK) install a module image through BL2's web updater (a `.bcd`; a ZD1L's BL2: a B&W `.fw`, both chips) |
 | `python3 tools/zeppelin usprobe` | (hardware) plays an inaudible 19 kHz coded tone and listens with the Mac mic: "does the speaker play?" without anyone listening. Detects down to about -60 dBFS; music playing masks it |
 | a USB Ethernet dongle on the Mac (`en8`) | (hardware) the module on wired Ethernet at 169.254.1.1 (its link-local fallback: no DHCP server); bind to the dongle (`ping -b en8`, `curl --interface en8`, `bl2web --iface=en8`): with the module on Wi-Fi too the Mac may route 169.254.1.1 over Wi-Fi |
 | `python3 emu/zemu run [IMAGE] [--sh CMD]... [--keep]` | boots our OS (or any module image; `--mcu` adds the main board) in the emulator, runs shell commands, traces MMIO (`--trace`), GDB (`--gdb`); `emu/run/NAME/` has every log (`emu/README.md`) |

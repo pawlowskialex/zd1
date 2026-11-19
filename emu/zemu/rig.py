@@ -497,8 +497,8 @@ class Session:
         self.env["ZD1DFU_EMU"] = "127.0.0.1:%d" % port
 
     def real_bl1(self):
-        """The re-runnable real BL1, blobs/module/bl1.run (blobs/README.md, re/netmodule/bl1/README.md)."""
-        return os.path.join(REPO, "blobs", "module", "bl1.run")
+        """The re-runnable real BL1, blobs/zd1/module/bl1.run (blobs/README.md, re/netmodule/bl1/README.md)."""
+        return os.path.join(REPO, "blobs", "zd1", "module", "bl1.run")
 
     def close(self):
         r = self.r

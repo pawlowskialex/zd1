@@ -52,12 +52,12 @@ def factory_unit():
 
 
 def stock_stage2():
-    """The stock module app's stage 2 (loaded at 0x60008000 for a direct boot), carved from blobs/module/app_DMP.bcd."""
+    """The stock module app's stage 2 (loaded at 0x60008000 for a direct boot), carved from blobs/zd1/module/app_DMP.bcd."""
     out = os.path.join(IMG, "stock_stage2_0x60008000.bin")
     if not os.path.exists(out):
         d = os.path.join(IMG, "stock_bcd")
         sh(
-            PY + [os.path.join(ZTOOLS, "fw", "bcd.py"), "blobs/module/app_DMP.bcd", rel(d)],
+            PY + [os.path.join(ZTOOLS, "fw", "bcd.py"), "blobs/zd1/module/app_DMP.bcd", rel(d)],
             stdout=subprocess.DEVNULL,
         )
         shutil.copyfile(os.path.join(d, "sec0_app_main_0x60008000.bin"), out)
@@ -106,7 +106,7 @@ def module_image(name, nand_boot):
 # ---- the main board ---------------------------------------------------------------------------------------------
 def mcu_flash(app_bin, out):
     """256 KB raw flash: the B&W DFU bootloader + an app-region .bin (0x80004000), 0xFF fill."""
-    bl = open(os.path.join(REPO, "blobs", "mcu", "bootloader.bin"), "rb").read()
+    bl = open(os.path.join(REPO, "blobs", "zd1", "mcu", "bootloader.bin"), "rb").read()
     app = open(app_bin, "rb").read()
     assert len(bl) == 0x4000 and len(app) <= 0x3C000
     os.makedirs(os.path.dirname(out), exist_ok=True)

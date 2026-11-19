@@ -4,7 +4,7 @@
     python3 -I tools/zeppelin/jtag/kallsyms.py [KERNEL] [--at ADDR]...
 
 Prints `addr type name` lines (the /proc/kallsyms format), or with --at the symbol each address falls in. KERNEL
-defaults to blobs/module/nokia-hd1/kernel.bin (the uncompressed 2.6.24.7 Image, base 0xC0008000), the kernel
+defaults to blobs/nokia-hd1/kernel.bin (the uncompressed 2.6.24.7 Image, base 0xC0008000), the kernel
 module/linux boots. Library: `load()`, `Symbols(...).at(addr)`.
 
 Linux 2.6.24's scripts/kallsyms lays out, each 16-aligned: addresses (u32 per symbol, sorted), the symbol count,
@@ -20,7 +20,7 @@ import struct
 import sys
 
 REPO = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", ".."))
-KERNEL = os.path.join(REPO, "blobs", "module", "nokia-hd1", "kernel.bin")
+KERNEL = os.path.join(REPO, "blobs", "nokia-hd1", "kernel.bin")
 KBASE = 0xC0000000
 
 

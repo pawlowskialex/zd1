@@ -30,7 +30,7 @@
   "nokia-hd-1-dump": {
    "title": "Nokia Home Music HD-1 NAND dump (third party)",
    "url": "https://archive.org/details/nokia-hd-1-dump",
-   "note": "source of blobs/module/nokia-hd1/ (blobs/README.md)"
+   "note": "source of blobs/nokia-hd1/ (blobs/README.md)"
   }
  },
  "files": [
@@ -1605,7 +1605,7 @@
    "path": "legacy/bowers_wilkins/zeppelin_air/extracted/dmhFixZD1d.hex",
    "size": 383034,
    "sha256": "547e7f8cd8232791b9954ed7cf74f26038548225c2d1683f5d54b13ba494085b",
-   "reason": "dmhFixZD1d.hex, extracted from the Recovery Utility zip; also blobs/mcu/"
+   "reason": "dmhFixZD1d.hex, extracted from the Recovery Utility zip; also blobs/zd1/mcu/"
   },
   {
    "path": "legacy/bridgeco/datasheets/cr-fcc/cr870-2q-datasheet-3.6.pdf",

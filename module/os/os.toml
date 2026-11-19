@@ -3,7 +3,7 @@
 
 [kernel]
 # Nokia HD-1 Kernel_A (2.6.24.7, mach-sulu), unmodified: re/netmodule/NOKIA_HD1.md, provenance in blobs/README.md.
-image = "blobs/module/nokia-hd1/kernel.bin"
+image = "blobs/nokia-hd1/kernel.bin"
 # mem=31M: the top 1 MB of SDRAM stays out of Linux: the boot stub (0x61F00000, done once the kernel runs) and the
 # Warp1 program window at 0x61FC0000 (wsl.ko maps it; docs/module/warp.md). Not 32512K: this kernel panics in
 # kmem_cache_init with a memory size that is not a whole number of MB (1 MB section mappings).
@@ -15,9 +15,9 @@ image = "blobs/module/nokia-hd1/kernel.bin"
 cmdline = "console=ttyS1,115200 mem=31M mtdparts=sulu-nand:32m(vendor)ro,32m(system-a),32m(system-b),32m(data) panic=10"
 
 [vendor]
-# Binary pieces from Nokia's rootfs (blobs/module/nokia-hd1/rootfs) that only work with that kernel: its modules and the
+# Binary pieces from Nokia's rootfs (blobs/nokia-hd1/rootfs) that only work with that kernel: its modules and the
 # Wi-Fi firmware. `load` = insmod order at boot (/etc/modules).
-root = "blobs/module/nokia-hd1/rootfs"
+root = "blobs/nokia-hd1/rootfs"
 modules = [
   "drivers/base/firmware_class",
   "net/wireless/cfg80211",

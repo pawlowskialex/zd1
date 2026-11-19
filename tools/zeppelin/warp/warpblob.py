@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Extract a Warp1 program (docs/module/warp.md): Nokia's WarpSol image, the symbol wslsepp_warp (length:
 wslsepp_warp_length) in /home/root/JukeBlox_Release_ELX of the Nokia rootfs, linked at 0x61FC0000. Its output is kept
-as blobs/module/nokia-hd1/wslsepp_warp.bin (blobs/README.md); this redoes it from the ELF (archive.org item
+as blobs/nokia-hd1/wslsepp_warp.bin (blobs/README.md); this redoes it from the ELF (archive.org item
 nokia-hd-1-dump, its JFFS2 rootfs extracted with jefferson). Reads the file as data only.
 
     python3 -I tools/zeppelin/warp/warpblob.py JukeBlox_Release_ELX OUT

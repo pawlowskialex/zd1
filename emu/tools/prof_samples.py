@@ -7,7 +7,7 @@
 Each sample line: virtual time, host time, PC, LR, CPSR. A slice's host cost (minus the sampler's own monitor
 round trips, estimated as the cheapest slices) is charged to the PC at its end: a statistical profile, good for
 "which phase / which function costs host time". PCs become kernel symbols (by default the kallsyms tables inside
-blobs/module/nokia-hd1/kernel.bin, tools/zeppelin/jtag/kallsyms.py); user space (PC < 0xc0000000) and the boot code
+blobs/nokia-hd1/kernel.bin, tools/zeppelin/jtag/kallsyms.py); user space (PC < 0xc0000000) and the boot code
 are bucketed by region.
 """
 

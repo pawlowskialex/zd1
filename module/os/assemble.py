@@ -17,8 +17,12 @@ The images (emu/img/os/; docs/module/storage.md):
     rescue.cpio(.gz)        the rescue, the app partition's initramfs: its busybox, the core programs, /init
     payload_dev.bin         emulator dev boot (`zemu run os`): the debug system as one plain initramfs at
                             0x61000000, zd1.selftest zd1.debug
-    payload.bin, os.bcd     the flashable app image (stock preloader + our stub/kernel/gzip rescue; the relay, BL2):
+    payload.bin, os.bcd     the flashable app image (B&W's preloader + our stub/kernel/gzip rescue; the relay, BL2):
                             the system goes into a slot with `zd1 update`
+    payload_full.bin        the whole system (release) as the boot initramfs, no slots and no rescue: for a speaker
+                            whose updates come as one file for both chips (docs/module/storage.md)
+    os-zd1l.bcd             that for the Zeppelin Air with Lightning (its HWID and CnE, no resources): the module part of
+                            its B&W .fw for BL2's web updater (`nix build .#zd1l-fw`)
     nand_os.bin             the emulator's test unit with os.bcd installed, slots empty (`zemu run os --nand --mcu`:
                             the rescue; then `--host 'zd1 update --uart'`)
     os-debug.bcd            os.bcd with the debug services on by default (os.toml [image.debug]), for the unit
@@ -170,15 +174,16 @@ def cpio(root, out, name, slot=False):
     log("  %s %d B (%d B gzip)" % (name, len(raw), os.path.getsize(c + ".gz")))
 
 
-def payload(cfg, parts, initrd, out, cmdline_extra="", dev=False):
-    """The stub + kernel + initramfs as one app payload (mkpayload.py): the rescue's, the stub starting
-    a system slot unless the MCU says otherwise (--slots); dev = the emulator's direct boot, the initramfs the system.
+def payload(cfg, parts, initrd, out, cmdline_extra="", how="slots"):
+    """The stub + kernel + initramfs as one app payload (mkpayload.py). `how`: "slots", the rescue's, the stub starting
+    a system slot unless the MCU says otherwise (--slots); "full", the initramfs the system, started as it is; "dev",
+    the emulator's direct boot, the same with a plain initramfs loaded lower.
     The kernel goes in deflated (half the size): the stub inflates it. The command line ends in `zd1.boot=ID`, the boot
     image's identity: the content_id of what goes in (stub, kernel, initramfs, how, the command line before it), so a
     commit that changes none of them builds the same one. The OS reports it (the State record's `boot`), `zd1 image`
     reads it from a .bcd, and the page rewrites the app partition only when they differ."""
     k = cfg["kernel"]
-    args = (["--initrd-at", "0x61000000"] if dev else ["--slots"]) + ["--deflate-kernel"]
+    args = {"slots": ["--slots"], "full": [], "dev": ["--initrd-at", "0x61000000"]}[how] + ["--deflate-kernel"]
     files = [os.path.join(parts, "boot", "linuxboot.bin"), os.path.join(REPO, k["image"]), initrd]
     cmdline = (k["cmdline"] + " " + cmdline_extra).strip()
     with tempfile.TemporaryDirectory() as d:
@@ -189,12 +194,25 @@ def payload(cfg, parts, initrd, out, cmdline_extra="", dev=False):
     sh(PY + [os.path.join(HERE, "mkpayload.py")] + files + [out] + args + ["--cmdline", cmdline])
 
 
-def wrap(payload_bin, out):
-    """The payload wrapped like the stock app (stock preloader, CnE, resources) for the relay and BL2. The system
-    isn't in it: `zd1 update` puts it into a slot (docs/module/updater.md)."""
-    stock = open(os.path.join(REPO, "blobs/module/app_DMP.bcd"), "rb").read()
-    open(out, "wb").write(mkbcd.build(stock, open(payload_bin, "rb").read()))
-    log("  %s %d B" % (os.path.basename(out), os.path.getsize(out)))
+# The models' .bcd parts besides the payload (blobs/README.md): HWID and factory CnE. B&W's preloader is common; the
+# resources (the stock app's web UI, which our OS doesn't read) are left empty: BL2 writes the partition empty.
+MODELS = {"zd1": 0xBD, "zd1l": 0xBE}
+
+
+def bcd_image(payload_bin, out, model, built):
+    """The payload as a model's .bcd for BL2 (its web updater, the relay's XModem): B&W's preloader, the model's HWID
+    and factory CnE, no resources, our build date (docs/module/boot-chain.md, ".bcd images")."""
+    blob = lambda name: open(os.path.join(REPO, "blobs", name), "rb").read()
+    image = mkbcd.build(
+        stage1=blob("dm870/preloader.bin"),
+        payload=open(payload_bin, "rb").read(),
+        cne=blob("%s/module/cne.bin" % model),
+        resources=[],
+        hwid=MODELS[model],
+        date="".join(c for c in built if c.isdigit()).ljust(14, "0"),
+    )
+    open(out, "wb").write(image)
+    log("  %s %d B" % (os.path.basename(out), len(image)))
 
 
 def install(base_nand, image, out):
@@ -211,7 +229,13 @@ def assemble(cfg, parts, out, version, built, base_nand):
     sysroot = os.path.join(out, ".system")
     make_system(cfg, parts, sysroot, version, built)
     cpio(sysroot, out, "system", slot=True)
+    # the same system as the boot initramfs (gzip'd: it goes to the stub's default destination), its init as /init
+    log("initramfs-full")
+    os.symlink("sbin/init", os.path.join(sysroot, "init"))
+    cpio(sysroot, out, "initramfs-full")
     shutil.rmtree(sysroot)
+    payload(cfg, parts, os.path.join(out, "initramfs-full.cpio.gz"), os.path.join(out, "payload_full.bin"), how="full")
+    bcd_image(os.path.join(out, "payload_full.bin"), os.path.join(out, "os-zd1l.bcd"), "zd1l", built)
     log("system-debug")
     make_system(cfg, parts, sysroot, version, built, debug=True)
     cpio(sysroot, out, "system-debug", slot=True)
@@ -227,7 +251,7 @@ def assemble(cfg, parts, out, version, built, base_nand):
     for suffix, cmdline in variants:
         p = os.path.join(out, "payload%s.bin" % suffix.replace("-", "_"))
         payload(cfg, parts, os.path.join(out, "rescue.cpio.gz"), p, cmdline)
-        wrap(p, os.path.join(out, "os%s.bcd" % suffix))
+        bcd_image(p, os.path.join(out, "os%s.bcd" % suffix), "zd1", built)
     install(base_nand, os.path.join(out, "os.bcd"), os.path.join(out, "nand_os.bin"))
     # the emulator's dev boot: the debug system as one plain initramfs loaded straight into SDRAM, its init as /init
     log("initramfs-dev")
@@ -240,7 +264,7 @@ def assemble(cfg, parts, out, version, built, base_nand):
         os.path.join(out, "initramfs-dev.cpio"),
         os.path.join(out, "payload_dev.bin"),
         "zd1.selftest zd1.debug",
-        dev=True,
+        how="dev",
     )
 
 

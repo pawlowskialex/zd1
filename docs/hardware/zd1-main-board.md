@@ -177,4 +177,6 @@ that (overriding it with table values once left USB dead) [HW].
 - Physical meaning of the USB mux lines, PB15/PB19/PB23/PB28/PB31/PA10; where the two thermistors (ADC4, ADC5) sit.
 - Where the dock's shielded cable lands (analog iPod path) and whether a switch selects dock vs AUX jack.
 - AUX optical on hardware, IR with a real remote, the iPod dock.
-- The MCU's JTAG pads (needed only for a total brick).
+- The MCU's JTAG pads (needed only for a total brick). On a Lightning board ("ZD1 MAIN PB", PCB E250336, U3 rotated 90°
+  clockwise) pin 89 (TMS) beeps to TP88, and TP88-TP91 are a diagonal group on the underside below U3's JTAG edge:
+  probably the factory pads, only TMS confirmed (reported in GitHub issue #1, not seen here).

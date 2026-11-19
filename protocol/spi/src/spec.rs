@@ -74,7 +74,7 @@ registers! {
         "HCR Ctrl: 0x2100 (0x2120 from the MCU bootloader) = reboot into BL2; in BL2, 0x2220 = start an XModem download over 0x2D / 0x2C (the bootloader's relay sends it once BL2 runs) [EMU trace of the bootloader 2026-10-26]; 0x2421 factory reset. [RE]";
     HCR_STATUS = 0x29 F [R|N] Payload::U16, "HCR status: 0x2020 / 0x2120 after HCR, 0x22xx in BL2. [RE 0x8000b60c]";
     XM_MODULE = 0x2C V [R|N] Payload::Bytes { max: 1029 },
-        "XModem, module -> MCU: BL2 receiving (an image through 0x2D): its control bytes 'C' / ACK / NAK / CAN, one per notification. [RE stock MCU 0x80008b40; the relay uses it, HW 2026-10-26]";
+        "XModem, module -> MCU. Direction-overloaded by the transfer: while the MCU **sends** (relay / `zd1 xmodem`, HCR 0x2220) it carries BL2's control bytes 'C' / ACK / NAK / CAN, one per notification; while the MCU **receives** (ZD1L host-firmware, HCR 0x2520) it carries the data frames (`docs/protocol/sequences.md`, \"MCU (host) firmware over SPI\"). We only ride the first. [RE stock MCU 0x80008b40; the relay uses it, HW 2026-10-26]";
     XM_HOST = 0x2D V [W] Payload::Bytes { max: 1029 },
         "XModem, MCU -> module: a whole XModem-1K frame (1029 bytes) per V write; a 1-byte write is a control byte (EOT). [RE stock MCU 0x80008ba0, the MCU bootloader's relay]";
     NET_STATUS = 0x32 F [R|N] Payload::Ascii2,

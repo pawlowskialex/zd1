@@ -65,11 +65,16 @@ remote one, aarch64 and x86_64). Nix sees the files git tracks: `git add` a new 
 CI pushes what it builds (x86_64-linux) to a public cache: add it to your nix configuration to skip those builds
 (`extra-substituters = https://pawlowskialex-zd1.cachix.org`, `extra-trusted-public-keys =
 pawlowskialex-zd1.cachix.org-1:fAJlCZ696sXLcIrYO9EZWCVLkw0T90T6gsjUoR6TOv8=`, or `cachix use pawlowskialex-zd1`).
+A pull request's run (`.github/workflows/pr.yml`) builds the images of its head, the Zeppelin Air's and the
+Lightning model's `.fw`, as artifacts kept 30 days, and links them in a comment on the PR: a change can be tried on a
+speaker without building it.
 
 | `nix build .#…` | What |
 |---|---|
 | `os-image` | the module OS images: `os.bcd`, `os-debug.bcd`, the system images, the emulator's payloads and NAND (`module/os/README.md`) |
 | `mcu`, `mcu-emu` | our MCU firmware (`mcu/Makefile`): `zd1.{elf,hex,bin,map}` with the commit stamped in (`mcu/stamp.py`; `mcu-raw` and `mcu-emu-raw` unstamped), `mcu/flash.sh` flashes it; the emulator's build (log and console on USART0 too) |
+| `mcu-dmb`, `mcu-emu-dmb` | the same linked at 0x80008000, for a B&W `.dmb` (`docs/mcu/stock-firmware.md`): never over DFU |
+| `zd1l-fw` | `zd1l.fw`, both chips of a Zeppelin Air with Lightning in one B&W `.fw` for its BL2 web updater (`os-zd1l.bcd` + `mcu-dmb`; `docs/mcu/stock-firmware.md`) |
 | `avr32-toolchain` | Microchip's AVR32 GNU toolchain the MCU builds with (below) |
 | `test-unit` | the emulator's factory-fresh unit (MCU flash, EEPROM, NAND) from `blobs/` |
 | `module-os-parts`, `busybox` `busybox-rescue` `alsa-lib` `alsa-utils` `wpa_supplicant` `apps` `apps-core` `apps-debug` `boot` `warp0-fw` | what the OS image is made of, together and one by one (`-rescue`, `-core`: the rescue's; `-debug`: the debug system's) |

@@ -59,8 +59,9 @@ on a 2010 ARM9 for all of this. What works and how it was checked: `docs/status.
 - **AirPlay is reverse-engineered**, not Apple's: an iOS or macOS update could break something.
 - **One unit tested**, a 30-pin Zeppelin Air. The **Zeppelin Air with Lightning connector** (2013) *might* work: B&W's
   MCU firmware for it is a near-twin build of the 2.04.05 ours follows (which also runs as its board variant), with the
-  same network module (`docs/mcu/stock-firmware.md`). In the emulator our firmware and install path handle it; its MCU
-  bootloader, which the install relies on, is unknown, nobody has tried one, and its dock is unsupported either way.
+  same network module (`docs/mcu/stock-firmware.md`). In the emulator our firmware handles it, but its MCU bootloader
+  is unknown and doesn't appear on USB when ON/OFF is held at power-up, as far as one owner found, so `zd1 install`
+  can't run on it as it is. Nobody has installed on one, and its dock is unsupported either way.
   The **Zeppelin A7** runs another MCU build on other hardware: not without changes.
 - **On your network** the speaker runs an AirPlay receiver like any other AirPlay speaker. Its debug services
   (a shell and memory access) are off and can only be switched on over USB. Requests that change the speaker over
@@ -104,7 +105,7 @@ zd1 install --unit units/my-zeppelin --yes    # the speaker in its bootloader (s
 zd1 wifi "Your network"                       # asks for the passphrase
 ```
 Then `zd1 info` shows the speaker's state, `zd1 --help` has the rest; `zd1 update` and `mcu/flash.sh` install new
-builds, `zd1 rollback blobs/module/app_DMP.bcd blobs/mcu/zd1-2.04.05.hex --unit units/my-zeppelin --yes` goes back to
+builds, `zd1 rollback blobs/zd1/module/app_DMP.bcd blobs/zd1/mcu/zd1-2.04.05.hex --unit units/my-zeppelin --yes` goes back to
 stock, `zd1 dfu restore BACKUP.tar --yes` writes a backup back, and `zd1 module esc` gets the network module into its
 bootloader whatever it runs.
 

@@ -1,7 +1,9 @@
 # The MCU firmware (AT32UC3A1256; composite USB: UAC1 audio + HID + the host link). App at 0x80004000 (B&W DFU layout).
 # Microchip's AVR32 GNU toolchain on PATH (an x86_64 Linux binary): `nix build .#mcu` runs this (nix/mcu/firmware.nix).
 #   make [OUT=zd1] [EXTRA_CFLAGS=...]    -> build/OUT.{elf,hex,bin,map}, objects in build/obj/OUT/
+#   APP_BASE=0x80008000                  -> linked behind stock's branch at 0x80004000, as a B&W .dmb is
 OUT ?= zd1
+APP_BASE ?= 0x80004000
 CROSS ?= avr32-
 CC := $(CROSS)gcc
 OBJCOPY := $(CROSS)objcopy
@@ -59,8 +61,10 @@ vpath %.c $(sort $(dir $(addprefix $(ASF)/,$(CSRCS))))
 all: $(B)/$(OUT).hex $(B)/$(OUT).bin
 	$(SIZE) $(B)/$(OUT).elf
 
-$(B)/$(OUT).elf: $(ASFOBJS) $(APPOBJS) link_zd1.lds
-	$(CC) $(CFLAGS) -nostartfiles -T link_zd1.lds -Wl,-e,_start -Wl,--gc-sections -Wl,-Map=$(B)/$(OUT).map \
+$(OBJ)/link.lds: link_zd1.lds | $(OBJ)
+	sed 's/0x80004000/$(APP_BASE)/g' $< > $@
+$(B)/$(OUT).elf: $(ASFOBJS) $(APPOBJS) $(OBJ)/link.lds
+	$(CC) $(CFLAGS) -nostartfiles -T $(OBJ)/link.lds -Wl,-e,_start -Wl,--gc-sections -Wl,-Map=$(B)/$(OUT).map \
 	  $(ASFOBJS) $(APPOBJS) -o $@
 $(B)/$(OUT).hex: $(B)/$(OUT).elf
 	$(OBJCOPY) -O ihex $< $@

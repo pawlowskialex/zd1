@@ -37,7 +37,11 @@ TOOLS = [  # (name, script relative to the repo, summary)
     ("warpblob", "tools/zeppelin/warp/warpblob.py", "Nokia's Warp1 program out of their app's ELF"),
     ("Images and formats", None, None),
     ("bcd", "tools/zeppelin/fw/bcd.py", "a .bcd module image: header and sections checked, extracted"),
-    ("mkbcd", "tools/zeppelin/fw/mkbcd.py", "a custom stage 2 wrapped into a .bcd (stock preloader, CnE, resources)"),
+    (
+        "mkbcd",
+        "tools/zeppelin/fw/mkbcd.py",
+        "a .bcd from its parts: B&W's preloader, a custom stage 2, a model's CnE and resources",
+    ),
     ("nand", "tools/zeppelin/fw/nand_parse.py", "a NAND image: its MetaInfo partitions and PersParam (MAC masked)"),
     ("ecc", "tools/zeppelin/nand/ecc.py", "the NAND's ECC checked on raw pages (data + spare)"),
     ("cne", "tools/zeppelin/fw/cne2txt.py", "the factory CnE settings as text"),

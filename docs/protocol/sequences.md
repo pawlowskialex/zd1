@@ -56,6 +56,39 @@ frames) → end of transfer → BL2 has written the image as it arrived. On the 
 (`docs/mcu/bootloader-dfu.md`). Our MCU app does the same transfer itself (`zd1 xmodem`: HCR 0x21,
 then 0x2220).
 
+## MCU (host) firmware over SPI — the mirror direction
+The same XModem-1K engine runs over the **same two registers with the roles swapped**: this is how the ZD1L's BL2
+flashes the MCU ("host firmware"), the reverse of the module-image relay above.
+
+| | Module image (relay / `zd1 xmodem`) | **MCU (host) firmware** |
+|---|---|---|
+| HCR trigger | 0x2220 | **0x2520** (GET_FILE) |
+| data frames | 0x2D (MCU → module) | **0x2C (module → MCU)** |
+| control bytes | 0x2C (module → MCU) | **0x2D (MCU → module)** |
+| XModem sender | MCU (bootloader/app) | **module BL2** (`RRegXModemTxMode`) |
+| XModem receiver | module BL2 | **MCU** (`voBcoMgrXmodemTask` 0x80008ba0, `XModemReceive` 0x800091e4) |
+
+Framing both ways [RE `re/mcu/work/bco_link_notes.txt`]: `[SOH 0x01 = 128 B | STX 0x02 = 1024 B][blk][~blk][data]
+[CRC16-CCITT]`; control `C` (0x43, CRC-mode start) / ACK 0x06 / NAK 0x15 / CAN 0x18 ×3 / EOT 0x04 (first NAKed, then
+ACKed); status on reg 0x29 by IRQ.
+
+- **BL2 side** [RE static strings, `blobs/zd1l/module/bl2.bin`]: the ZD1L's 2012 BL2 stages the MCU `.dmb` in
+  `MemoryBlobFirmwareUpdateService`, brings up `AVRPlayerService` (the SPI transport to the AVR/MCU) and transmits it
+  with `XModemOverSPI` in `RRegXModemTxMode`. Our 2010 BL2 has none of this (`docs/module/boot-chain.md`, "The ZD1L
+  BL2").
+- **MCU side**: the receiver primitive exists in the stock MCU app (`voBcoMgrXmodemTask`, started by HCR 0x2520) but
+  is **dead code** there — the NFU task never arms it (`docs/protocol/spi-registers.md`, 0x2520). On the ZD1L the
+  live receiver is in the **MCU bootloader** (unknown build; the UC3 JTAG dump or an MCU-flash-over-SPI read would
+  show it). Proven end-to-end on hardware only indirectly: a ZD1L flashed the stock-patch telnet-hook `.dmb` this way
+  (`docs/module/boot-chain.md`) [HW 2026-11-16].
+- **Our firmware doesn't ride this direction.** We use 0x2C only as the control-answer channel while *we* send
+  (relay / `XmFrame`), and the native MCU↔OS link lives entirely at 0xC0+ (`protocol/spi/src/spec.rs`), so there is no
+  clash with a ZD1L host-update on 0x2C: it is bootloader-time and MCU-as-receiver, a role we don't play. To let a
+  *running* zd1 MCU accept a BL2 host-reflash we would have to implement the receiver side (additive, not a conflict).
+- **Reading MCU flash over SPI** (the owner's "extended hook") is the sender direction: an MCU routine streams flash
+  `0x80000000–0x8003FFFF` out as XModem frames on 0x2D to a module-side collector — what `dm870.c`/`XmFrame` already
+  do, with flash as the source.
+
 ## Telnet shell on and off (stock module) [HW]
 - On: V-write 0x75 = port as ASCII (8 bytes, e.g. "23"), then F-write 0x76 = `05 00`. Off: 0x77 = "50001", 0x76 =
   `04 00`. Our firmware: `zd1 reg write` (`docs/module/knos.md`). Too soon after ready it has no effect; a few seconds later it works.

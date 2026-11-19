@@ -51,7 +51,8 @@ def header_crc(f):
 
 
 def parse(f):
-    """(header, sections): every field, the CRCs checked but not enforced; sections with size 0 are left out."""
+    """(header, sections): every field, the CRCs checked but not enforced; a section without a partition (an all-zero
+    entry) is left out, an empty one (no data, a partition: BL2 writes it empty) kept."""
     if f[:4] != MAGIC:
         raise ValueError("not a bCoD container")
     h = {}
@@ -63,7 +64,7 @@ def parse(f):
     secs = []
     for i in range(3):
         off, nand, size, crc, psize = struct.unpack_from("<5I", f, 0x30 + 0x20 * i)
-        if size == 0:
+        if psize == 0:
             continue
         d = f[off : off + size]
         secs.append(dict(idx=i, off=off, nand=nand, size=size, crc=crc, psize=psize, crc_ok=crc32(d) == crc, data=d))
