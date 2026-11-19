@@ -216,22 +216,28 @@ static void took(uint8_t reg, uint16_t v) {
             dcr = true;
     }
 }
-/* the queued notifications, for `ms`: each one read the way its register is (F or V) */
+/* the next queued notification, read the way its register is (F: taken; V: into vbuf, *n its length): its
+ * register, 0 for none (or a read that failed). Notifications come in their order: a register is read when it is
+ * the one pending, never past the ones ahead of it (BL2's HCR status OK goes ahead of the first block). */
+static uint8_t note(uint16_t *n) {
+    uint16_t p = 0, v = 0;
+    *n = 0;
+    if (!gpio_get_pin_value(PIN_MOD_REQ) || !read_f(ZD1_REG_PENDING, &p) || !(p >> 8))
+        return 0;
+    uint8_t reg = (uint8_t)(p >> 8);
+    if (zd1_reg_kind(reg) == 'F')
+        return read_f(reg, &v) ? (took(reg, v), reg) : 0;
+    return read_v(reg, vbuf, sizeof vbuf, n) ? reg : 0;
+}
+
+/* the queued notifications, for `ms` */
 static void drain(uint32_t ms) {
     uint32_t end = tick_ms() + ms;
     while (!after(end)) {
         wdt_clear();
-        uint16_t p = 0, v = 0, n = 0;
-        if (!gpio_get_pin_value(PIN_MOD_REQ) || !read_f(ZD1_REG_PENDING, &p) || !(p >> 8)) {
+        uint16_t n;
+        if (!note(&n))
             wait_ms(5);
-            continue;
-        }
-        uint8_t reg = (uint8_t)(p >> 8);
-        if (zd1_reg_kind(reg) == 'F') {
-            if (read_f(reg, &v))
-                took(reg, v);
-        } else
-            read_v(reg, vbuf, sizeof vbuf, &n);
     }
 }
 
@@ -292,13 +298,11 @@ static bool receive(void) {
         bool fresh = false;
         uint32_t end = tick_ms() + 1000; /* the module queues the next block once it has our ACK */
         while (!after(end)) {
-            wait_ms(5);
-            n = 0;
-            if (read_v(ZD1_REG_XM_MODULE, vbuf, sizeof vbuf, &n) &&
-                (n == ZD1_XMODEM_BLOCK + 5 || (n == 1 && vbuf[0] == ZD1_XMODEM_EOT))) {
+            if (note(&n) == ZD1_REG_XM_MODULE && (n == ZD1_XMODEM_BLOCK + 5 || (n == 1 && vbuf[0] == ZD1_XMODEM_EOT))) {
                 fresh = true;
                 break;
             }
+            wait_ms(5);
         }
         if (fresh && n == 1) { /* EOT */
             ctl(ZD1_XMODEM_ACK);

@@ -91,6 +91,10 @@ page at 0x80007E00: the app's `.dmb` header, written after a transfer checks, er
   app. A failure before the record is erased goes back to the old app after three tries; after it, the preloader
   keeps asking (every start comes back here while there is no record). B&W's DFU (ON/OFF at power-up) stays the way
   back from anything, the preloader included.
+- It reads the module's notifications in their order, the pending register first, as the HBL does: our OS queues
+  BL2's HCR status OK ahead of the first block, and a direct read of 0x2C past it answers the register's idle value
+  (`00 00`), so a preloader reading 0x2C straight never got a block and gave up every transfer [EMU 2026-11-19: our
+  system's carried `zd1.dmb`, 579 blocks, in flash and checked once it read in order].
 - In the emulator [EMU 2026-11-19, `zemu run` of the test unit with `os-zd1l.bcd` and `.#mcu-emu`'s `zd1emu.bin`
   behind B&W's DFU bootloader]: `zd1-ctl mcu-update` with B&W's 2.04.05 app (cut at 0x80008000, as a `.dmb`) staged:
   "[mcufw] into the preloader", "[pre] BL2 has an app: taking it", "app in flash and checked, 0x000300f4 bytes", the
