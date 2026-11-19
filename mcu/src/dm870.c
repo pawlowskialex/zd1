@@ -395,6 +395,9 @@ static void decode(uint8_t reg, const uint8_t *b, uint16_t n) {
     case ZD1_REG_INTENT:
         log_puts("a receiver picked");
         break;
+    case ZD1_REG_MCU_FW:
+        log_puts("our OS has an app for the MCU");
+        break;
     default:
         log_puts(ours ? "(unknown)" : "(the stock software's: ignored)");
         break;
@@ -591,8 +594,14 @@ static void bringup_poll(void) {
             bu = BU_IDLE;
             return;
         }
-        if (!tick_after(now, bu_t) || !gpio_get_pin_value(PIN_MOD_REQ))
+        if (!tick_after(now, bu_t))
             return;
+        if (!gpio_get_pin_value(PIN_MOD_REQ)) {
+            /* our boot stub answers nothing until we knock (B&W's bootloaders never do: storage.md, the boot) */
+            dm870_reg_write(ZD1_REG_BOOT, ZD1_BOOT_KNOCK >> 8, ZD1_BOOT_KNOCK & 0xFF);
+            bu_t = now + 200;
+            return;
+        }
         if (!dm870_reg_read(ZD1_REG_STATUS, &st)) {
             bu_t = now + 300;
             return;

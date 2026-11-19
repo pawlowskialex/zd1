@@ -40,7 +40,12 @@ The app partition holds the boot stub, the kernel and the rescue, and changes ra
 Updating the OS means writing the slot that doesn't run, from the running system (`zd1-slot install`;
 `docs/module/updater.md`), and starting it once on trial. **Which slot starts is the MCU's choice**
 (`mcu/src/modboot.c`), kept in its EEPROM (the settings block's flags: the good slot, a slot to try once):
-1. **The stub asks.** Our boot stub (`module/boot`, `linuxboot`) says `zd1-boot` on reg 0x25 with status booting
+1. **The stub asks**, if our MCU knocked. The stub keeps the link muted (it takes requests and answers none) until
+   our MCU writes reg 0xC4 = 0xFFFF, which it does every 200 ms while it waits for a module it powered (our preloader
+   too); no knock within 3 s: the rescue, without a word on the link. B&W's bootloaders never knock, and the ZD1L's
+   gives up on a module that answered and then went quiet for the kernel's boot (it waits for a key press from then
+   on): with the stub answering, it never got to the update [EMU 2026-11-19, `docs/mcu/bootloader-hbl.md`].
+   After the knock the stub (`module/boot`, `linuxboot`) says `zd1-boot` on reg 0x25 with status booting
    (0x2000) and waits up to 5 s for the MCU's answer on reg 0xC4 (`docs/protocol/registers.md`): b0 slot A, slot B
    or the rescue, b1 the good slot. A slot: the stub adds `root=/dev/mtdblock1` (or 2) `rootfstype=jffs2 ro
    zd1.slot=a|b zd1.good=a|b` to the command line and leaves the initramfs out; the kernel mounts the slot and runs
@@ -48,7 +53,8 @@ Updating the OS means writing the slot that doesn't run, from the running system
    the command line starts with the boot image's own, which ends in `zd1.boot=ID`: its identity, by content
    (`module/os/assemble.py`), reported as the State record's `boot`. No answer (the MCU's
    bootloader relaying an image, the stock MCU firmware): the rescue, since without the MCU the good slot is unknown
-   and a slot may hold an old system or none; the rescue's `zd1-linkd` takes the bootloader's HCR 0x21 into BL2.
+   and a slot may hold an old system or none; the rescue's `zd1-linkd` takes the bootloader's HCR 0x21 into BL2, or
+   serves the MCU's bootloader the app it asks for (`docs/mcu/bootloader-hbl.md`).
 2. **The MCU answers** a slot to try (once: the try is cleared as it is answered), else the good slot, else the other
    one, else the rescue, skipping the ones that failed since the last ready.
 3. **Ready decides.** The module reporting ready (0x2100, `zd1-linkd`) makes the slot it booted the good one and

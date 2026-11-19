@@ -45,13 +45,10 @@ impl Mmio for Fake {
     }
 }
 
-/// What the MCU reads back: the reply without the idle bytes in front of it (the fake's TX FIFO is always empty, so
-/// every reply has one).
+/// What the MCU reads back: the reply without idle bytes, which every reader skips (a data 0xFF goes as 27 01). The
+/// fake's TX FIFO is always empty, so every reply has one in front and every escape pair one ahead of it.
 fn ask(l: &mut Link<Fake>, bytes: &[u8]) -> Vec<u8> {
-    let mut t = ask_raw(l, bytes);
-    let idle = t.iter().take_while(|&&b| b == 0xFF).count();
-    t.drain(..idle);
-    t
+    ask_raw(l, bytes).into_iter().filter(|&b| b != 0xFF).collect()
 }
 
 fn ask_raw(l: &mut Link<Fake>, bytes: &[u8]) -> Vec<u8> {
@@ -65,6 +62,24 @@ fn a_reply_into_an_empty_tx_fifo_goes_behind_an_idle_byte() {
     // the first byte into an empty FIFO can come out with bit 0 set on the unit: the echo's 02 read as 03
     let mut l = Link::new(Fake::default());
     assert_eq!(ask_raw(&mut l, &[0x02, 0x45, 1, 0, 0x51]), [0xFF, 0x02, 0x45, 0, 0]);
+}
+
+#[test]
+fn an_escape_pair_goes_in_behind_queued_bytes() {
+    // a pair's second byte written after the MCU clocked out everything ahead of the first would come behind an idle
+    // byte, a broken escape (the ZD1L's MCU bootloader gives up the read): the fake's FIFO is always empty, so each
+    // pair goes behind PAIR_AHEAD idle bytes
+    let mut l = Link::new(Fake::default());
+    let raw = ask_raw(&mut l, &[0x00, 0x30, 0x27, 0x01, 0x27, 0x27]);
+    let idle = |n| std::iter::repeat_n(0xFFu8, n);
+    let want: Vec<u8> = idle(1)
+        .chain([0x00, 0x30])
+        .chain(idle(super::PAIR_AHEAD as usize))
+        .chain([0x27, 0x01])
+        .chain(idle(super::PAIR_AHEAD as usize))
+        .chain([0x27, 0x27])
+        .collect();
+    assert_eq!(raw, want);
 }
 
 #[test]

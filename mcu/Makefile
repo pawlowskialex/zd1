@@ -1,9 +1,14 @@
-# The MCU firmware (AT32UC3A1256; composite USB: UAC1 audio + HID + the host link). App at 0x80004000 (B&W DFU layout).
+# The MCU firmware (AT32UC3A1256; composite USB: UAC1 audio + HID + the host link), and the ZD1's preloader.
+# The app is at 0x80008000 on both models (docs/mcu/bootloader-hbl.md): behind the ZD1L's B&W bootloader, and behind
+# our preloader (preloader/, 0x80004000-0x80007DFF) on the ZD1, which B&W's DFU bootloader starts.
 # Microchip's AVR32 GNU toolchain on PATH (an x86_64 Linux binary): `nix build .#mcu` runs this (nix/mcu/firmware.nix).
 #   make [OUT=zd1] [EXTRA_CFLAGS=...]    -> build/OUT.{elf,hex,bin,map}, objects in build/obj/OUT/
-#   APP_BASE=0x80008000                  -> linked behind stock's branch at 0x80004000, as a B&W .dmb is
+#   -> build/OUT.{elf,hex,bin,map} (the app) and build/OUTpre.{elf,hex,bin,map} (the preloader); the image the
+#      tools take (preloader + its record of the app + the app, or the app as a .dmb) is the stamp step's (stamp.py)
 OUT ?= zd1
-APP_BASE ?= 0x80004000
+APP_BASE := 0x80008000
+PRE_BASE := 0x80004000
+PRE_END := 0x80007E00
 CROSS ?= avr32-
 CC := $(CROSS)gcc
 OBJCOPY := $(CROSS)objcopy
@@ -53,25 +58,44 @@ CFLAGS := -mpart=uc3a1256 -Os -fdata-sections -ffunction-sections -muse-rodata-s
   -Isrc -Iconfig -Idfp-include/AT32UC3A1256 $(addprefix -I$(ASF)/,$(INCS))
 
 ASFOBJS := $(addprefix $(OBJ)/,$(notdir $(ASSRCS:.S=.o) $(CSRCS:.c=.o)))
+# the preloader: its one source and the part of the ASF it needs (no USB, no interrupts)
+PRESRCS := \
+  avr32/drivers/flashc/flashc.c \
+  avr32/drivers/intc/intc.c \
+  avr32/drivers/gpio/gpio.c \
+  avr32/drivers/pm/pm.c \
+  avr32/drivers/pm/pm_conf_clocks.c \
+  avr32/drivers/pm/power_clocks_lib.c \
+  avr32/drivers/spi/spi.c \
+  avr32/drivers/wdt/wdt.c \
+  common/services/clock/uc3a0_a1/sysclk.c
+PREOBJS := $(addprefix $(OBJ)/,$(notdir $(ASSRCS:.S=.o) $(PRESRCS:.c=.o))) $(OBJ)/pre_preloader.o
 APPOBJS := $(patsubst src/%.c,$(OBJ)/app_%.o,$(APPSRCS))
 
 vpath %.S $(sort $(dir $(addprefix $(ASF)/,$(ASSRCS))))
 vpath %.c $(sort $(dir $(addprefix $(ASF)/,$(CSRCS))))
 
-all: $(B)/$(OUT).hex $(B)/$(OUT).bin
-	$(SIZE) $(B)/$(OUT).elf
+all: $(B)/$(OUT).hex $(B)/$(OUT).bin $(B)/$(OUT)pre.hex $(B)/$(OUT)pre.bin
+	$(SIZE) $(B)/$(OUT).elf $(B)/$(OUT)pre.elf
 
 $(OBJ)/link.lds: link_zd1.lds | $(OBJ)
 	sed 's/0x80004000/$(APP_BASE)/g' $< > $@
+$(OBJ)/pre.lds: link_zd1.lds | $(OBJ)
+	sed 's/0x8003FE00/$(PRE_END)/g' $< > $@
 $(B)/$(OUT).elf: $(ASFOBJS) $(APPOBJS) $(OBJ)/link.lds
 	$(CC) $(CFLAGS) -nostartfiles -T $(OBJ)/link.lds -Wl,-e,_start -Wl,--gc-sections -Wl,-Map=$(B)/$(OUT).map \
 	  $(ASFOBJS) $(APPOBJS) -o $@
-$(B)/$(OUT).hex: $(B)/$(OUT).elf
+$(B)/$(OUT)pre.elf: $(PREOBJS) $(OBJ)/pre.lds
+	$(CC) $(CFLAGS) -nostartfiles -T $(OBJ)/pre.lds -Wl,-e,_start -Wl,--gc-sections -Wl,-Map=$(B)/$(OUT)pre.map \
+	  $(PREOBJS) -o $@
+$(B)/%.hex: $(B)/%.elf
 	$(OBJCOPY) -O ihex $< $@
-$(B)/$(OUT).bin: $(B)/$(OUT).elf
+$(B)/%.bin: $(B)/%.elf
 	$(OBJCOPY) -O binary $< $@
 
 $(OBJ)/app_%.o: src/%.c | $(OBJ)
+	$(CC) $(CFLAGS) -c $< -o $@
+$(OBJ)/pre_%.o: preloader/%.c | $(OBJ)
 	$(CC) $(CFLAGS) -c $< -o $@
 $(OBJ)/%.o: %.c | $(OBJ)
 	$(CC) $(CFLAGS) -c $< -o $@

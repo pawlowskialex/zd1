@@ -207,14 +207,6 @@ let
       name = "zd1emu";
       emulator = true;
     };
-    mcu-dmb-raw = self.mcu-raw.override {
-      name = "zd1dmb";
-      appBase = "0x80008000";
-    };
-    mcu-emu-dmb-raw = self.mcu-dmb-raw.override {
-      name = "zd1emudmb";
-      emulator = true;
-    };
     telnet-hook = self.callPackage ./mcu/stock-patch.nix { };
   });
   # The firmware with its identification stamped in (mcu/stamp.py): on the host, so a new commit doesn't need the Linux
@@ -225,6 +217,9 @@ let
       tools = src [
         "mcu/stamp.py"
         "tools/zeppelin/__init__.py"
+        "tools/zeppelin/paths.py"
+        "tools/zeppelin/fw/bcd.py"
+        "tools/zeppelin/fw/bwfw.py"
         "tools/zeppelin/fw/ihex.py"
       ];
     in
@@ -259,19 +254,15 @@ in
     inherit (mcu)
       mcu-raw
       mcu-emu-raw
-      mcu-dmb-raw
-      mcu-emu-dmb-raw
       telnet-hook
       avr32-toolchain
       ;
     mcu = stampMcu mcu.mcu-raw;
     mcu-emu = stampMcu mcu.mcu-emu-raw;
-    mcu-dmb = stampMcu mcu.mcu-dmb-raw;
-    mcu-emu-dmb = stampMcu mcu.mcu-emu-dmb-raw;
     # both chips of a Zeppelin Air with Lightning in one B&W .fw, for its BL2 web updater (nix/zd1l-fw.nix)
     zd1l-fw = pkgs.callPackage ./zd1l-fw.nix {
       inherit src os-image;
-      mcu-dmb = stampMcu mcu.mcu-dmb-raw;
+      mcu = stampMcu mcu.mcu-raw;
     };
   };
 

@@ -7,8 +7,11 @@
 //!      the silent kernel boot and never finished after a module restart (Wi-Fi source stuck, LED breathing red;
 //!      dev/stock-os). To it BOOTING is "not usable yet, keep polling"; zd1-linkd says READY once Linux is up. BL2 is
 //!      reached through BL1's serial menu (`zd1 module esc`) whatever happens here;
+//!      The link stays muted (it takes requests, answers none) until our MCU knocks (reg 0xC4 = boot::KNOCK, which
+//!      it writes while it waits for the module): B&W's bootloaders never knock, and to the ZD1L's a module that
+//!      answers and then goes quiet for the kernel's boot is lost (docs/mcu/bootloader-hbl.md);
 //!   2. with the slots flag (header +0x2C bit 0: the module OS's image, docs/module/storage.md): ask the MCU what to
-//!      start. We say "zd1-boot" on reg 0x25 and wait up to 5 s for its answer on reg 0xC4 (b0: slot A, slot B or the
+//!      start, if it knocked within 3 s. We say "zd1-boot" on reg 0x25 and wait up to 5 s for its answer on reg 0xC4 (b0: slot A, slot B or the
 //!      rescue, b1: the good slot; our MCU firmware, mcu/src/modboot.c). A slot is the root file system (JFFS2 on its
 //!      MTD partition, read-only: the initramfs is left out), the rescue is the initramfs. No answer (the MCU's
 //!      bootloader relaying an image, the stock MCU firmware): the rescue. Without the MCU we don't know which slot is
@@ -38,6 +41,7 @@ const STUB_AT: usize = dm870::memory::BOOT_STUB as usize; // where the trampolin
 const INITRD_AT: usize = 0x6180_0000; // default (header +0x28 = 0): below this stub, above the kernel's working set
 const SLOTS: u32 = 1; // header +0x2C: ask the MCU for a system slot
 const ANSWER_US: u32 = 5_000_000;
+const KNOCK_US: u32 = 3_000_000; // our MCU knocks every 200 ms while it waits
 /// The slots' MTD partitions (module/os/os.toml mtdparts: mtd1 system-a, mtd2 system-b).
 const ROOT_A: &[u8] = b" root=/dev/mtdblock1 rootfstype=jffs2 ro zd1.slot=a";
 const ROOT_B: &[u8] = b" root=/dev/mtdblock2 rootfstype=jffs2 ro zd1.slot=b";
@@ -145,11 +149,13 @@ fn main() -> ! {
                          "orr r0, r0, #0x1000", "mcr p15, 0, r0, c1, c0, 0", out("r0") _);
     }
     let mut link = zd1_boot::link_up();
+    link.set_muted(true);
     link.set_value(reg::VERSION_IMAGE, b"zd1-boot\0");
     link.set_status(zd1_link::spi::spec::status::BOOTING);
     say(&mut link, "\n[linuxboot] zd1 Linux boot stub\n");
     if hdr(0) != MAGIC {
         say(&mut link, "[linuxboot] bad header magic: serving the link (HCR 0x21 -> BL2)\n");
+        link.set_muted(false);
         zd1_boot::serve_until_bl2(&mut link, "[linuxboot]");
     }
     // Everything we need from the header, before the kernel copy overwrites it.
@@ -176,8 +182,21 @@ fn main() -> ! {
     let mut i_len = i_len;
     if flags & SLOTS != 0 {
         let t0 = timers(link.mmio()).now();
-        while link.reg(reg::BOOT) == 0 && timers(link.mmio()).us_since(t0) < ANSWER_US {
+        while link.reg(reg::BOOT) != boot::KNOCK && timers(link.mmio()).us_since(t0) < KNOCK_US {
             link.poll();
+        }
+        if link.reg(reg::BOOT) == boot::KNOCK {
+            link.set_reg(reg::BOOT, 0);
+            link.set_muted(false);
+            let t0 = timers(link.mmio()).now();
+            while matches!(link.reg(reg::BOOT), 0 | boot::KNOCK) && timers(link.mmio()).us_since(t0) < ANSWER_US {
+                if link.reg(reg::BOOT) == boot::KNOCK {
+                    link.set_reg(reg::BOOT, 0); // a knock that was on its way: still no answer
+                }
+                link.poll();
+            }
+        } else {
+            say(&mut link, "[linuxboot] no knock from our MCU firmware: not asking\n");
         }
         let answer = link.reg(reg::BOOT);
         let (start, good) = ((answer >> 8) as u8, answer as u8);

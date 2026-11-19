@@ -12,8 +12,8 @@ mcu_flash.bin: a 256 KB flash image for `zemu run OUTDIR/module.bcd --mcu OUTDIR
 a ZD1L .dmb; for the A7's, whose bootloader no one has read, B&W's ZD1 bootloader with 0x80004000-0x80007FFF from the
 ZD1's stock app (its jump to 0x80008000). Emulation only, never flashed.
 
---pack takes an app linked at 0x80008000 (`nix build .#mcu-dmb`: a .dmb has no room for 0x80004000-0x80007FFF). What
-reads a .fw's MCU part on a real speaker has not been seen: a packed file says nothing about whether one would take it.
+--pack takes an app linked at 0x80008000 (`nix build .#mcu`: zd1app.bin). The ZD1L's BL2 sends a .fw's MCU part to the
+MCU's bootloader over SPI (docs/mcu/bootloader-hbl.md).
 """
 
 import argparse

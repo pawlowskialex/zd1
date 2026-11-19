@@ -33,6 +33,8 @@ use std::time::{Duration, Instant};
 use zd1_link::Link;
 
 const SOCKET: &str = "/run/zd1link";
+/// The CnE path the MCU's bootloader reads (and sets to "autosense"): our OS has no CnE, both interfaces run.
+const NETIF_MODE: &str = "Application/NetIF/mode";
 use std::sync::{Arc, Mutex};
 use zd1_hostlink::codec::{self, Val};
 use zd1_hostlink::{Record, Slot, WifiSecurity};
@@ -42,6 +44,8 @@ use zd1_link::spi::spec::{STOCK_F, STOCK_V, boot, native, player};
 use zd1_net::Iface;
 use zd1_net::wpa::{Network, Watch, WifiState};
 use zd1_sys::{OsRelease, hex};
+
+mod mcufw;
 
 #[derive(Clone, Default, PartialEq)]
 struct Net {
@@ -163,6 +167,8 @@ struct App {
     servers: Arc<Mutex<Servers>>,        // the snapservers found over mDNS, and whether a look runs
     stamps: Arc<Mutex<[String; 2]>>,     // what slots A and B hold (zd1-slot's stamps; read in a thread)
     update: Option<std::process::Child>, // zd1-update while it runs
+    hbl_peer: bool,                      // the host used the configuration channel as the MCU's bootloader does
+    mcufw: Option<mcufw::Serve>,         // the MCU's own firmware going to its bootloader (we play BL2)
 }
 
 /// Both slots' stamps, read in a thread (the slot that doesn't run is mounted to read it: seconds of JFFS2 scan).
@@ -641,6 +647,7 @@ impl App {
                 let s = format!("{arg}\n");
                 self.say(&s);
             }
+            "mcu-update" => self.mcu_update(),
             _ => self.say(&format!("[zd1-linkd] unknown command: {line}\n")),
         }
     }
@@ -657,6 +664,12 @@ impl App {
             (reg::SELECT, false) => self.select((e.value >> 8) as u8),
             (reg::DEBUG, false) => self.debug_mode((e.value >> 8) as u8),
             (reg::UPDATE, true) => self.update(e.payload()),
+            (reg::XM_HOST, true) if self.mcufw.is_some() => {
+                if let Some(&c) = e.payload().first() {
+                    let out = self.mcufw.as_mut().unwrap().control(c, Instant::now());
+                    self.mcufw_out(out);
+                }
+            }
             (reg::BOOT, false) => {
                 // at ready: the good slot now (zd1-slot)
                 let good = match e.value as u8 {
@@ -755,10 +768,75 @@ impl App {
             }
             return;
         }
+        // the MCU's bootloader (the ZD1L's HBL, our ZD1 preloader) before it asks for BL2: it sets the HWID in the
+        // persistent parameters and makes sure the CnE's NetIF mode is "autosense" (docs/mcu/bootloader-hbl.md)
+        if !self.greeted && (name == "HWID" || name == NETIF_MODE) {
+            self.hbl_peer = true;
+            self.say(&format!("[zd1-linkd] config {name} from the MCU's bootloader\n"));
+            if req.op.is_read() {
+                self.notify(reg::CONFIG, b"autosense");
+            }
+            return;
+        }
         // not ours (the stock MCU firmware's Cne paths): its value never in the log, a read gets "!"
         self.say(&format!("[zd1-linkd] config {name}: not a zd1/ setting\n"));
         if req.op.is_read() {
             self.notify(reg::CONFIG, format!("!not a zd1/ setting: {name}").as_bytes());
+        }
+    }
+
+    /// Ask our MCU firmware for the app staged in mcufw::PENDING (reg 0xD7): it goes into what takes it (the ZD1's
+    /// preloader, the ZD1L's bootloader), which powers us again and asks for BL2; we serve it then.
+    fn mcu_update(&mut self) {
+        let staged = std::fs::read(mcufw::PENDING).map_err(|e| e.to_string()).and_then(|f| mcufw::check_dmb(&f));
+        match staged {
+            Err(e) => self.say(&format!("[zd1-linkd] mcu-update: {}: {e}\n", mcufw::PENDING)),
+            Ok(()) if !self.greeted => self.say("[zd1-linkd] mcu-update: no MCU firmware of ours to ask\n"),
+            Ok(()) => {
+                // the MCU cuts our power on its way to its bootloader: what is staged must be on the NAND first (an
+                // image written just before lost its tail [EMU 2026-11-19])
+                unsafe {
+                    libc::sync();
+                }
+                self.say("[zd1-linkd] mcu-update: asking the MCU for its bootloader\n");
+                self.notify(reg::MCU_FW, &[1, 0]);
+            }
+        }
+    }
+
+    /// The app to serve the MCU's bootloader when it asks for BL2: only to a host that isn't our MCU firmware (it
+    /// never greeted) and spoke as the bootloader does, with a good `.dmb` staged. Else the HCR means BL2 itself.
+    fn mcu_firmware_to_serve(&mut self) -> Option<Vec<u8>> {
+        if self.greeted || !self.hbl_peer {
+            return None;
+        }
+        let image = std::fs::read(mcufw::PENDING).ok()?;
+        match mcufw::check_dmb(&image) {
+            Ok(()) => Some(image),
+            Err(e) => {
+                self.say(&format!("[zd1-linkd] {}: {e}: not served\n", mcufw::PENDING));
+                None
+            }
+        }
+    }
+
+    fn mcufw_out(&mut self, out: Vec<mcufw::Out>) {
+        for o in out {
+            match o {
+                mcufw::Out::Status(v) => self.link.set_status(v),
+                mcufw::Out::Notify(r, d) => self.notify(r, &d),
+                mcufw::Out::Say(s) => self.say(&s),
+                mcufw::Out::Done(ok) => {
+                    self.mcufw = None;
+                    self.hbl_peer = false;
+                    if ok {
+                        // the image stays staged until the MCU reports the version it carries
+                        let _ = std::fs::write("/data/zd1/mcu/sent", b"");
+                    } else {
+                        self.link.set_status(zd1_link::spi::spec::status::READY);
+                    }
+                }
+            }
         }
     }
 
@@ -856,6 +934,8 @@ pub fn main() {
         servers: Arc::default(),
         stamps: Arc::default(),
         update: None,
+        hbl_peer: false,
+        mcufw: None,
     };
     read_stamps(&app.stamps);
     app.say("[zd1-linkd] MCU link up (SPI slave via /dev/mem)\n");
@@ -875,9 +955,23 @@ pub fn main() {
     loop {
         let before = app.link.activity();
         app.link.poll();
-        if app.link.bl2_requested() {
-            app.say("[zd1-linkd] HCR 0x21: rebooting into BL2\n");
-            app.link.reboot_to_bl2();
+        if app.link.bl2_requested() && app.mcufw.is_none() {
+            match app.mcu_firmware_to_serve() {
+                Some(image) => {
+                    app.link.set_reg(reg::HCR, 0);
+                    let (s, out) = mcufw::Serve::new(image, Instant::now());
+                    app.mcufw = Some(s);
+                    app.mcufw_out(out);
+                }
+                None => {
+                    app.say("[zd1-linkd] HCR 0x21: rebooting into BL2\n");
+                    app.link.reboot_to_bl2();
+                }
+            }
+        }
+        if let Some(s) = &mut app.mcufw {
+            let out = s.tick(Instant::now());
+            app.mcufw_out(out);
         }
         while let Some(e) = app.link.next_event() {
             app.mcu(e);
@@ -919,7 +1013,7 @@ pub fn main() {
             app.link.drop_partial();
             app.say("[zd1-linkd] a request half received, then nothing for 100 ms: dropped (bytes lost?)\n");
         }
-        if (app.link.busy() && quiet < 20_000) || quiet < 3_000 {
+        if (app.link.busy() && quiet < 20_000) || quiet < 3_000 || app.mcufw.is_some() {
             unsafe {
                 libc::sched_yield();
             } // mid-transfer: keep the bytes flowing

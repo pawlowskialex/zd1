@@ -12,6 +12,8 @@
 //!   zd1-ctl watch                         print zd1-linkd's events (key ..., audio on|off, volume N, net ...)
 //!   zd1-ctl as SOURCE [STATE]             be a receiver with a sender connected (a test stand-in): `session on`,
 //!                                         the state (default paused), then print what it is told until killed
+//!   zd1-ctl mcu-update                    the MCU takes the app staged in /data/zd1/mcu/pending.dmb (its
+//!                                         bootloader asks for BL2, zd1-linkd serves it: docs/mcu/bootloader-hbl.md)
 //! Which slot starts is the MCU's (`zd1 slot`); writing one: `zd1-slot install`.
 
 use std::io::{BufRead, BufReader, Write};
@@ -19,7 +21,7 @@ use std::os::unix::net::UnixStream;
 use zd1_slot::Slot;
 
 const USAGE: &str = "usage: zd1-ctl [status] | start|stop|restart SERVICE | debug on|off|default | changed KEY... | \
-                     state playing|paused|stopped [SOURCE] | volume N | log TEXT | watch | as SOURCE [STATE]";
+                     state playing|paused|stopped [SOURCE] | volume N | log TEXT | watch | as SOURCE [STATE] | mcu-update";
 
 pub fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -32,7 +34,7 @@ pub fn main() {
         ["start" | "stop" | "restart", _] | ["debug", "on" | "off" | "default"] | ["changed", _, ..] => {
             out(&init(&args.join(" ")))
         }
-        ["state" | "volume" | "log" | "watch" | "as", ..] => linkd(&a),
+        ["state" | "volume" | "log" | "watch" | "as" | "mcu-update", ..] => linkd(&a),
         _ => {
             eprintln!("{USAGE}");
             std::process::exit(2);

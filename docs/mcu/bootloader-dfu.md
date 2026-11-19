@@ -12,7 +12,7 @@ DFU: BOOTPROT blocks writes and erases, not reads; LOCK is unset [HW]. The disas
 | Region | Content |
 |---|---|
 | 0x80000000-0x80003FFF | bootloader (BOOTPROT = 2: DFU can't write it; only JTAG can) |
-| 0x80004000-0x8003FFFF | app (stock: a jump to 0x80008000, crt0 at 0x80008024) |
+| 0x80004000-0x8003FFFF | app region (stock: a jump to 0x80008000, crt0 at 0x80008024; ours: the preloader at 0x80004000, its record of the app at 0x80007E00, the app at 0x80008000: `bootloader-hbl.md`) |
 | 0x80800000 | user page (512 B): stock's copy of the network setup; **ISP config word 0x929E0870 at +0x1FC** |
 | GP fuses (FGPFR) | 0x7C04FFFF on this unit: LOCK 0xFFFF, EPFL 0, BOOTPROT 2, BOD settings, ISP_IO_COND_EN 1, **ISP_FORCE (bit 31) 0** [HW] |
 
@@ -48,8 +48,8 @@ else (BOD, other warm reset):
 3. **Any DFU session** sets ISP_FORCE itself (the DNLOAD handler, so a reset mid-programming comes back to DFU); the
    start-app commands clear it [RE]. A unit that was left in a DFU session boots into DFU again.
 
-All of this is the 30-pin model's bootloader. The Lightning model's is unknown, and its key-hold is reported to start
-BL2 on Ethernet with nothing on USB (`docs/mcu/stock-firmware.md`).
+All of this is the 30-pin model's bootloader. The Lightning model's has the same reset decision but no USB at all: it
+takes the app from the module over SPI (`bootloader-hbl.md`).
 
 ## DFU protocol (USB 03EB:2FF8, interface 0)
 Atmel FLIP v2 framing. `host/core/src/dfu.rs` implements it (`zd1 dfu`, `zd1 flash`, the web page), checked frame
