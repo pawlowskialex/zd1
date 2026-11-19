@@ -240,7 +240,7 @@ typedef struct { bool open; } zd1h_lock_t;
 typedef struct { uint32_t addr; uint16_t len; bool words; } zd1h_peek_t;
 /* Poke: Write memory. */
 typedef struct { uint32_t addr; uint16_t data_len; uint8_t data[240]; bool words; } zd1h_poke_t;
-/* Dfu: Into the B&W DFU bootloader (03EB:2FF8, ~3 s later): the module and amp made safe, ISP_FORCE set, a watchdog reset. The device leaves USB right after the reply. */
+/* Dfu: Into the B&W DFU bootloader (03EB:2FF8, ~3 s later): the module and amp made safe, ISP_FORCE set, a watchdog reset. The device leaves USB right after the reply. `Error ARG` on a ZD1L: its bootloader (B&W's "Net HBL") has no USB, its MCU firmware comes from the module (`docs/mcu/bootloader-hbl.md`). */
 typedef struct { uint8_t unused_; } zd1h_dfu_t;
 /* Reboot: Restart the MCU firmware (watchdog reset; the bootloader starts the app again). The module is powered off first. */
 typedef struct { uint8_t unused_; } zd1h_reboot_t;

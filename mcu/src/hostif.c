@@ -36,6 +36,7 @@
 #include "udi_hid_cc.h"
 #include "util.h"
 #include "pipe.h"
+#include "mcufw.h"
 
 static volatile bool polled;       /* a POLL since the main loop last looked */
 static volatile bool hello_closed; /* a HELLO closed the module's console (for the log) */
@@ -725,6 +726,11 @@ static void run(const uint8_t *b, uint16_t n) {
     case ZD1H_ID_REBOOT:
         if (!decoded(id == ZD1H_ID_DFU ? &ZD1H_DFU : &ZD1H_REBOOT, b, n))
             return;
+        if (id == ZD1H_ID_DFU && mcufw_hbl_present()) {
+            /* the ZD1L's bootloader has no USB: DFU would end in it, with nothing on USB (docs/mcu/bootloader-hbl.md) */
+            error(ZD1H_ERR_ARG, "ZD1L: no USB DFU here; its MCU firmware comes from the module");
+            return;
+        }
         ok();
         wait_taken();
         if (id == ZD1H_ID_DFU)

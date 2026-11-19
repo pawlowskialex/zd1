@@ -15,8 +15,6 @@ and what is known. What already works: `status.md`; checks that need a person at
 - **The MCU follows its OS**: each system slot carries its MCU app (`zd1.dmb`); at the MCU's hello the OS compares
   versions and stages and asks (`zd1-ctl mcu-update` does it by hand now). A bound on retries per version; dev builds
   (`-dirty`) left alone.
-- **The host's DFU commands on a ZD1L** (`zd1 bootloader`, `flash`, `dfu ...`): its bootloader has no USB; they end in
-  the HBL and BL2 with nothing on USB. Refuse them there (the MCU knows: `mcufw_hbl_present`).
 
 ## Module OS
 - **The page and the protocol's last pieces, checked on the unit** (`docs/web.md`, Order of work): on the unit since

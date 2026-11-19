@@ -697,7 +697,8 @@ messages! {
         words: bool,
     }
     /// Into the B&W DFU bootloader (03EB:2FF8, ~3 s later): the module and amp made safe, ISP_FORCE set, a watchdog
-    /// reset. The device leaves USB right after the reply.
+    /// reset. The device leaves USB right after the reply. `Error ARG` on a ZD1L: its bootloader (B&W's "Net HBL") has
+    /// no USB, its MCU firmware comes from the module (`docs/mcu/bootloader-hbl.md`).
     0x06 Dfu -> Ok [gated, 3000 ms] {}
     /// Restart the MCU firmware (watchdog reset; the bootloader starts the app again). The module is powered off
     /// first.
