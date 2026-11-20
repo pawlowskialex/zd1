@@ -250,8 +250,11 @@ function banner(title, text, label, f, notes) {
 
 /// An install that stopped on the way (the person away, the page closed): the state it left, picked up from there.
 /// Our firmware with the module on the stock software (the boot image never went on): the whole install again. The
-/// module on its rescue: it has no system yet (or none that starts): the system. The module in BL2: an update of its
-/// boot image stopped after BL2 erased the old one: the boot image through BL2's XModem.
+/// module on its rescue, no system in a slot: the release's rescue installs itself (the MCU first if it is behind:
+/// Boot INSTALL is the release's); an older rescue gets the release's whole update when its boot image differs (the
+/// boot image and the MCU, then the new rescue installs itself: never the release's system on an older boot image and
+/// MCU), else the system into a slot. The module in BL2: an update of its boot image stopped after BL2 erased the old
+/// one: the boot image through BL2's XModem.
 function unfinished(rel) {
   const ms = names(app.S.ModState)[app.info.mod_state];
   if (ms === "bl2" && rel.bcd?.ours) {
@@ -275,14 +278,23 @@ function unfinished(rel) {
   }
   const os = app.info.mod_os?.split(" ") ?? [];
   if (ms === "ready" && os[2] === "rescue" && rel.system) {
-    // a rescue that is this release's system installs itself; another one takes the release's
-    const own = os[1] === rel.system.version;
+    const mcu = rel.mcu && position(app.info.fw, "mcu") !== 0 ? ["mcu"] : [];
+    const needs =
+      os[1] === rel.system.version
+        ? [...mcu, "rescue"]
+        : bootBehind(rel)
+          ? ["boot", ...mcu, "system"]
+          : ["system", ...mcu];
     banner(
       "The install isn't finished",
       "The module runs its rescue: it has no system in a slot yet. " +
-        (own ? "It installs itself into one (about a minute)." : "The system goes on (about 2 minutes)."),
-      `Finish: install ${rel.version}'s system`,
-      () => updateTo(rel, [own ? "rescue" : "system"], true),
+        (needs.includes("boot")
+          ? `${rel.version}'s boot image goes on, then its system from it (about 8 minutes).`
+          : needs.includes("rescue")
+            ? "It installs itself into one (about a minute)."
+            : "The system goes on (about 2 minutes)."),
+      `Finish: install ${rel.version}`,
+      () => updateTo(rel, needs, true),
     );
     return true;
   }
@@ -320,6 +332,13 @@ function moduleBoot() {
   return st.boot ?? "";
 }
 
+/// The release's boot image isn't the one the module started from (by its stub and kernel: `zd1.boot=`); false while
+/// that isn't known (the module starting, no State record).
+function bootBehind(rel) {
+  const boot = moduleBoot();
+  return !!rel.bcd?.version && boot !== undefined && boot !== rel.bcd.version;
+}
+
 export function drawReleases() {
   const fw = app.info?.fw,
     os = app.info?.mod_os?.split(" ")[1];
@@ -346,18 +365,18 @@ export function drawReleases() {
           : running
             ? `${what} on ${running}, a build that isn't a release`
             : `${what} without our software`;
-    // the boot image (stub, kernel, rescue): rewritten only when the release's differs from the one the module
-    // started from, by content (module/os/assemble.py, payload)
+    // the boot image: rewritten only when the release's stub or kernel differ from the ones the module started from
+    // (bootBehind; module/os/assemble.py, payload)
     const boot = moduleBoot();
-    const bootBehind = !!rel.bcd?.version && boot !== undefined && boot !== rel.bcd.version;
+    const behind = bootBehind(rel);
     const needs = [
       rel.system && !starting && ps !== 0 && "system",
-      bootBehind && "boot",
+      behind && "boot",
       rel.mcu && pm !== 0 && "mcu",
     ].filter(Boolean);
     const where =
       `${say(pm, "main board", fw)}, ${starting ? "module starting" : say(ps, "module", os)}` +
-      `${bootBehind ? `, its boot image ${boot ? "older" : "from before boot images had a version"}` : ""}.`;
+      `${behind ? `, its boot image ${boot ? "older" : "from before boot images had a version"}` : ""}.`;
     const named = `release ${rel.version}${rel.date ? ` (${rel.date})` : ""}`;
     v.append(el("p", { textContent: needs.length ? `Latest ${named}: ${where}` : `Up to date: ${named}.` }));
     if (rel.notes) v.append(el("p", { className: "small notes", textContent: rel.notes }));
