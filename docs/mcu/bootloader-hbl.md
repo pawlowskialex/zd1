@@ -81,12 +81,13 @@ A bootloader quiet for 7 s mid-transfer gets the block again; 30 s ends it.
   build's), at the MCU's hello on a confirmed slot, twice per version at most: the MCU follows its OS
   (`docs/protocol/net.md`; `zd1-linkd`, `mcufw::follow`).
 
-## Our ZD1 preloader [EMU]
+## Our ZD1 preloader [HW 2026-11-19]
 `mcu/preloader/preloader.c`, 0x80004000-0x80007DFF (7 KB), started by B&W's DFU bootloader where the app used to start;
 the app moves to 0x80008000 on the ZD1 too (`mcu/Makefile`; one build for both models). Its record of the app is the
 page at 0x80007E00: the app's `.dmb` header, written after a transfer checks, erased before the first page of one.
 - No update asked (GPLP0) and a record: straight into the app, nothing touched (RC oscillator, the pins as reset left
-  them).
+  them) [HW 2026-11-19: 6512879's `zd1.bin` over B&W's DFU (`mcu/flash.sh`, from our app at 0x80004000): the app
+  greeting from 0x80008000, its boot log as before; the module and our OS as before].
 - Else: the PLL, USART0 for its log (`[pre] ...`), the module powered, ready awaited (our boot stub's slot question
   answered with what the app left in GPLP1), `R Application/NetIF/mode`, HCR 0x2120, BL2 and the DCR awaited, the
   record erased, the XModem receive as the HBL's, the CRC checked, the record written, then a watchdog reset into the
@@ -97,6 +98,19 @@ page at 0x80007E00: the app's `.dmb` header, written after a transfer checks, er
   BL2's HCR status OK ahead of the first block, and a direct read of 0x2C past it answers the register's idle value
   (`00 00`), so a preloader reading 0x2C straight never got a block and gave up every transfer [EMU 2026-11-19: our
   system's carried `zd1.dmb`, 579 blocks, in flash and checked once it read in order].
+- **It starts the board and powers the module as the app does** (`mcu/src/zd1_board.c`, linked into both): the
+  bootloader's pin state on the reset clock, then the clocks in the bootloader's order; the module's supply, 1200 ms,
+  the reset released and SPI on, 1200 ms before the first read; the SPI pins driven only while the module is powered.
+  Its first build on the unit started ASF's clocks first, drove the SPI pins with the module off and released the
+  reset 100 ms after the supply: the module never came up, and the speaker stayed dark (no USB, no LED, no network)
+  until DFU, its flash untouched [HW 2026-11-19]. Which of the three did it is not known; the emulator showed none.
+- **Its LED**: stock's colour for a firmware update, white, blinking slowly (1 s) while it waits for the module and
+  quickly (200 ms) while the app comes in, drawn from `wait_ms` (every wait passes there); the PWM is the app's
+  (`mcu/src/led_pwm.c`). Not yet seen on the unit (4b7baee).
+- **On the unit** [HW 2026-11-19, the preloader of 249a535 in flash, its app 249a535, the system 6512879 on its
+  confirmed slot B]: at the module's ready the system asked for its own MCU app (the MCU follows its OS), the MCU went
+  off USB, and 45 s later the system's app 6512879 greeted with the record at 0x80007E00 (0x120A2 bytes), the module
+  ready again 22 s after.
 - In the emulator [EMU 2026-11-19, `zemu run` of the test unit with `os-zd1l.bcd` and `.#mcu-emu`'s `zd1emu.bin`
   behind B&W's DFU bootloader]: `zd1-ctl mcu-update` with B&W's 2.04.05 app (cut at 0x80008000, as a `.dmb`) staged:
   "[mcufw] into the preloader", "[pre] BL2 has an app: taking it", "app in flash and checked, 0x000300f4 bytes", the

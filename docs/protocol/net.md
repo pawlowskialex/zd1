@@ -87,6 +87,8 @@ page at the fixed address an address change set too.
 off` cut the emulator's only interface, the client couldn't come back, and 120 s later the speaker went back to DHCP
 and answered again. The emulator's clock runs ~3x faster than the wall: the client's window (wall time) outlived the
 speaker's, and it reported "kept" for the change the speaker had undone; on hardware the client's ends 10 s earlier.]
+[HW 2026-11-19, the unit on Wi-Fi, `zd1 --net`: `eth.dns` set, "the change is kept" 11 s later, still set past
+the 120 s; cleared the same way. A change that cuts the link not tried on the unit.]
 
 ## System updates over the network
 `SystemUpdate` (`host.md`), answered by our OS:
@@ -118,13 +120,16 @@ with a key in `/data/zd1/keys` went into slot B (5.2 MB at ~131 KB/s through the
 once, got ready, the good slot; one signed by an untrusted key refused at BEGIN; one with a byte flipped in its image
 failed unpacking, slot B left without a system. The page's WebAssembly did the same steps but the update in node
 (`host/web/test/net.mjs`).]
+[HW 2026-11-19, the unit on Wi-Fi with system 6512879 in slot A: `zd1 --net update --key` of the same build, the
+public half in `/data/zd1/keys`: into slot B, started once, the good slot, 95 s in all (36 s of it the start); one
+signed by another key refused at BEGIN ("signed by none of the keys this speaker trusts"), the slots untouched.]
 
 **The MCU follows its OS**: each system carries its MCU app (`/usr/lib/zd1/mcu/zd1.dmb`, the same build's: `nix
 build .#os-image` takes `.#mcu`); at the MCU's hello (its version, then the good slot), on a confirmed slot (not the
 rescue, not on trial), with the MCU's version not the app's and neither a dev build (`-dirty`), `zd1-linkd` stages it
 and asks the MCU (`docs/mcu/bootloader-hbl.md`), at most twice per version (`/data/zd1/mcu/follow`: VERSION TRIES).
-Not run end to end: every emulator build here is `-dirty` (the decision is `mcufw::follow`, unit-tested; the transfer
-it starts is `zd1-ctl mcu-update`'s [EMU]).
+[HW 2026-11-19: the MCU on 249a535, the system 6512879 on its confirmed slot: asked at the ready, the MCU through our
+preloader, back as 6512879 45 s later (`docs/mcu/bootloader-hbl.md`).]
 
 ## Limits
 Four sessions at a time (a fifth connection gets HTTP 503); a handshake within 10 s; a WebSocket message at most 40 KB;
@@ -158,10 +163,11 @@ field for field, against a logging stand-in for BL2 (node's fetch); never agains
   the pairing; `emu/README.md`).
 
 ## State
-Built 2026-11-19 and run in the emulator only [EMU]: the pairing with a press, requests to the MCU through the tunnel
-and to our OS, the refusals (USB's requests, `net`, an unpaired client, another key at an address), the provisional
-network settings, the signed update into the other slot with its trial, from `zd1 --net` and from the page's
-WebAssembly in node. Not yet: anything on the unit (the MCU and the system both need flashing, the owner's OK),
-Chrome's Local Network Access from the hosted page (the permission, `ws://` from HTTPS), the release key (the owner
-makes it: `zd1 keygen`, the secret in the repository, the public half in the image), the MCU following its OS on a
-clean build, the ZD1L's install from the page (`docs/backlog.md`, Updates over the network).
+On the unit [HW 2026-11-19, MCU and system 6512879, over Wi-Fi]: `zd1 --net` paired with a press, Info, the volume,
+the settings and the slots through the tunnel and our OS, Peek refused (by `zd1`: the Hello masks what doesn't
+travel), a provisional setting kept, the signed update into the other slot with its trial, an untrusted signature
+refused, the MCU following its OS through the preloader. In the emulator only [EMU]: the page's WebAssembly over the network (in node), a provisional change that
+cuts the link going back, the refusals of the module and the MCU themselves (an unpaired client, another key at an
+address, a request not marked `net` sent anyway). Not yet anywhere: Chrome's Local Network Access from the hosted
+page (the permission, `ws://` from HTTPS), the release key (the owner makes it: `zd1 keygen`, the secret in the
+repository, the public half in the image), the ZD1L's install from the page (`docs/backlog.md`, Updates over the network).

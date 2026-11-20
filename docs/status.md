@@ -36,6 +36,9 @@ A result counts once it was seen on the unit. An emulator run says the code does
 | The MCU after its cleanup (dead code, shared helpers, one soft start): a source switch, and a wake with the supply still held, unmute at once without a click; a held volume key repeats | 2026-11-02 | `mcu/README.md`, Behaviour |
 | `zd1 prefs`: the amp's idle time (off a minute after the sound with `--amp-idle 1`), the volume cap holding on every source (keys, the remote, AirPlay at 100 %, the computer); the computer's volume spanning the whole cap; no false pick when the Mac wakes with the speaker as its output | 2026-11-02 | `mcu/README.md`, Behaviour |
 | The heat soft limit on ADC4 and ADC5 (caps the volume), both logged every 10 min of amp-on; ADC4's trip after 9 samples like stock | in the firmware since 2026-10-27; the cap has not been reached | `docs/hardware/zd1-main-board.md`, Protections |
+| The new layout over DFU (`mcu/flash.sh` from the app at 0x80004000): our preloader at 0x80004000, its record of the app, the app at 0x80008000; the preloader starting the app straight away (no update asked, a record), the old system working with it as before | 2026-11-19, MCU 6512879 | `docs/mcu/bootloader-hbl.md`, Our ZD1 preloader |
+| The MCU's app from the module: our OS asked for its own build at the ready (the MCU follows its OS), our preloader powered the module, took the app over SPI (XModem from `zd1-linkd` playing BL2), checked and recorded it; back on USB with the system's version 45 s after it left (the preloader as the app starts the board and the module: its first build stayed dark, nothing written, DFU back) | 2026-11-19, preloader 249a535, system 6512879 | `docs/mcu/bootloader-hbl.md`, Our ZD1 preloader |
+| The boot image with the system as the rescue (`os.bcd` 6512879 through `zd1 xmodem`: 6597 blocks, 0 retries, 6.9 KB/s); its stub starting both slots and the rescue; with both slots empty: B and A failed, the rescue ready 60 s after the power-up, its self-install filling slot B 29 s into its start, slot B started next | 2026-11-19 | `docs/module/storage.md` |
 | The native link to our OS (`docs/protocol/sequences.md`, Our OS): the hello at boot and after `zd1-linkd` restarts, a sender's volume onto 0..the cap (40 % -> step 16, 100 % -> step 40), the knob to the sender's slider, the keys as presses, play/pause as the sender's toggle; senders start from the speaker's volume, also right after a boot. Our OS from before the native registers gets the stock dialect and works | 2026-10-28 | `docs/protocol/sequences.md` |
 | `Module POWER` from the main loop: the module's console comes through while it runs, the reply when it is ready (BL2 likewise: [EMU] only) | 2026-10-31, MCU 5f66c37 | `docs/protocol/host.md`, Module |
 | The stock module app with our firmware: AirPlay 1, `zd1 module bl2` (HCR 0x21), the shell on telnet (register writes) | 2026-10-16 on | `docs/module/knos.md` |
@@ -50,6 +53,7 @@ A result counts once it was seen on the unit. An emulator run says the code does
 | Our MCU app as BL2's XModem sender (`zd1 xmodem`): 9.5 KB/s, 0 retries | 2026-10-26 | `docs/mcu/bootloader-dfu.md` |
 | The system slots: the stub asks our MCU (reg 0xC4) which slot to boot, an empty slot fails once (panic, `panic=10`), the rescue starts when no slot gets ready, a slot started on trial is confirmed by its ready | 2026-10-26 | `docs/module/storage.md` |
 | `zd1 update`: the system over the bulk pipe, the MCU and the module's UART into the slot that doesn't run, SHA-256 and stamp checked, started once and kept: 5 MB in 82 s framed at 1 Mbaud; an aborted or failed update leaves both boards running | 2026-10-26, every update since | `docs/module/updater.md` |
+| **The network link** (`zd1 --net` over Wi-Fi, `docs/protocol/net.md`): the pairing by a press (the LED flashing purple), then Info, the volume, the settings and the slots through the tunnel and our OS, Peek refused; `eth.dns` changed and kept once the client came back (still kept after the 120 s window), cleared again; the signed system update over the network: one signed by an untrusted key refused at BEGIN, one signed by a key in `/data/zd1/keys` into slot B, started once, the good slot (95 s in all) | 2026-11-19, MCU and system 6512879 | `docs/protocol/net.md` |
 | `reboot` under our OS (timer 0 reset) comes back through BL1 into our OS | 2026-10-23 | `docs/module/memory-map.md`, timers |
 | JTAG (J-Link on the carrier's pads): halt, registers, memory, the kernel log from RAM | 2026-10-23 | `docs/module/jtag.md` |
 
@@ -114,16 +118,12 @@ None of these has been seen on the unit. Treat them as "the code does something 
 - **Recovery tiers** not listed above (`docs/recovery/factory-reset.md`), the upgrade path stock -> ours -> stock.
 - B&W's recovery-utility MCU image (erases the user page, sends HCR 0x2421, holds PB01 high); BL2's handling of HCR
   0x2421 and of the strap.
-- **The MCU's app from the module** (`docs/mcu/bootloader-hbl.md`): our OS playing BL2 to the ZD1L's B&W bootloader
-  and to our ZD1 preloader, `zd1-ctl mcu-update`; the app at 0x80008000 behind the preloader on the ZD1 (this unit
-  runs the app at 0x80004000 until it is flashed with the new layout).
-- **The Lightning model's image with the system as the rescue** and its first start's self-install into slot A
-  (`docs/module/storage.md`).
-- **The network link** (`docs/protocol/net.md`): `zd1 --net` and the page's WebAssembly over a WebSocket to our OS,
-  paired with a press; the MCU's requests through SPI reg 0xD9, our OS's own; the network settings provisional; the
-  signed system update into the other slot over the network, started on trial (reg 0xD8). The MCU following its OS
-  (not even in the emulator end to end: its builds are `-dirty`); the ZD1L's first install from the page (its
-  requests checked against a stand-in only). `Dfu` refused on a ZD1L (its bootloader has no USB).
+- **The MCU's app from the module on the ZD1L** (`docs/mcu/bootloader-hbl.md`): our OS playing BL2 to B&W's bootloader.
+- **The Lightning model's image with the system as the rescue** (the ZD1's is on the unit, above).
+- **The network link's rest** (`docs/protocol/net.md`; `zd1 --net` is on the unit, above): the page's WebAssembly
+  over the network (Chrome's Local Network Access from the hosted page not tried anywhere); a provisional change that
+  cuts the link going back after 120 s; the ZD1L's first install from the page (its requests checked against a stand-in only). `Dfu`
+  refused on a ZD1L (its bootloader has no USB).
 
 ## Not done
 - **Spotify Connect from a Spotify app**: Spotify refuses the test account the audio key of every track
