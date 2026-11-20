@@ -473,11 +473,19 @@ pub fn early(boot: &Boot, kernel: &str) {
     loopback();
 }
 
-/// The system's identification, with the image's variant (zd1.debug on the command line: the debug image, the
-/// emulator's dev boot), as /run/os-release (/etc/os-release points there: / is read-only).
+/// The system's identification, with how it started as its variant (the command line: `zd1.rescue`, the system from
+/// RAM as the rescue, which tells the MCU, `zd1-linkd`'s "zd1-os VERSION rescue", and the page that no slot holds what
+/// runs; `zd1.debug`, the debug image or the emulator's dev boot; else release), as /run/os-release (/etc/os-release
+/// points there: / is read-only).
 fn identify(boot: &Boot) -> OsRelease {
     let base = std::fs::read_to_string("/usr/lib/os-release").unwrap_or_default();
-    let variant = if boot.switch("zd1.debug") { "debug" } else { "release" };
+    let variant = if boot.switch("zd1.rescue") {
+        "rescue"
+    } else if boot.switch("zd1.debug") {
+        "debug"
+    } else {
+        "release"
+    };
     let r = OsRelease::read("/usr/lib/os-release");
     let pretty = format!("{} {} ({variant}, {})", r.get("NAME"), r.get("VERSION_ID"), r.get("BUILD_DATE"));
     let _ = std::fs::write("/run/os-release", format!("{base}VARIANT_ID={variant}\nPRETTY_NAME=\"{pretty}\"\n"));
