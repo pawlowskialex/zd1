@@ -408,10 +408,21 @@ impl<U: Usb> Dfu<U> {
         self.usb.sleep(2000).await;
         self.select_ena().await?;
         self.command(&frame::eot(if opts.bl2 { 8 } else { 7 }), false).await?;
-        ev.step("relay complete: the module installs the image itself");
+        // BL2 acknowledges the EOT, then burns what it got and starts the module on it; the bootloader can't tell when
+        // (its coproc status stays 0x13), and starting our firmware cuts the module's power: the bootloader holds it
+        // meanwhile [HW 2026-11-20: our firmware started right after the EOT, BL2 had "Application: invalid image",
+        // twice; through BL2's XModem a 2 MB image was done within 3 s of its EOT]
+        for s in 0..RELAY_BURN_S {
+            ev.wait("BL2 burning the image", s);
+            self.usb.sleep(1000).await;
+        }
+        ev.step("relay complete: the module has installed the image");
         Ok(())
     }
 }
+
+/// After a relay's EOT, how long the bootloader keeps the module powered while BL2 burns the image (`Dfu::relay`).
+const RELAY_BURN_S: u64 = 30;
 
 /// The relay's options (stock updater's defaults).
 pub struct Relay {
