@@ -120,13 +120,16 @@ stock's) and the settings file (keys only ever added, `docs/module/settings.md`)
 direction.
 
 ## Releases
-A release is a pair, built from one tag by CI (nix on Linux runners, with a binary cache: the MCU needs Microchip's
-x86_64 toolchain, the OS image Linux): the MCU firmware (`zd1.hex`), the system image (`system.cpio.gz`), and the
-`.bcd` (stub, kernel, rescue), with notes. Versions are commits and don't order: the page compares by position in the
-list, never by value. The `.bcd`'s version is its content: `zd1.boot=` on its kernel command line, 12 hex digits of
-SHA-256 over the stub, kernel and rescue (whose own version is its content too) and the command line
-(`module/os/assemble.py`, payload); a release whose boot image is the same as the one the module started from
-(State's `boot`) doesn't rewrite it.
+A release is built from one tag by CI (nix on Linux runners, with a binary cache: the MCU needs Microchip's x86_64
+toolchain, the OS image Linux): the MCU firmware (`zd1.hex`), the system image (`system.cpio.gz`, and signed for the
+network: `system.signed`), the `.bcd` (stub, kernel, rescue) and the Lightning model's `.fw`, with notes. Versions
+don't order: the page compares by position in the list, never by value. The system's version is its commit; the
+others' are their content, so a release whose part is the same as the speaker's leaves it alone. The MCU's: 12 hex
+digits of SHA-256 over its app (`mcu/stamp.py`; the same in every release until MCU code changes, so a system-only
+release over the network doesn't ask for the 5 s hold). The `.bcd`'s: `zd1.boot=` on its kernel command line, over
+the stub, the kernel and the command line (`module/os/assemble.py`, payload), not the rescue, which is the release's
+system and new every time: an older rescue is still the way back, and it is renewed with the stub or the kernel (over
+USB: the boot image never goes over the network).
 
 The Pages workflow (`.github/workflows/pages.yml`) attaches a tag's
 three images and their `manifest.json` (`zd1 image`) to the GitHub release, then builds the page, copies every

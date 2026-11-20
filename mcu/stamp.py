@@ -1,8 +1,12 @@
 #!/usr/bin/env python3
-"""Stamp the firmware's identification (src/version.c) into a built image: the commit and its date, found by the
-block's magic in the .elf, .bin and .hex alike. The nix build runs it after linking (nix/default.nix), so a new
-commit only re-stamps (on the host) instead of rebuilding the firmware (on a Linux builder). Then the images the tools
-take, from the stamped app (NAME, at 0x80008000) and the ZD1's preloader (NAMEpre, at 0x80004000; no ident block):
+"""Stamp the firmware's identification (src/version.c) into a built image: its version and the commit's date, found by
+the block's magic in the .elf, .bin and .hex alike. The version is the app's content: the first 12 hex digits of the
+SHA-256 of the app as linked (its block still "unknown"), `-dirty` when built from uncommitted changes. So releases
+whose MCU code is the same carry the same version, and a speaker updated over the network isn't asked to take its
+app again (docs/protocol/net.md, The MCU follows its OS); the preloader, never sent over the network, isn't in it.
+The nix build runs it after linking (nix/default.nix), so a new commit only re-stamps (on the host) instead of
+rebuilding the firmware (on a Linux builder). Then the images the tools take, from the stamped app (NAME, at
+0x80008000) and the ZD1's preloader (NAMEpre, at 0x80004000; no ident block):
 
   NAME.bin, NAME.hex   the ZD1's app region from 0x80004000 (DFU: `zd1 flash`, the page, zemu): the preloader, its
                        record of the app at 0x80007E00 (the app's .dmb header: what it would have written itself),
@@ -12,12 +16,13 @@ take, from the stamped app (NAME, at 0x80008000) and the ZD1's preloader (NAMEpr
   NAMEapp.bin          the app alone (for bwfw.py --pack: the ZD1L's .fw)
   NAME.elf             the app's, stamped; NAMEpre.* and the .map files copied
 
-  stamp.py --version V --built B IN_DIR OUT_DIR
+  stamp.py --built B [--dirty] IN_DIR OUT_DIR
 
 `zd1 image FILE` reads the identification back.
 """
 
 import argparse
+import hashlib
 import os
 import shutil
 import sys
@@ -82,17 +87,19 @@ def stamp_binary(data, stamp):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--version", required=True)
     ap.add_argument("--built", default="")
+    ap.add_argument("--dirty", action="store_true", help="built from uncommitted changes")
     ap.add_argument("src", metavar="IN_DIR")
     ap.add_argument("dst", metavar="OUT_DIR")
     a = ap.parse_args()
     src, dst = a.src, a.dst
-    stamp = block(a.version, a.built)
     os.makedirs(dst, exist_ok=True)
     names = [f[: -len(".elf")] for f in os.listdir(src) if f.endswith(".elf") and not f.endswith("pre.elf")]
     for name in sorted(names):
-        app = stamp_binary(open(os.path.join(src, name + ".bin"), "rb").read(), stamp)
+        raw = open(os.path.join(src, name + ".bin"), "rb").read()
+        version = hashlib.sha256(raw).hexdigest()[:12] + ("-dirty" if a.dirty else "")
+        stamp = block(version, a.built)
+        app = stamp_binary(raw, stamp)
         open(os.path.join(dst, name + ".elf"), "wb").write(
             stamp_binary(open(os.path.join(src, name + ".elf"), "rb").read(), stamp)
         )
@@ -108,7 +115,7 @@ def main():
         open(os.path.join(dst, name + "app.bin"), "wb").write(app)
         for f in (name + "pre.elf", name + "pre.bin", name + "pre.hex", name + ".map", name + "pre.map"):
             shutil.copyfile(os.path.join(src, f), os.path.join(dst, f))
-        print("stamped %s: %s %s; preloader %d B, app %d B" % (name, a.version, a.built, len(pre), len(app)))
+        print("stamped %s: %s %s; preloader %d B, app %d B" % (name, version, a.built, len(pre), len(app)))
 
 
 if __name__ == "__main__":

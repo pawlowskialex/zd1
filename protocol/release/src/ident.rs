@@ -1,6 +1,6 @@
 //! What `mcu/stamp.py` writes into our MCU firmware after the build (`mcu/src/version.c`'s block): a magic, the
-//! version (the commit, `-dirty` with uncommitted changes) and its date, found by the magic in any image of it (the
-//! app, the region, a `.dmb`, a backup).
+//! version (its app's content: 12 hex digits of SHA-256, `-dirty` with uncommitted changes) and the commit's date,
+//! found by the magic in any image of it (the app, the region, a `.dmb`, a backup).
 
 /// The block's magic; the version's field (41 bytes) and the date's (25) follow it, NUL-padded.
 pub const MAGIC: &[u8] = b"ZD1-FW-IDENT-01\0";

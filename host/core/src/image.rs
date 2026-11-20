@@ -23,7 +23,8 @@ pub struct McuImage {
     pub mem: BTreeMap<u32, u8>,
 }
 
-/// What mcu/stamp.py put in an image: the commit (`-dirty` with uncommitted changes) and its date (`zd1-release`).
+/// What mcu/stamp.py put in an image: its version (the app's content, `-dirty` with uncommitted changes) and the
+/// commit's date (`zd1-release`).
 pub use zd1_release::Ident;
 /// The identification in `data` (one block exactly, else None).
 pub use zd1_release::ident::find as ident;

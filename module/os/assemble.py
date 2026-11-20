@@ -162,15 +162,17 @@ def payload(cfg, parts, initrd, out, cmdline_extra="", how="slots"):
     start, a system slot or the initramfs (--slots); "dev", the emulator's direct boot, the initramfs started as it is,
     a plain one loaded lower.
     The kernel goes in deflated (half the size): the stub inflates it. The command line ends in `zd1.boot=ID`, the boot
-    image's identity: the content_id of what goes in (stub, kernel, initramfs, how, the command line before it), so a
-    commit that changes none of them builds the same one. The OS reports it (the State record's `boot`), `zd1 image`
-    reads it from a .bcd, and the page rewrites the app partition only when they differ."""
+    image's identity: the content_id of the stub, the kernel and how they start (the arguments, the command line before
+    it), so a commit that changes none of them builds the same one. The OS reports it (the State record's `boot`),
+    `zd1 image` reads it from a .bcd, and the page rewrites the app partition only when they differ. The initramfs
+    isn't in it: it is the release's system (the rescue), new in every release, and a rescue older than the slots is
+    still the way back (it runs, plays and takes updates); it is renewed whenever the stub or the kernel are."""
     k = cfg["kernel"]
     args = {"slots": ["--slots"], "dev": ["--initrd-at", "0x61000000"]}[how] + ["--deflate-kernel"]
     files = [os.path.join(parts, "boot", "linuxboot.bin"), os.path.join(REPO, k["image"]), initrd]
     cmdline = (k["cmdline"] + " " + cmdline_extra).strip()
     with tempfile.TemporaryDirectory() as d:
-        for n, p in zip(("stub", "kernel", "initramfs"), files):
+        for n, p in zip(("stub", "kernel"), files):
             shutil.copyfile(p, os.path.join(d, n))
         open(os.path.join(d, "how"), "w").write(" ".join(args) + "\n" + cmdline + "\n")
         cmdline += " zd1.boot=" + content_id(d)

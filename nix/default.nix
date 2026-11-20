@@ -206,8 +206,8 @@ let
     };
     telnet-hook = self.callPackage ./mcu/stock-patch.nix { };
   });
-  # The firmware with its identification stamped in (mcu/stamp.py): on the host, so a new commit doesn't need the Linux
-  # builder unless the firmware's sources changed.
+  # The firmware with its identification stamped in (mcu/stamp.py: its version is its content, -dirty from uncommitted
+  # changes): on the host, so a new commit doesn't need the Linux builder unless the firmware's sources changed.
   stampMcu =
     raw:
     let
@@ -222,7 +222,9 @@ let
       ];
     in
     pkgs.runCommand raw.name { nativeBuildInputs = [ pkgs.python3 ]; } ''
-      python3 -I ${tools}/mcu/stamp.py --version ${version} --built "${built}" ${raw} $out
+      python3 -I ${tools}/mcu/stamp.py --built "${built}" ${
+        lib.optionalString (lib.hasSuffix "-dirty" version || version == "dev") "--dirty"
+      } ${raw} $out
     '';
 in
 {

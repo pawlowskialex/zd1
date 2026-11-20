@@ -1,7 +1,7 @@
-/* The firmware's identification. Compiled as "unknown"; the nix build stamps the commit and its date into this block
- * after linking (mcu/stamp.py finds it by its magic, in the .elf, .bin and .hex alike), so a new commit doesn't
- * rebuild the firmware. Only this file sees the initialiser: the others read the strings through the pointers, so
- * nothing folds "unknown" into their code. */
+/* The firmware's identification. Compiled as "unknown"; the nix build stamps its version (its content) and the
+ * commit's date into this block after linking (mcu/stamp.py finds it by its magic, in the .elf, .bin and .hex alike),
+ * so a new commit doesn't rebuild the firmware. Only this file sees the initialiser: the others read the strings
+ * through the pointers, so nothing folds "unknown" into their code. */
 #include "hostif.h"
 
 typedef struct {

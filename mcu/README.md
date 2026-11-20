@@ -47,9 +47,9 @@ registers, peek/poke, the module OS's debug services); `zd1 settings` the module
     transfer is aborted; ASF's waits forever, and a stuck bus (the DSP unpowered) hangs the MCU.
   - `asf/avr32/drivers/usbb/usbb_device.c` (`udd_ep_abort`): on an OUT endpoint the busy banks are handed back;
     ASF's KILLBK loop only works for IN banks and never ends on an OUT endpoint holding a packet (the pipe's abort).
-- The firmware identifies itself: `src/version.c` holds a block the nix build stamps with the commit (`-dirty` with
-  uncommitted changes) and its date after linking (`mcu/stamp.py`; on the host, so a new commit doesn't need the Linux
-  builder). `zd1 image FILE` reads it from an image or a DFU backup; the firmware reports it in `HelloReply`,
+- The firmware identifies itself: `src/version.c` holds a block the nix build stamps after linking with its version,
+  12 hex digits of the app's SHA-256 (`-dirty` with uncommitted changes: the same in every release until MCU code
+  changes), and the commit's date (`mcu/stamp.py`; on the host, so a new commit doesn't need the Linux builder). `zd1 image FILE` reads it from an image or a DFU backup; the firmware reports it in `HelloReply`,
   `zd1 info`, and tells our module OS (SPI reg 0xC3).
 - The emulator runs `nix build .#mcu-emu` (`ZD1_EMU`: the log mirrored on USART0, the run's `mcu_log.txt`); the host
   link works there through the emulated USB (`zemu run --mcu --host 'zd1 info'`, or `--keep`
