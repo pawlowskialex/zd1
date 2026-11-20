@@ -203,13 +203,22 @@ struct App {
     state_sent: Vec<u8>,                     // the State record as the subscribers last got it
 }
 
-/// Both slots' stamps, read in a thread (the slot that doesn't run is mounted to read it: seconds of JFFS2 scan).
-fn read_stamps(into: &Arc<Mutex<[String; 2]>>) {
-    let into = into.clone();
+/// Both slots' stamps, kept by a thread: every 5 s from their records (zd1-slot's: cheap), since more than one program
+/// changes a slot (zd1-update, zd1-netd's update, the rescue's self-install, zd1-slot erase), and one that fails or
+/// stops leaves no restart behind it [HW 2026-11-20: a network update stopped midway emptied slot A, and the State
+/// record still said what it had held]. A slot without a record is mounted to read it once (seconds of JFFS2 scan:
+/// in this thread, never the link's).
+fn watch_stamps() -> Arc<Mutex<[String; 2]>> {
+    let stamps = Arc::new(Mutex::new([String::new(), String::new()]));
+    let into = stamps.clone();
     std::thread::spawn(move || {
-        let s = [zd1_slot::Slot::A, zd1_slot::Slot::B].map(|s| zd1_slot::stamp(s).unwrap_or_default());
-        *into.lock().unwrap() = s;
+        loop {
+            let s = [zd1_slot::Slot::A, zd1_slot::Slot::B].map(|s| zd1_slot::stamp(s).unwrap_or_default());
+            *into.lock().unwrap() = s;
+            std::thread::sleep(Duration::from_secs(5));
+        }
     });
+    stamps
 }
 
 /// The Wi-Fi as the supplicant last said, with the networks its last scan found (zd1-net's `wpa::Watch`, polled once
@@ -518,8 +527,7 @@ impl App {
         }
     }
 
-    /// Once zd1-update has ended: the console back if it couldn't give it back itself (killed, or a panic), and the
-    /// slots' stamps again (a slot holds another system now).
+    /// Once zd1-update has ended: the console back if it couldn't give it back itself (killed, or a panic).
     fn reap_update(&mut self) {
         let Some(c) = &mut self.update else { return };
         if !matches!(c.try_wait(), Ok(Some(_)) | Err(_)) {
@@ -527,7 +535,6 @@ impl App {
         }
         self.update = None;
         zd1_update::restore();
-        read_stamps(&self.stamps);
     }
 
     /// The debug services' mode from the MCU (0xC1 b0: 0 the image's default, 1 on, 2 off), handed to init, which
@@ -1131,7 +1138,7 @@ pub fn main() {
         state_shown: Vec::new(),
         wifi: watch_wifi(),
         servers: Arc::default(),
-        stamps: Arc::default(),
+        stamps: watch_stamps(),
         update: None,
         hbl_peer: false,
         mcufw: None,
@@ -1139,7 +1146,6 @@ pub fn main() {
         pieces: Vec::new(),
         state_sent: Vec::new(),
     };
-    read_stamps(&app.stamps);
     app.say("[zd1-linkd] MCU link up (SPI slave via /dev/mem)\n");
     let ident = app.ident.clone();
     app.link.set_value(reg::VERSION_IMAGE, &cstr(&ident));
