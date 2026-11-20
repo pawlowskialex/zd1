@@ -330,8 +330,8 @@ static bool receive(void) {
            zd1_xmodem_crc16(0, (const volatile uint8_t *)MCUFW_APP, len) == (uint16_t)(header[16] << 8 | header[17]);
 }
 
-/* one session with the module: ready, BL2, the transfer */
-static bool session(void) {
+/* one session with the module: ready, BL2, the transfer; how it ended (MCUFW_PRE_*) */
+static uint8_t session(void) {
     static const uint8_t ask[] = "R\x16"
                                  "Application/NetIF/mode";
     uint32_t end = tick_ms() + 180000; /* a cold boot of our OS, the rescue's at worst */
@@ -341,7 +341,7 @@ static bool session(void) {
         uint16_t st = 0;
         if (after(end)) {
             say("[pre] the module never got ready\n");
-            return false;
+            return MCUFW_PRE_NOT_READY;
         }
         if (!gpio_get_pin_value(PIN_MOD_REQ))
             write_f(ZD1_REG_BOOT, ZD1_BOOT_KNOCK); /* our boot stub stays silent until it hears it */
@@ -363,7 +363,7 @@ static bool session(void) {
     while (!(bl2 && dcr)) {
         if (after(end)) {
             say(bl2 ? "[pre] BL2 has no app for us\n" : "[pre] no BL2\n");
-            return false;
+            return bl2 ? MCUFW_PRE_NO_APP : MCUFW_PRE_NO_BL2;
         }
         drain(100);
     }
@@ -372,7 +372,7 @@ static bool session(void) {
     flashc_erase_page(MCUFW_RECORD_PAGE, true); /* from here on the old app is gone until this one is in */
     if (!receive()) {
         say("[pre] the transfer failed\n");
-        return false;
+        return MCUFW_PRE_TRANSFER;
     }
     say("[pre] app in flash and checked, ");
     say_hex(mcufw_be32(header + 8));
@@ -382,7 +382,7 @@ static bool session(void) {
     while (!after(end) && status != MCUFW_STATUS_FINISHED)
         drain(100);
     flashc_memcpy((void *)MCUFW_RECORD, header, MCUFW_DMB_HEADER, true);
-    return true;
+    return MCUFW_PRE_TOOK;
 }
 
 static void start_app(void) {
@@ -420,11 +420,16 @@ int main(void) {
     wdt_enable(&opt);
     gpio_configure_pin(PIN_MOD_REQ, GPIO_DIR_INPUT);
 
+    uint32_t ends = 0; /* how the last three tries ended, for the app to log (mcufw.h, GPLP0) */
     for (unsigned tries = 1;; tries++) {
         module_on();
-        bool ok = session();
+        uint8_t end = session();
         board_module_off();
-        if (ok)
+        ends = (ends << 4 | end) & 0xFFF;
+        pm_write_gplp(&AVR32_PM, 0,
+                      (pm_read_gplp(&AVR32_PM, 0) & ~MCUFW_GPLP0_PRE_MASK) | MCUFW_GPLP0_PRE |
+                          (uint32_t)(tries < 255 ? tries : 255) << 12 | ends);
+        if (end == MCUFW_PRE_TOOK)
             break;
         /* the app still there (nothing was written): back to it after a few tries; else keep asking */
         if (tries >= 3 && mcufw_header_ok((const volatile uint8_t *)MCUFW_RECORD)) {

@@ -13,6 +13,7 @@
 #include "zd1_board.h"
 #include "log.h"
 #include "selfdfu.h"
+#include "mcufw.h"
 #include "dm870.h"
 #include "update.h"
 #include "audio.h"
@@ -71,6 +72,7 @@ int main(void) {
     cpu_irq_enable();
     board_safe_gpio();
     selfdfu_capture_boot_state();
+    mcufw_report(); /* into the log: the preloader's last run, if it ran */
     board_usb_mux_device();
     blog(6);
     udc_start();

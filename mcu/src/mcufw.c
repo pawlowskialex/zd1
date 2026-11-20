@@ -21,6 +21,28 @@ bool mcufw_hbl_present(void) { return in_flash(0x80000000u, 0x80008000u, "Net HB
 static bool allowed; /* a person allowed the next app from the module (mcufw_allow), until allowed_until */
 static uint32_t allowed_until;
 
+void mcufw_report(void) {
+    static const char *const end[] = {[MCUFW_PRE_TOOK] = "took the app",
+                                      [MCUFW_PRE_NOT_READY] = "the module never got ready",
+                                      [MCUFW_PRE_NO_BL2] = "no BL2",
+                                      [MCUFW_PRE_NO_APP] = "BL2 had no app for it",
+                                      [MCUFW_PRE_TRANSFER] = "the transfer failed"};
+    uint32_t g = pm_read_gplp(&AVR32_PM, 0);
+    if (!(g & MCUFW_GPLP0_PRE))
+        return;
+    pm_write_gplp(&AVR32_PM, 0, g & ~MCUFW_GPLP0_PRE_MASK);
+    unsigned tries = g >> 12 & 0xFF, shown = tries < 3 ? tries : 3;
+    log_puts("[pre] the preloader's last run: ");
+    log_dec(tries);
+    log_puts(tries == 1 ? " try" : " tries");
+    for (unsigned k = shown; k-- > 0;) { /* the oldest of the last three first */
+        unsigned e = g >> (4 * k) & 0xF;
+        log_puts(k == shown - 1 ? ": " : "; ");
+        log_puts(e && e <= MCUFW_PRE_TRANSFER ? end[e] : "?");
+    }
+    log_putc('\n');
+}
+
 void mcufw_allow(void) {
     allowed = true;
     allowed_until = tick_ms() + MCUFW_ALLOW_MS;

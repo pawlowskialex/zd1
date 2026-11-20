@@ -13,6 +13,12 @@
 #define MCUFW_DMB_HEADER  128u
 /* GPLP0 (kept over a watchdog reset; B&W's bootloaders never touch it): the app asks our preloader for a new app */
 #define MCUFW_GPLP0_UPDATE 0x02000000u
+/* GPLP0 bits 20..0: how the preloader's last run went, for the app to log at its start (mcufw_report): bit 20 set,
+ * bits 19..12 the tries, bits 11..0 how the last three ended (MCUFW_PRE_*, the latest in bits 3..0). Written after
+ * each try: a run a person ended with DFU still reports */
+#define MCUFW_GPLP0_PRE      0x00100000u
+#define MCUFW_GPLP0_PRE_MASK 0x001FFFFFu
+enum { MCUFW_PRE_TOOK = 1, MCUFW_PRE_NOT_READY, MCUFW_PRE_NO_BL2, MCUFW_PRE_NO_APP, MCUFW_PRE_TRANSFER };
 /* GPLP1 bits 31..16: what the preloader answers our boot stub on reg 0xC4 (b0 the slot, b1 the good one), so the
  * module boots the system it runs now instead of the rescue */
 #define MCUFW_GPLP1_BOOT_SHIFT 16
@@ -40,6 +46,7 @@ bool mcufw_hbl_present(void);       /* the ZD1L: B&W's "Net HBL" at 0x80000000 *
  * 5 s): once, within MCUFW_ALLOW_MS. Our OS has an app staged (reg 0xD7): taken if allowed, else refused (logged). */
 #define MCUFW_ALLOW_MS (10u * 60 * 1000)
 void mcufw_allow(void);
+void mcufw_report(void); /* at the start: how the preloader's last run went (GPLP0), logged once */
 void mcufw_request(void);
 void mcufw_enter(void); /* into what takes the module's app (no return), else log */
 #endif
