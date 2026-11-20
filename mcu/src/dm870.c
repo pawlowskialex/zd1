@@ -10,6 +10,7 @@
 #include "wifi.h"
 #include "hostif.h"
 #include "modboot.h"
+#include "mcufw.h"
 #include "modcon.h"
 #include "update.h"
 #include "util.h"
@@ -293,8 +294,10 @@ static void on_ready(void) {
     ours = dm870_reg_read_v(ZD1_REG_VERSION_IMAGE, nbuf, sizeof nbuf, &n) && n >= 7 && !memcmp(nbuf, "zd1-os ", 7);
     mod_proto = ours && dm870_reg_read(ZD1_REG_LINK_PROTO, &proto) ? (uint8_t)proto : 0;
     native = ours && mod_proto == ZD1_NATIVE_PROTO;
-    if (last_status == ZD1_STATUS_READY)
+    if (last_status == ZD1_STATUS_READY) {
         modboot_ready();
+        mcufw_module_ready();
+    }
     if (!ours) {
         os_version[0] = 0;
         if (last_status == ZD1_STATUS_READY)

@@ -18,7 +18,8 @@ static bool in_flash(uint32_t from, uint32_t to, const char *what) {
 bool mcufw_preloader_present(void) { return in_flash(0x80004000u, MCUFW_RECORD, MCUFW_PRELOADER_MAGIC); }
 bool mcufw_hbl_present(void) { return in_flash(0x80000000u, 0x80008000u, "Net HBL"); }
 
-static bool allowed; /* a person allowed the next app from the module (mcufw_allow), until allowed_until */
+static bool allowed;       /* a person allowed the next app from the module (mcufw_allow), until allowed_until */
+static bool allowed_ready; /* ... and the module has been ready since: allowed_until is that ready's */
 static uint32_t allowed_until;
 
 void mcufw_report(void) {
@@ -40,13 +41,31 @@ void mcufw_report(void) {
         log_puts(k == shown - 1 ? ": " : "; ");
         log_puts(e && e <= MCUFW_PRE_TRANSFER ? end[e] : "?");
     }
+    uint32_t g1 = pm_read_gplp(&AVR32_PM, 1);
+    if (g1 & MCUFW_GPLP1_SEEN) {
+        pm_write_gplp(&AVR32_PM, 1, g1 & ~MCUFW_GPLP1_SEEN_MASK);
+        log_puts("; the last try that failed: the module's status 0x");
+        log_hex8((uint8_t)(g1 >> MCUFW_GPLP1_SEEN_SHIFT));
+        log_puts(g1 & MCUFW_GPLP1_SEEN_KNOCKED ? "xx, knocked" : "xx, never knocked (its request line high)");
+        log_puts(g1 & MCUFW_GPLP1_SEEN_ANSWER ? ", the stub's slot question answered" : ", no slot question answered");
+    }
     log_putc('\n');
 }
 
 void mcufw_allow(void) {
     allowed = true;
+    allowed_ready = false;
     allowed_until = tick_ms() + MCUFW_ALLOW_MS;
     log_puts("[mcufw] allowed: an app from the module, once, within 10 minutes\n");
+}
+
+void mcufw_module_ready(void) {
+    if (!allowed || allowed_ready)
+        return;
+    allowed_ready = true;
+    uint32_t end = tick_ms() + MCUFW_ALLOW_AFTER_READY_MS;
+    if (tick_after(allowed_until, end))
+        allowed_until = end;
 }
 
 void mcufw_request(void) {

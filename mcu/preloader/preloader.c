@@ -232,15 +232,16 @@ static void drain(uint32_t ms) {
 }
 
 /* our boot stub asks which system to start (status 0x2000, "zd1-boot" on 0x25, 0xC4 still 0): what the app left */
-static void answer_stub(void) {
+static bool answer_stub(void) {
     uint16_t n = 0, v = 0xFFFF;
     if (!read_v(ZD1_REG_VERSION_IMAGE, vbuf, sizeof vbuf, &n) || n < sizeof ZD1_BOOT_IDENT - 1 ||
         memcmp(vbuf, ZD1_BOOT_IDENT, sizeof ZD1_BOOT_IDENT - 1) || !read_f(ZD1_REG_BOOT, &v) || v)
-        return;
+        return false;
     uint16_t a = (uint16_t)(pm_read_gplp(&AVR32_PM, 1) >> MCUFW_GPLP1_BOOT_SHIFT);
     if (!(a >> 8))
         a = ZD1_BOOT_RESCUE << 8;
     write_f(ZD1_REG_BOOT, a);
+    return true;
 }
 
 /* powered as the app powers it (zd1_board.h): off a while, the supply, the reset released and SPI, then the wait the
@@ -330,12 +331,18 @@ static bool receive(void) {
            zd1_xmodem_crc16(0, (const volatile uint8_t *)MCUFW_APP, len) == (uint16_t)(header[16] << 8 | header[17]);
 }
 
+/* how the module looked in this session, for the app to log after a failed one (mcufw.h, GPLP1) */
+static uint16_t seen_status;
+static bool knocked, answered;
+
 /* one session with the module: ready, BL2, the transfer; how it ended (MCUFW_PRE_*) */
 static uint8_t session(void) {
     static const uint8_t ask[] = "R\x16"
                                  "Application/NetIF/mode";
     uint32_t end = tick_ms() + 180000; /* a cold boot of our OS, the rescue's at worst */
     bl2 = dcr = hcr_ok = false;
+    seen_status = 0;
+    knocked = answered = false;
     blink_ms = 1000;
     for (;;) {
         uint16_t st = 0;
@@ -343,14 +350,17 @@ static uint8_t session(void) {
             say("[pre] the module never got ready\n");
             return MCUFW_PRE_NOT_READY;
         }
-        if (!gpio_get_pin_value(PIN_MOD_REQ))
+        if (!gpio_get_pin_value(PIN_MOD_REQ)) {
             write_f(ZD1_REG_BOOT, ZD1_BOOT_KNOCK); /* our boot stub stays silent until it hears it */
+            knocked = true;
+        }
         if (read_f(ZD1_REG_STATUS, &st)) {
             took(ZD1_REG_STATUS, st);
+            seen_status = st;
             if (st == ZD1_STATUS_READY || st == ZD1_STATUS_BL2)
                 break;
-            if (st == ZD1_STATUS_BOOTING)
-                answer_stub();
+            if (st == ZD1_STATUS_BOOTING && answer_stub())
+                answered = true;
         }
         wait_ms(250);
     }
@@ -429,6 +439,11 @@ int main(void) {
         pm_write_gplp(&AVR32_PM, 0,
                       (pm_read_gplp(&AVR32_PM, 0) & ~MCUFW_GPLP0_PRE_MASK) | MCUFW_GPLP0_PRE |
                           (uint32_t)(tries < 255 ? tries : 255) << 12 | ends);
+        if (end != MCUFW_PRE_TOOK) /* how the module looked: kept for the app's log (the last failed try's) */
+            pm_write_gplp(&AVR32_PM, 1,
+                          (pm_read_gplp(&AVR32_PM, 1) & ~MCUFW_GPLP1_SEEN_MASK) | MCUFW_GPLP1_SEEN |
+                              (knocked ? MCUFW_GPLP1_SEEN_KNOCKED : 0) | (answered ? MCUFW_GPLP1_SEEN_ANSWER : 0) |
+                              (uint32_t)(seen_status >> 8) << MCUFW_GPLP1_SEEN_SHIFT);
         if (end == MCUFW_PRE_TOOK)
             break;
         /* the app still there (nothing was written): back to it after a few tries; else keep asking */

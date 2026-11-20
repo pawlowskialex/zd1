@@ -19,6 +19,14 @@
 #define MCUFW_GPLP0_PRE      0x00100000u
 #define MCUFW_GPLP0_PRE_MASK 0x001FFFFFu
 enum { MCUFW_PRE_TOOK = 1, MCUFW_PRE_NOT_READY, MCUFW_PRE_NO_BL2, MCUFW_PRE_NO_APP, MCUFW_PRE_TRANSFER };
+/* GPLP1 bits 11..1: the module as the preloader's last failed try saw it, for mcufw_report: bit 11 set, bit 10 it
+ * knocked (our boot stub stays silent until then), bit 9 it answered the stub's slot question, bits 8..1 the high byte
+ * of the status word it read last (0x00: nothing, 0x20 the stub or our OS booting, 0x21 ready, 0x23 BL2) */
+#define MCUFW_GPLP1_SEEN         0x0800u
+#define MCUFW_GPLP1_SEEN_KNOCKED 0x0400u
+#define MCUFW_GPLP1_SEEN_ANSWER  0x0200u
+#define MCUFW_GPLP1_SEEN_SHIFT   1
+#define MCUFW_GPLP1_SEEN_MASK    0x0FFEu
 /* GPLP1 bits 31..16: what the preloader answers our boot stub on reg 0xC4 (b0 the slot, b1 the good one), so the
  * module boots the system it runs now instead of the rescue */
 #define MCUFW_GPLP1_BOOT_SHIFT 16
@@ -45,8 +53,13 @@ bool mcufw_hbl_present(void);       /* the ZD1L: B&W's "Net HBL" at 0x80000000 *
  * person at the speaker allowed it (the host link's `Allow`, which our OS asks at a network update's start: ON/OFF held
  * 5 s): once, within MCUFW_ALLOW_MS. Our OS has an app staged (reg 0xD7): taken if allowed, else refused (logged). */
 #define MCUFW_ALLOW_MS (10u * 60 * 1000)
+/* ... and no longer than this after the module's next ready (the update's trial getting ready, or the good slot again
+ * after one that didn't): our OS asks for its app at that ready's hello, within a second; an update that brings no MCU
+ * firmware, or whose trial failed, leaves no allowance open behind it */
+#define MCUFW_ALLOW_AFTER_READY_MS 60000u
 void mcufw_allow(void);
-void mcufw_report(void); /* at the start: how the preloader's last run went (GPLP0), logged once */
+void mcufw_module_ready(void); /* the module got ready (dm870.c, on_ready) */
+void mcufw_report(void);       /* at the start: how the preloader's last run went (GPLP0), logged once */
 void mcufw_request(void);
 void mcufw_enter(void); /* into what takes the module's app (no return), else log */
 #endif
