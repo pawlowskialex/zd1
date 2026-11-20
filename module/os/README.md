@@ -10,7 +10,7 @@ Spotify gives the keys) Spotify Connect through the speaker (`docs/status.md`). 
 the system with `zd1 update` (`emu/img/os/system.cpio.gz`) into the slot that doesn't run; the stub, the kernel
 and the system's app-partition copy (`os.bcd`, rarely) with the relay over USB (`zd1 bootloader`, `zd1 dfu relay
 emu/img/os/os.bcd --yes`, `zd1 dfu start`), or a ZD1L's BL2. Both need our MCU firmware: it chooses the system slot
-(`docs/module/storage.md`). A speaker with empty slots runs the system from RAM and copies it into slot A.
+(`docs/module/storage.md`). A speaker with empty slots runs the system from RAM, copies it into slot A and starts that.
 
 ```
 nix build -o emu/img/os .#os-image            # the images (first time: the toolchain, ~15 min)
@@ -67,7 +67,7 @@ The images (`nix build .#os-image`; `emu/img/os` links to them): `system.cpio.gz
 installs), `system-debug.cpio.gz` (the same with zd1's debug build), `initramfs-full.cpio.gz` (the system as the
 app partition's initramfs), `payload_dev.bin` (emulator dev boot: the debug system as one plain initramfs at 0x61000000), `payload.bin` + `os.bcd` (flashable: the stub, the kernel, that initramfs), `os-zd1l.bcd` (the same for a ZD1L), `nand_os.bin` (the
 emulator's test unit with `os.bcd` installed and empty slots: `zemu run --nand --mcu --allow-panic` goes A, B, then
-the system from RAM, which fills slot A), and `os-debug.bcd` (`os.bcd` with the debug services on by default).
+the system from RAM, which fills slot A and starts it), and `os-debug.bcd` (`os.bcd` with the debug services on by default).
 
 ## Adding things
 - **An app**: `cargo new --vcs none --lib apps/zd1-NAME` (a member by the workspace's `module/os/apps/*`): its

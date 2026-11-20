@@ -179,10 +179,11 @@ fn switched_off(c: &Ctx, switch: &str, setting: &str) -> Option<String> {
 /// AirPlay pairing keys, libsodium) would wait forever. zd1-entropy credits it from CPU timing jitter, ~0.2 s
 /// (docs/streaming.md).
 /// The rescue is the release's whole system (the boot image's initramfs, docs/module/storage.md). Booted as the rescue it
-/// copies itself into a slot: when the slot an update would take holds no system (a first install: the next start is
-/// that slot's), or when asked (`zd1.install`: the host's `Boot INSTALL` after a boot image, so that its system needs
-/// no second upload) into the slot that isn't the good one (the good one if that holds none), which the MCU then
-/// starts once; a slot holding this version already is started without a copy.
+/// copies itself into a slot, then the MCU starts that slot once (ready makes it the good one): when the slot an
+/// update would take holds no system (a first install with no host: the ZD1L's, from BL2), or when asked
+/// (`zd1.install`: the host's `Boot INSTALL` with a boot image, so that its system needs no second upload) into the
+/// slot that isn't the good one (the good one if that holds none); a slot holding this version already is started
+/// without a copy.
 fn self_install(c: &Ctx) -> Start {
     let b = zd1_slot::boot();
     if !c.boot.switch("zd1.rescue") || b.running.is_some() {
@@ -203,7 +204,7 @@ fn self_install(c: &Ctx) -> Start {
     if zd1_slot::stamp(to).is_some() {
         return Start::Off(format!("slot {} holds a system", to.name()));
     }
-    run(&["zd1-slot", "install-self", to.name(), &id])
+    run(&["zd1-slot", "install-self", to.name(), &id, "--start"])
 }
 
 fn entropy(_: &Ctx) -> Start {

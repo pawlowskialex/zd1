@@ -71,14 +71,17 @@ to start it now (`BootState` / `Boot` in `docs/protocol/host.md`).
 **The rescue** is the system itself, from RAM: everything runs as from a slot (`zd1.rescue` on the command line, no
 `zd1.slot`). With the slot an update would take empty (a first install: the slots are new), init's `self-install` copies
 the running root into it (`zd1-slot install-self`: file by file, staying on the root's own file system, mount points
-empty, the two device nodes a slot has) and stamps it with the version, so the next start is that slot's [HW
-2026-11-19, `os.bcd` 6512879 with both slots erased: B and A failed, the rescue ready 60 s after the power-up, "slot b:
-6512879 installed (10161 KB of files, 8660 KB of the partition used)" 29 s into its start, 20 s of copying; slot B
-started next and got ready]. Whether a slot holds a system is read from its record (`/data/zd1/stamp.a|b`):
+empty, the two device nodes a slot has), stamps it with the version and asks the MCU to start that slot once
+(`zd1-slot install-self SLOT ID --start`: zd1-linkd's `try`, reg 0xD8); ready makes it the good slot, else the MCU
+goes back to the rescue. That is a first install with no host behind it (a ZD1L's, from BL2's web updater); with one
+(`zd1 install`, the page) the host asks for it before the first boot (below) [HW 2026-11-19 without the start,
+`os.bcd` 6512879 with both slots erased: B and A failed, the rescue ready 60 s after the power-up, "slot b: 6512879
+installed (10161 KB of files, 8660 KB of the partition used)" 29 s into its start, 20 s of copying]. Whether a slot holds a system is read from its record (`/data/zd1/stamp.a|b`):
 `zd1-slot erase` of a slot clears it, else the erased slot reads as the system it held.
 A new boot image brings its system that way too, without a second upload: the host's `Boot INSTALL` (the page's
 Update, `zd1 update os.bcd`, `zd1 install`, `zd1 slot install`) has the MCU start the rescue once with `zd1.install`
-(its answer `boot::INSTALL`), and the rescue copies itself into the slot that isn't the good one (the good one if that
+(its answer `boot::INSTALL`; the MCU keeps it until the stub next asks, so `zd1 install` sends it as soon as the new
+firmware answers and the module's first boot is that one, no empty slot tried first), and the rescue copies itself into the slot that isn't the good one (the good one if that
 holds none; none if a slot holds its version already), then asks the MCU to start that slot once (`zd1-slot
 install-self SLOT ID --start`: zd1-linkd's `try`, reg 0xD8); ready makes it the good slot, else the MCU goes back.
 It is as new as the app partition's last install (BL2, the relay); a speaker whose slots both fail still runs and
@@ -104,15 +107,16 @@ in the payload: the stub boots it as it is (`zd1-ctl status`: no slot).
 
 **The Lightning model** (`os-zd1l.bcd`, the module part of its `.fw`, the one way in being its BL2's web updater:
 `docs/mcu/stock-firmware.md`) gets the same image with its HWID and CnE: its first start after BL2 installed it goes A,
-B, the rescue, the self-install, and from then on it updates a slot at a time.
+B, the rescue, the self-install and slot A's start, and from then on it updates a slot at a time [EMU 2026-11-20,
+from a stock ZD1L through its BL2's web updater: `docs/mcu/bootloader-hbl.md`].
 
 ## How the system gets there
 `zd1 update` (`docs/module/updater.md`): the image (`system.cpio.gz`, a slot's root) over USB through the MCU to
 `zd1-update`, which writes the slot that doesn't run (from the rescue: the good one) and stamps it; then the slot is
 started once. The `.bcd` that BL2 or the relay install carries the stub, the kernel and the system as the rescue: a
-speaker whose slots are empty (its first install) boots slot A, slot B, then the rescue (each empty slot is one
-failed boot: a panic and `panic=10`'s restart, ~15-20 s) [HW 2026-10-26, 2026-11-19], which fills the good slot (slot A
-on a new speaker) [HW 2026-11-19]. Through the ZD1's USB relay (~23 KB/s) the 6.6 MB `os.bcd` takes ~5 min (the barebones rescue's 1.9 MB
+speaker whose slots are empty and no host asked for `Boot INSTALL` boots slot A, slot B, then the rescue (each
+empty slot is one failed boot: a panic and `panic=10`'s restart, ~15-20 s) [HW 2026-10-26, 2026-11-19], which fills
+the good slot (slot A on a new speaker) [HW 2026-11-19] and starts it. Through the ZD1's USB relay (~23 KB/s) the 6.6 MB `os.bcd` takes ~5 min (the barebones rescue's 1.9 MB
 took 85 s).
 
 ## On the unit [HW 2026-10-26 on]

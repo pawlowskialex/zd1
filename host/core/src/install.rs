@@ -33,7 +33,7 @@ pub struct Installed {
 }
 
 /// How long the module's first boot may take: two empty slots failing (a panic restarts the module), then the
-/// rescue, which the MCU gives 180 s.
+/// rescue, which the MCU gives 180 s; for the rescue's install, its copy and the slot's start too.
 const FIRST_BOOT_MS: f64 = 420_000.0;
 
 /// Our firmware on both boards. `keep` gets the backup of the MCU's app region and user page before anything is
@@ -57,7 +57,7 @@ pub async fn install<B: Bus>(
         (None, None) => return Err(Error::Failed("a system image, or a boot image (its rescue is the system)".into())),
     };
     let os = system.map(system_version).transpose()?;
-    let phases = if img.bcd.is_some() { 4 } else { 3 };
+    let phases = 3;
     let mut n = 0;
     ev.step(&format!(
         "installing: MCU firmware {}, {}",
@@ -83,19 +83,20 @@ pub async fn install<B: Bus>(
             firmware.fw, ident.version
         )));
     }
-    n += 1;
-    ev.phase(n, phases, "the module's first boot");
     let mut m = Mcu::open(bus, ev.clone(), false)
         .await?
         .ok_or_else(|| Error::Device("the new firmware left USB right after it answered".into()))?;
-    let i = wait_module(&mut m, FIRST_BOOT_MS).await?;
-    ev.step(&format!("the module runs {}", i.mod_os));
     n += 1;
-    ev.phase(n, phases, "the system");
-    // with a boot image the system is its rescue: it installs itself (no second upload)
+    ev.phase(n, phases, "the module's system");
     let outcome = match system {
+        // with a boot image the system is its rescue: the module's first boot is the rescue installing itself (no
+        // second upload, no empty slots tried first)
         None => system_from_rescue(&mut m).await?,
-        Some(s) => update::system(&mut m, s, &update::Options::default()).await?,
+        Some(s) => {
+            let i = wait_module(&mut m, FIRST_BOOT_MS).await?;
+            ev.step(&format!("the module runs {}", i.mod_os));
+            update::system(&mut m, s, &update::Options::default()).await?
+        }
     };
     match outcome {
         Outcome::Running(slot) => {
@@ -168,12 +169,31 @@ pub async fn boot_image<B: Bus>(
 pub async fn system_from_rescue<L: crate::link::Link>(m: &mut Mcu<L>) -> Result<Outcome> {
     let ev = m.events().clone();
     ev.step("the module's system from its boot image: the rescue installs itself into a slot");
-    m.call(&msg::Boot { op: BootOp::Install, slot: Slot::None, restart: true }).await?;
+    // The MCU keeps it until the boot stub next asks for a slot: before the first ask since the MCU started (our
+    // firmware just written) that is the coming boot, with no restart; after it, the module restarts now.
+    let t0 = crate::now_ms();
+    loop {
+        // an error: the MCU busy with the module's power, asked again
+        let sent = match m.call(&msg::BootState).await {
+            Ok(b) => m.call(&msg::Boot { op: BootOp::Install, slot: Slot::None, restart: b.last != Slot::None }).await,
+            Err(e) => Err(e),
+        };
+        match sent {
+            Ok(_) => break,
+            Err(e) if crate::now_ms() - t0 > 30_000.0 * m.slow() as f64 => return Err(e),
+            Err(_) => m.sleep(1000).await,
+        }
+    }
     let (t0, mut rescue) = (crate::now_ms(), false);
     while crate::now_ms() - t0 < FIRST_BOOT_MS * m.slow() as f64 {
         m.sleep(1000).await;
         let secs = ((crate::now_ms() - t0) / 1000.0) as u64;
-        // an error: the MCU busy with the module's power, asked again
+        // what isn't our OS on its way: the boot image wasn't installed, or doesn't start
+        if let Ok(i) = m.call(&msg::Info).await
+            && let Err(e) = ours(&i)
+        {
+            return Err(e);
+        }
         let Ok(b) = m.call(&msg::BootState).await else { continue };
         if b.last == Slot::Rescue {
             rescue = true;
@@ -242,6 +262,13 @@ async fn wait_module<U: crate::usb::Usb>(m: &mut Mcu<U>, ms: f64) -> Result<msg:
     let i = settle(m, ms).await?;
     match i.mod_state {
         ModState::Ready => Ok(i),
+        _ => ours(&i).and(Err(Error::Failed(format!("the module settled as {}", i.mod_state)))),
+    }
+}
+
+/// A module that isn't our OS (its software, a protocol, or BL2), as the error a person reads; Ok otherwise.
+fn ours(i: &msg::InfoReply) -> Result<()> {
+    match i.mod_state {
         ModState::Stock => {
             Err(Error::Failed("the module runs the stock software: its boot image wasn't installed".into()))
         }
@@ -251,7 +278,7 @@ async fn wait_module<U: crate::usb::Usb>(m: &mut Mcu<U>, ms: f64) -> Result<msg:
             i.mod_proto, i.link_proto
         ))),
         ModState::Bl2 => Err(Error::Failed("the module is in BL2: its boot image doesn't start".into())),
-        s => Err(Error::Failed(format!("the module settled as {s}"))),
+        _ => Ok(()),
     }
 }
 

@@ -103,8 +103,8 @@ enum Cmd {
     /// or open it for good (a unit tools drive unattended).
     Gate { action: Option<GateAction> },
     /// A person at the speaker allows an MCU firmware from the module (ON/OFF held 5 s within 30 s): the MCU takes the
-    /// one our OS has staged once within 10 minutes (`zd1-ctl mcu-update` on the module; a network update asks this
-    /// itself, docs/protocol/net.md).
+    /// one our OS has staged once, until 60 s after the module's next ready (10 minutes at most; `zd1-ctl mcu-update`
+    /// on the module; a network update asks this itself, docs/protocol/net.md).
     Allow,
     /// The module OS's settings (docs/module/settings.md): all of them, one, or one changed ("" = its default); an
     /// action's key does it (wifi.add, wifi.forget, wifi.first, airplay.forget, reset).
@@ -789,7 +789,9 @@ async fn speaker_cmd<L: Link>(m: &mut Mcu<L>, cmd: Cmd, ev: &Rc<dyn Events>) -> 
         Cmd::Allow => {
             ev.prompt("hold ON/OFF on the speaker for 5 s within 30 s, while its LED flashes amber");
             m.call(&msg::Allow).await?;
-            println!("allowed: the MCU takes an app from the module once within 10 minutes");
+            println!(
+                "allowed: the MCU takes an app from the module once, until 60 s after the module's next ready (10 minutes at most)"
+            );
         }
         Cmd::Gate { action: Some(a @ (GateAction::Lock | GateAction::Open)) } => {
             let open = matches!(a, GateAction::Open);
