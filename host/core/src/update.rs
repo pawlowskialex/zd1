@@ -189,10 +189,34 @@ pub async fn system_over_network<L: Link>(
         e.wait(&format!("slot {slot} starting"), ((crate::now_ms() - t0) / 1000.0) as u64);
         let Ok(mut m) = connect().await else { continue };
         if let Ok(Some(o)) = trial(&mut m, slot).await {
-            return Ok((said(&*e, o, t0), m));
+            let o = said(&*e, o, t0);
+            if let (Outcome::Running(_), Some((_, at))) = (o, crate::image::signed_system(update))
+                && let Ok(Some(carried)) = crate::image::system_mcu(&update[at..])
+            {
+                mcu_waits(&mut m, &carried).await;
+            }
+            return Ok((o, m));
         }
     }
     Err(Error::Timeout(format!("slot {slot}: no verdict in 300 s")))
+}
+
+/// A system that carries another MCU firmware (`carried`) than the one running: its module asks the MCU for it once the
+/// slot is the good one, and the MCU waits for a person at the speaker. Told once it does (15 s at most: a dev build
+/// on either side isn't asked for, docs/protocol/net.md).
+async fn mcu_waits<L: Link>(m: &mut Mcu<L>, carried: &str) {
+    if m.hello.fw == carried {
+        return;
+    }
+    for _ in 0..10 {
+        if m.call(&msg::Info).await.is_ok_and(|i| i.mcu_update) {
+            m.events().step(&format!(
+                "the main board's firmware {carried} came with the system: hold ON/OFF on the speaker 5 s to install it"
+            ));
+            return;
+        }
+        crate::sleep(1500).await;
+    }
 }
 
 /// The verdict on a slot started once, when there is one (None: it is still on trial, or not started yet): it got

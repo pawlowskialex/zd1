@@ -276,6 +276,7 @@ static void info_fill(zd1h_info_reply_t *r) {
     r->amp_idle_s = (uint16_t)(g_settings.amp_idle_min * 60u);
     r->volume_cap = g_settings.vol_cap;
     r->console_open = modcon_host();
+    r->mcu_update = mcufw_waiting();
 }
 
 static void diag_fill(zd1h_diag_reply_t *r) {

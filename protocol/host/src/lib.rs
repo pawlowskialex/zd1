@@ -764,6 +764,8 @@ messages! {
         volume_cap: u8,
         /// the module's console is open over the host link (`Console`)
         console_open: bool,
+        /// an MCU app our OS has staged waits for a person at the speaker: ON/OFF held 5 s installs it (`docs/protocol/net.md`)
+        mcu_update: bool,
     }
     /// Open the gate: the MCU waits up to 30 s for a press of ON/OFF on the speaker (its LED flashes purple; the
     /// press does nothing else), then gated requests run until 10 minutes after the last one. `Error DENIED` if
