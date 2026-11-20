@@ -74,7 +74,7 @@ A bootloader quiet for 7 s mid-transfer gets the block again; 30 s ends it.
   "ReceiveHostFirmware() - Done", "Restart", "Reset", and B&W's app ran (to RUN; it then asserts on our OS's link, as
   the stock app with our OS always does).
 - How our OS starts it: `zd1-ctl mcu-update` (or anything that writes `mcu-update` to /run/zd1link) checks the staged
-  `.dmb` and notifies 0xD7 (`MCU_FW`, `docs/protocol/registers.md`); our MCU firmware takes it within 10 minutes after
+  `.dmb` and notifies 0xD7 (`MCU_FW`, `docs/protocol/registers.md`); our MCU firmware takes it once, until 60 s after the module's next ready (10 minutes at most), after
   a person allowed it (the host link's `Allow`: ON/OFF held 5 s, asked at a network update's start; else it refuses,
   and by hand `zd1 allow` over USB first), and goes where it is taken
   (`mcu/src/mcufw.c`): our preloader on the ZD1 (GPLP0 bit 25, the good slot in GPLP1 for our boot stub, the module
@@ -114,6 +114,12 @@ page at 0x80007E00: the app's `.dmb` header, written after a transfer checks, er
   quickly (200 ms) while the app comes in, drawn from `wait_ms` (every wait passes there); the PWM is the app's
   (`mcu/src/led_pwm.c`) [HW 2026-11-20, 4b7baee: the slow blink while the module started, the quick one through the
   transfer, the app back 46 s after it left].
+- **Its report**: it leaves in GPLP0 (kept over the reset) the tries and how the last three ended, and after a failed
+  one in GPLP1 how the module looked (the last status's high byte, whether it knocked, whether it answered the stub);
+  the app logs it at its start and clears it: "[pre] the preloader's last run: 2 tries: the module never got ready;
+  took the app; the last try that failed: the module's status 0x20xx, knocked, no slot question answered" [HW
+  2026-11-20: the report of real runs, and of a run written into GPLP by hand]. A first try waiting out its 180 s and
+  the second taking the app happened twice on the unit (2026-11-20, before the module's view was kept).
 - **On the unit** [HW 2026-11-19, the preloader of 249a535 in flash, its app 249a535, the system 6512879 on its
   confirmed slot B]: at the module's ready the system asked for its own MCU app (the MCU follows its OS), the MCU went
   off USB, and 45 s later the system's app 6512879 greeted with the record at 0x80007E00 (0x120A2 bytes), the module

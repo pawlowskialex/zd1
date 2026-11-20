@@ -113,8 +113,10 @@ the 120 s; cleared the same way. A change that cuts the link not tried on the un
    asks the MCU's `Allow` (ON/OFF held 5 s within 30 s, the LED flashing amber; the client says so), which allows the
    MCU firmware the system brings too; nobody: `Error DENIED`, nothing written [HW 2026-11-20: the refusal]. [EMU
    2026-11-20, `zemu run --nand --mcu --fwd 18080:80 --confirm 15 --host 'zd1 --net 127.0.0.1:18080 update ...'`: the
-   hold, "allowed: an app from the module, once, within 10 minutes", the update into slot B, its trial, then at the
-   MCU's hello the system's MCU app asked for and taken at once: the preloader, "app in flash and checked".]
+   hold, "allowed: an app from the module, once, ...", the update into slot B, its trial, then at the
+   MCU's hello the system's MCU app asked for and taken at once: the preloader, "app in flash and checked"; again with
+   the allowance ending 60 s after that ready, 74061cb.] [HW 2026-11-20: after a system-only update the allowance
+   ended 60 s after the trial's ready, and an app offered then was refused.]
 2. **DATA**, the image in order, up to 32 KB a request: unpacked into the slot that doesn't run as it comes
    (`zd1-slot`, as `zd1-update` does), each reply the bytes taken.
 3. **END**: the stream's end checked (the gzip CRC, the SHA-256 of the header), the slot stamped `VERSION SHA[:12]
@@ -143,7 +145,8 @@ signed by another key refused at BEGIN ("signed by none of the keys this speaker
 **The MCU follows its OS**: each system carries its MCU app (`/usr/lib/zd1/mcu/zd1.dmb`, the same build's: `nix
 build .#os-image` takes `.#mcu`); at the MCU's hello (its version, then the good slot), on a confirmed slot (not the
 rescue, not on trial), with the MCU's version not the app's and neither a dev build (`-dirty`), `zd1-linkd` stages it
-and asks the MCU (`docs/mcu/bootloader-hbl.md`). The MCU takes it only within 10 minutes after a person at the
+and asks the MCU (`docs/mcu/bootloader-hbl.md`). The MCU takes it only until 60 s after the module's next ready (10
+minutes at most) after a person at the
 speaker allowed it, once: the network update's start asks for that (BEGIN, `Allow`), so the hold that allows a system
 also allows the MCU firmware it brings, and nothing waits afterwards. The MCU is what keeps the amp safe, and a module
 someone took over must not be able to give it a firmware without them. Without an allowance the request is refused

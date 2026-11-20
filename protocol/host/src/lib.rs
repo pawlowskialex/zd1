@@ -795,7 +795,8 @@ messages! {
     }
     /// A person at the speaker allows a system update from the network, and the MCU firmware it brings: the MCU waits
     /// up to 30 s for ON/OFF held 5 s (its LED flashes amber; a shorter press works as always); held, it takes an app
-    /// our OS gives it (SPI reg 0xD7) once within 10 minutes, and none without. Our OS asks it at `SystemUpdate`
+    /// our OS gives it (SPI reg 0xD7) once, within 10 minutes and no later than 60 s after the module's next ready (the
+    /// update's trial, or the good slot's after one that failed), and none without. Our OS asks it at `SystemUpdate`
     /// BEGIN (docs/protocol/net.md). `Error DENIED` if nobody held it, `Error BUSY` while another confirmation waits.
     0x22 Allow -> Ok [free, 35000 ms] {}
     /// Close the gate now, or open it for good (kept in the EEPROM across power cycles: a lab unit driven by tools

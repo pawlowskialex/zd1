@@ -56,7 +56,7 @@ void mcufw_allow(void) {
     allowed = true;
     allowed_ready = false;
     allowed_until = tick_ms() + MCUFW_ALLOW_MS;
-    log_puts("[mcufw] allowed: an app from the module, once, within 10 minutes\n");
+    log_puts("[mcufw] allowed: an app from the module, once, until 60 s after the module's next ready\n");
 }
 
 void mcufw_module_ready(void) {
