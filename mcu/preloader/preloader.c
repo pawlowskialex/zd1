@@ -20,17 +20,14 @@
 #include <pm.h>
 #include <cycle_counter.h>
 #include "zd1link.h"
+#include "zd1_board.h"
 #define MCUFW_PRELOADER_BUILD
 #include "mcufw.h"
-
-#define PIN_MOD_PWR AVR32_PIN_PA04 /* module power, high = on */
-#define PIN_MOD_RST AVR32_PIN_PA17 /* module reset, low = reset */
-#define PIN_MOD_REQ AVR32_PIN_PA20 /* module request line, high = data waiting */
 
 /* found by the app (mcufw_preloader_present); read once in main, or --gc-sections drops it */
 static const char magic[] = MCUFW_PRELOADER_MAGIC;
 
-/* ---- time (the cycle counter, at the PLL's 48 MHz once sysclk_init ran) ---- */
+/* ---- time (the cycle counter, at the PLL's 48 MHz once board_clock_init ran) ---- */
 static uint32_t ms_now, cy_last, cy_rem;
 static uint32_t tick_ms(void) {
     uint32_t c = Get_sys_count(), per = sysclk_get_cpu_hz() / 1000u;
@@ -79,28 +76,6 @@ static void say_hex(uint32_t v) {
 }
 
 /* ---- the module link: the master half of the register protocol (as dm870.c, without the app's state) ---- */
-static void spi0_init(void) {
-    static const gpio_map_t pins = {
-        {AVR32_SPI0_NPCS_2_0_PIN, AVR32_SPI0_NPCS_2_0_FUNCTION}, /* PA09 */
-        {AVR32_SPI0_MISO_0_0_PIN, AVR32_SPI0_MISO_0_0_FUNCTION}, /* PA11 */
-        {AVR32_SPI0_MOSI_0_0_PIN, AVR32_SPI0_MOSI_0_0_FUNCTION}, /* PA12 */
-        {AVR32_SPI0_SCK_0_0_PIN, AVR32_SPI0_SCK_0_0_FUNCTION},   /* PA13 */
-    };
-    const spi_options_t opt = {.reg = 2,
-                               .baudrate = 3000000,
-                               .bits = 8,
-                               .spck_delay = 0,
-                               .trans_delay = 0,
-                               .stay_act = 1,
-                               .spi_mode = 3,
-                               .modfdis = 1};
-    gpio_enable_module(pins, sizeof pins / sizeof pins[0]);
-    spi_initMaster(&AVR32_SPI0, &opt);
-    spi_selectionMode(&AVR32_SPI0, 0, 0, 0);
-    spi_setupChipReg(&AVR32_SPI0, &opt, sysclk_get_pba_hz());
-    spi_enable(&AVR32_SPI0);
-    spi_unselectChip(&AVR32_SPI0, 2);
-}
 static uint8_t xfer(uint8_t b) {
     uint16_t d = 0xFF;
     if (spi_write(&AVR32_SPI0, b) == SPI_OK)
@@ -253,17 +228,15 @@ static void answer_stub(void) {
     write_f(ZD1_REG_BOOT, a);
 }
 
-static void module_off(void) {
-    gpio_set_pin_low(PIN_MOD_RST);
-    wait_ms(20);
-    gpio_set_pin_low(PIN_MOD_PWR);
-}
+/* powered as the app powers it (zd1_board.h): off a while, the supply, the reset released and SPI, then the wait the
+ * app and stock give it before the first read */
 static void module_on(void) {
-    module_off();
-    wait_ms(500);
+    board_module_off();
+    wait_ms(MOD_OFF_MS);
     gpio_set_pin_high(PIN_MOD_PWR);
-    wait_ms(100);
-    gpio_set_pin_high(PIN_MOD_RST);
+    wait_ms(MOD_SUPPLY_MS);
+    board_module_spi();
+    wait_ms(MOD_RESET_MS);
 }
 
 /* ---- the app: XModem blocks into flash ---- */
@@ -416,23 +389,23 @@ int main(void) {
         start_app();
     pm_write_gplp(&AVR32_PM, 0, g & ~MCUFW_GPLP0_UPDATE);
 
-    wdt_disable(); /* one still running from the app's reset */
-    sysclk_init();
+    wdt_disable();   /* one still running from the app's reset */
+    board_bl_pins(); /* the app's start (zd1_board.h): with ASF's clocks first the board stays dark */
+    if (!board_clock_init(NULL))
+        watchdog_reset(); /* the app starts next (the update asked for is forgotten) and shows it */
+    board_safe_gpio();
     cy_last = Get_sys_count();
     log_init();
     say(asked ? "\n[pre] zd1 preloader: the app asks for a new one from the module\n"
               : "\n[pre] zd1 preloader: no good app: waiting for one from the module\n");
     wdt_opt_t opt = {.us_timeout_period = 4000000};
     wdt_enable(&opt);
-    gpio_configure_pin(PIN_MOD_PWR, GPIO_DIR_OUTPUT | GPIO_INIT_LOW);
-    gpio_configure_pin(PIN_MOD_RST, GPIO_DIR_OUTPUT | GPIO_INIT_LOW);
     gpio_configure_pin(PIN_MOD_REQ, GPIO_DIR_INPUT);
-    spi0_init();
 
     for (unsigned tries = 1;; tries++) {
         module_on();
         bool ok = session();
-        module_off();
+        board_module_off();
         if (ok)
             break;
         /* the app still there (nothing was written): back to it after a few tries; else keep asking */

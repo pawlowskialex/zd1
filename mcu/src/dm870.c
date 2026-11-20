@@ -76,29 +76,7 @@ const char *dm870_ip(void) { return mod_ip; }
 const char *dm870_name(void) { return mod_name; }
 uint8_t dm870_debug(void) { return debug_mode; }
 
-/* ---- SPI0, NPCS2 = PA09, mode 3, ~3 MHz ---- */
-static void spi0_init(void) {
-    static const gpio_map_t pins = {
-        {AVR32_SPI0_NPCS_2_0_PIN, AVR32_SPI0_NPCS_2_0_FUNCTION}, /* PA09 */
-        {AVR32_SPI0_MISO_0_0_PIN, AVR32_SPI0_MISO_0_0_FUNCTION}, /* PA11 */
-        {AVR32_SPI0_MOSI_0_0_PIN, AVR32_SPI0_MOSI_0_0_FUNCTION}, /* PA12 */
-        {AVR32_SPI0_SCK_0_0_PIN, AVR32_SPI0_SCK_0_0_FUNCTION},   /* PA13 */
-    };
-    const spi_options_t opt = {.reg = 2,
-                               .baudrate = 3000000,
-                               .bits = 8,
-                               .spck_delay = 0,
-                               .trans_delay = 0,
-                               .stay_act = 1,
-                               .spi_mode = 3,
-                               .modfdis = 1};
-    gpio_enable_module(pins, sizeof pins / sizeof pins[0]);
-    spi_initMaster(&AVR32_SPI0, &opt);
-    spi_selectionMode(&AVR32_SPI0, 0, 0, 0); /* fixed peripheral select */
-    spi_setupChipReg(&AVR32_SPI0, &opt, sysclk_get_pba_hz());
-    spi_enable(&AVR32_SPI0);
-    spi_unselectChip(&AVR32_SPI0, 2); /* every request toggles NPCS2 itself (SPI_PROTOCOL 1.3) */
-}
+/* ---- SPI0 (board_module_spi) ---- */
 static uint8_t spi0_xfer(uint8_t b) { /* ASF spi_write/spi_read are timeout-bounded */
     uint16_t d = 0xFF;
     if (spi_write(&AVR32_SPI0, b) == SPI_OK)
@@ -118,21 +96,14 @@ static void forget_module(void) {
     if (query != QUERY_NONE)
         query_end(0);
 }
-/* Stock detach / safe power-down (mirrors FUN_8000dcdc): reset first, settle, then cut power.
- * Returns the SPI pins to inputs. Always leaves the module OFF; a running update fails. */
+/* Stock detach (board_module_off), the console's UART first. Always leaves the module OFF; a running update fails. */
 void dm870_detach(void) {
     update_abort("the module was powered off");
     bu = BU_IDLE;
     hold = false;
     modboot_cancel();
-    gpio_set_pin_low(PIN_MOD_RST);
-    delay_ms(20);
     modcon_power(false);
-    gpio_set_pin_low(PIN_MOD_PWR);
-    gpio_configure_pin(AVR32_PIN_PA09, GPIO_DIR_INPUT);
-    gpio_configure_pin(AVR32_PIN_PA11, GPIO_DIR_INPUT);
-    gpio_configure_pin(AVR32_PIN_PA12, GPIO_DIR_INPUT);
-    gpio_configure_pin(AVR32_PIN_PA13, GPIO_DIR_INPUT);
+    board_module_off();
     mod_up = false;
     forget_module();
 }
@@ -541,18 +512,17 @@ void dm870_start(void) {
         bu = BU_READY;
         return;
     }
-    sysclk_enable_pba_module(SYSCLK_SPI0);
     gpio_set_pin_high(PIN_MOD_PWR);
     modcon_power(true);
     bu = BU_PWR;
-    bu_t = tick_ms() + 1200;
+    bu_t = tick_ms() + MOD_SUPPLY_MS;
     log_puts("[mod] powering up\n");
 }
 static void power_cycle(bool hold_only) {
     dm870_detach();
     hold = hold_only;
     bu = BU_OFF;
-    bu_t = tick_ms() + 500;
+    bu_t = tick_ms() + MOD_OFF_MS;
 }
 static void bringup_poll(void) {
     uint32_t now = tick_ms();
@@ -581,11 +551,10 @@ static void bringup_poll(void) {
             return;
         }
         gpio_configure_pin(PIN_MOD_REQ, GPIO_DIR_INPUT);
-        gpio_set_pin_high(PIN_MOD_RST);
-        spi0_init();
+        board_module_spi();
         mod_up = true;
         bu = BU_RST;
-        bu_t = now + 1200; /* 200 ms + stock's T3 1000 ms */
+        bu_t = now + MOD_RESET_MS;
         bu_deadline = now + 180000;
         return;
     case BU_RST:

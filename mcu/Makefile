@@ -58,7 +58,8 @@ CFLAGS := -mpart=uc3a1256 -Os -fdata-sections -ffunction-sections -muse-rodata-s
   -Isrc -Iconfig -Idfp-include/AT32UC3A1256 $(addprefix -I$(ASF)/,$(INCS))
 
 ASFOBJS := $(addprefix $(OBJ)/,$(notdir $(ASSRCS:.S=.o) $(CSRCS:.c=.o)))
-# the preloader: its one source and the part of the ASF it needs (no USB, no interrupts)
+# the preloader: its source, the board's start and module power the app has too (src/zd1_board.c: one copy), and the
+# part of the ASF it needs (no USB, no interrupts)
 PRESRCS := \
   avr32/drivers/flashc/flashc.c \
   avr32/drivers/intc/intc.c \
@@ -69,7 +70,7 @@ PRESRCS := \
   avr32/drivers/spi/spi.c \
   avr32/drivers/wdt/wdt.c \
   common/services/clock/uc3a0_a1/sysclk.c
-PREOBJS := $(addprefix $(OBJ)/,$(notdir $(ASSRCS:.S=.o) $(PRESRCS:.c=.o))) $(OBJ)/pre_preloader.o
+PREOBJS := $(addprefix $(OBJ)/,$(notdir $(ASSRCS:.S=.o) $(PRESRCS:.c=.o))) $(OBJ)/pre_preloader.o $(OBJ)/app_zd1_board.o
 APPOBJS := $(patsubst src/%.c,$(OBJ)/app_%.o,$(APPSRCS))
 
 vpath %.S $(sort $(dir $(addprefix $(ASF)/,$(ASSRCS))))

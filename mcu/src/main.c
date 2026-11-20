@@ -61,7 +61,7 @@ int main(void) {
     gpio_configure_pin(PIN_LED_R, GPIO_DIR_OUTPUT | GPIO_INIT_LOW);
     g_rcause = AVR32_PM.rcause;
     blog(1);
-    if (!board_clock_init()) { /* blink = clock fail; still on the RC oscillator */
+    if (!board_clock_init(blog)) { /* blink = clock fail; still on the RC oscillator */
         for (;;) {
             gpio_toggle_pin(PIN_LED_R);
             cpu_delay_ms(250, AVR32_PM_RCOSC_FREQUENCY);
