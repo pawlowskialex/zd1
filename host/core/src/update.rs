@@ -193,7 +193,7 @@ pub async fn system_over_network<L: Link>(
             if let (Outcome::Running(_), Some((_, at))) = (o, crate::image::signed_system(update))
                 && let Ok(Some(carried)) = crate::image::system_mcu(&update[at..])
             {
-                mcu_waits(&mut m, &carried).await;
+                mcu_waits(&mut m, &carried, &*e).await;
             }
             return Ok((o, m));
         }
@@ -204,13 +204,14 @@ pub async fn system_over_network<L: Link>(
 /// A system that carries another MCU firmware (`carried`) than the one running: its module asks the MCU for it once the
 /// slot is the good one, and the MCU waits for a person at the speaker. Told once it does (15 s at most: a dev build
 /// on either side isn't asked for, docs/protocol/net.md).
-async fn mcu_waits<L: Link>(m: &mut Mcu<L>, carried: &str) {
+/// Told on `e`, the update's events: the session `m` came from `connect`, whose events may be another's (a quiet one).
+async fn mcu_waits<L: Link>(m: &mut Mcu<L>, carried: &str, e: &dyn crate::Events) {
     if m.hello.fw == carried {
         return;
     }
     for _ in 0..10 {
         if m.call(&msg::Info).await.is_ok_and(|i| i.mcu_update) {
-            m.events().step(&format!(
+            e.step(&format!(
                 "the main board's firmware {carried} came with the system: hold ON/OFF on the speaker 5 s to install it"
             ));
             return;
