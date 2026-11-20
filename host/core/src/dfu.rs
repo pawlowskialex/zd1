@@ -389,7 +389,8 @@ impl<U: Usb> Dfu<U> {
                 }
             }
             self.command(&frame::coproc_block(chunk), true).await?;
-            ev.progress("relay", i as u64 + 1, n as u64);
+            let bytes = |blocks: usize| (blocks * BLOCK as usize).min(image.len()) as u64;
+            ev.progress("relay", bytes(i + 1), bytes(n));
         }
         let dt = (crate::now_ms() - t1) / 1000.0;
         ev.step(&format!(

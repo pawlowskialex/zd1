@@ -108,7 +108,8 @@ pub async fn xm_install<L: Link>(
         }
         let r = r.ok_or_else(|| Error::Failed(format!("block {}: no ACK after 10 tries", i + 1)))?;
         stats.push([r.wire_us as f64 / 1000.0, r.wait_us as f64 / 1000.0, r.read_us as f64 / 1000.0, host]);
-        ev.progress("xmodem", i as u64 + 1, n as u64);
+        let bytes = |blocks: usize| (blocks * BLOCK_1K as usize).min(data.len()) as u64;
+        ev.progress("xmodem", bytes(i + 1), bytes(n));
     }
     let el = (crate::now_ms() - ts) / 1000.0;
     let mut out = Vec::new();
