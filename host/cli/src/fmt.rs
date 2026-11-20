@@ -66,9 +66,6 @@ pub fn info(r: &msg::InfoReply) -> String {
     }
     l.push(format!("prefs    a USB stream takes the speaker: {}", yn(r.auto_switch)));
     l.push(format!("gate     {}", speaker::gate(r)));
-    if r.mcu_update {
-        l.push("update   the module has a new MCU firmware: hold ON/OFF on the speaker 5 s to install it".into());
-    }
     l.join("\n")
 }
 

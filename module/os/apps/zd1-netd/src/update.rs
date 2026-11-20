@@ -18,6 +18,13 @@ use zd1_slot::Slot;
 /// USB).
 const KEYS: &[&str] = &["/etc/zd1/keys", "/data/zd1/keys"];
 
+/// A BEGIN whose header checked: what `start` begins.
+pub struct Begin {
+    header: Header,
+    /// the key that signed it (its short name)
+    key: String,
+}
+
 #[derive(Default)]
 pub struct Update {
     run: Option<Running>,
@@ -39,7 +46,7 @@ impl Update {
     pub fn request(&mut self, m: &Msg) -> Vec<u8> {
         let op = UpdateOp::from(m.n("op") as u8);
         let r = match op {
-            UpdateOp::Begin => self.begin(m.bytes("data")),
+            UpdateOp::Begin => return error_reply(Err::Arg, "BEGIN goes through `prepare` and `start`"),
             UpdateOp::Data => self.data(m.n("offset") as u64, m.bytes("data")),
             UpdateOp::End => self.end(),
             UpdateOp::Abort => {
@@ -78,8 +85,31 @@ impl Update {
         .expect("UpdateReply encodes")
     }
 
-    fn begin(&mut self, data: &[u8]) -> Result<UpdateState, String> {
+    /// BEGIN, its first half: the header checked (signed by a key the speaker trusts, no older than what runs, not
+    /// from a system on trial), nothing changed yet. Err: the `UpdateReply` that refuses it.
+    pub fn prepare(&mut self, data: &[u8]) -> Result<Begin, Vec<u8>> {
         self.stop();
+        self.check(data).map_err(|e| {
+            crate::say(&format!("update: {e}"));
+            self.reply(UpdateState::Failed, &e)
+        })
+    }
+
+    /// BEGIN, its second half, once a person at the speaker allowed it (the session's `Allow`): the slot that doesn't
+    /// run, written as the image comes. Its `UpdateReply`.
+    pub fn start(&mut self, b: Begin) -> Vec<u8> {
+        match self.begin(b) {
+            Ok(state) => self.reply(state, ""),
+            Err(e) => {
+                crate::say(&format!("update: {e}"));
+                let r = self.reply(UpdateState::Failed, &e);
+                self.stop();
+                r
+            }
+        }
+    }
+
+    fn check(&self, data: &[u8]) -> Result<Begin, String> {
         let (header, n) = Header::parse(data)?;
         if n != data.len() {
             return Err("BEGIN carries the header alone".into());
@@ -97,6 +127,11 @@ impl Update {
         if b.running.is_some() && b.running != b.good {
             return Err("the running system is on trial: its ready first (the good slot is the way back)".into());
         }
+        Ok(Begin { header, key: k })
+    }
+
+    fn begin(&mut self, Begin { header, key: k }: Begin) -> Result<UpdateState, String> {
+        let b = zd1_slot::boot();
         let one = zd1_slot::update_lock()?;
         let slot = b.target();
         let (tx, rx) = sync_channel::<Vec<u8>>(4);

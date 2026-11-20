@@ -47,7 +47,6 @@ field 0x42 26 u8 link_proto
 field 0x42 27 u16 amp_idle_s
 field 0x42 28 u8 volume_cap
 field 0x42 29 bool console_open
-field 0x42 30 bool mcu_update
 msg 0x0E request Unlock
 msg 0x20 record Pair
 field 0x20 0 str:32 name
@@ -55,6 +54,7 @@ msg 0x21 record SystemUpdate
 field 0x21 0 enum:UpdateOp op
 field 0x21 1 u32 offset
 field 0x21 2 bytes:32768 data
+msg 0x22 request Allow
 msg 0x0F request Lock
 field 0x0F 0 bool open
 msg 0x04 request Peek

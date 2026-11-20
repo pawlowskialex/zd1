@@ -1,7 +1,7 @@
 #include <string.h>
 #include <pm.h>
 #include "log.h"
-#include "led.h"
+#include "tick.h"
 #include "modboot.h"
 #include "selfdfu.h"
 #include "mcufw.h"
@@ -18,7 +18,14 @@ static bool in_flash(uint32_t from, uint32_t to, const char *what) {
 bool mcufw_preloader_present(void) { return in_flash(0x80004000u, MCUFW_RECORD, MCUFW_PRELOADER_MAGIC); }
 bool mcufw_hbl_present(void) { return in_flash(0x80000000u, 0x80008000u, "Net HBL"); }
 
-static bool waiting;
+static bool allowed; /* a person allowed the next app from the module (mcufw_allow), until allowed_until */
+static uint32_t allowed_until;
+
+void mcufw_allow(void) {
+    allowed = true;
+    allowed_until = tick_ms() + MCUFW_ALLOW_MS;
+    log_puts("[mcufw] allowed: an app from the module, once, within 10 minutes\n");
+}
 
 void mcufw_request(void) {
     if (!mcufw_preloader_present() && !mcufw_hbl_present()) {
@@ -27,13 +34,16 @@ void mcufw_request(void) {
             "preloader): ignored\n");
         return;
     }
-    waiting = true;
-    led_flash(FLASH_AMBER, 30000);
-    log_puts("[mcufw] our OS has an app for the MCU: hold ON/OFF on the speaker for 5 s to install it\n");
+    if (!allowed || tick_after(tick_ms(), allowed_until)) {
+        allowed = false;
+        log_puts("[mcufw] our OS has an app for us, but nobody allowed it at the speaker (Allow): not taken\n");
+        return;
+    }
+    allowed = false;
+    mcufw_enter();
 }
-bool mcufw_waiting(void) { return waiting; }
 
-/* a person confirmed the app our OS has staged (reg 0xD7): into what takes it from the module. The module goes off first
+/* into what takes the app our OS has staged (reg 0xD7) from the module. The module goes off first
  * (selfdfu: it boots again under the bootloader, which asks it for BL2). */
 void mcufw_enter(void) {
     if (mcufw_preloader_present()) {

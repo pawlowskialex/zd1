@@ -13,7 +13,7 @@ use tungstenite::handshake::server::{ErrorResponse, Request, Response};
 use tungstenite::protocol::WebSocketConfig;
 use tungstenite::{HandshakeError, Message, WebSocket};
 use zd1_hostlink::codec::{self, Typed, error_reply};
-use zd1_hostlink::{Err, MESSAGES, msg, net, record};
+use zd1_hostlink::{Err, MESSAGES, UpdateOp, msg, net, record};
 
 /// How long the handshakes (the WebSocket's, then Noise's) may take in all, and how often the session looks at
 /// zd1-linkd while the client is quiet.
@@ -238,6 +238,16 @@ impl Session {
         }
         match m.name() {
             "Pair" => self.pair(seq, &m.s("name"), &shared.pair),
+            "SystemUpdate" if UpdateOp::from(m.n("op") as u8) == UpdateOp::Begin => {
+                // the image's checks first (nobody holds ON/OFF for one that is refused), then the person
+                match self.update.prepare(m.bytes("data")) {
+                    Err(refused) => Ok(refused),
+                    Ok(b) => match self.allow(seq)? {
+                        None => Ok(self.update.start(b)),
+                        Some(refused) => Ok(refused),
+                    },
+                }
+            }
             "SystemUpdate" => Ok(self.update.request(&m)),
             "SetSetting" if m.s("key") == "net" => {
                 Ok(error_reply(Err::Arg, "the network link is switched over USB only"))
@@ -269,6 +279,18 @@ impl Session {
             }
         }
         Ok(error_reply(Err::Module, "zd1-linkd didn't answer"))
+    }
+
+    /// A system update's start: the person at the speaker allows it, and the MCU firmware it brings (the MCU's
+    /// `Allow`: ON/OFF held 5 s within 30 s). None: allowed; else the MCU's refusal.
+    fn allow(&mut self, seq: u16) -> Result<Option<Vec<u8>>, String> {
+        say(&format!("{}: a system update: ON/OFF held 5 s on the speaker allows it", self.who));
+        let r = self.call(seq, &codec::encode_msg(&msg::Allow).expect("Allow encodes"))?;
+        if codec::decode(&r).map(|m| m.name()) == Ok("Ok") {
+            return Ok(None);
+        }
+        say(&format!("{}: the update not allowed", self.who));
+        Ok(Some(r))
     }
 
     /// `Pair`: the person at the speaker confirms (ON/OFF held 5 s: the MCU's `Unlock`, which from the network always

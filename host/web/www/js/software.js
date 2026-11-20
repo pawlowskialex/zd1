@@ -310,8 +310,7 @@ async function finishAll(rel) {
 }
 
 /// What the releases are drawn for: the versions running, and the boot image's once the module's State record is in.
-export const drawnKey = () =>
-  `${app.info?.fw}|${app.info?.mod_os}|${app.info?.mod_state}|${moduleBoot()}|${app.info?.mcu_update}`;
+export const drawnKey = () => `${app.info?.fw}|${app.info?.mod_os}|${app.info?.mod_state}|${moduleBoot()}`;
 
 /// The boot image the module started from (the State record's `boot`: "" from before it had one), or undefined while
 /// that isn't known: the module not up as our OS, or the record from before it last started (a new `os`).
@@ -362,15 +361,8 @@ export function drawReleases() {
     const named = `release ${rel.version}${rel.date ? ` (${rel.date})` : ""}`;
     v.append(el("p", { textContent: needs.length ? `Latest ${named}: ${where}` : `Up to date: ${named}.` }));
     if (rel.notes) v.append(el("p", { className: "small notes", textContent: rel.notes }));
-    // the main board's firmware from the module waits for the person at the speaker: that first
-    if (app.info?.mcu_update)
-      banner(
-        "The main board's new firmware is waiting",
-        "Hold ON/OFF on the speaker for 5 s to install it (its LED flashed amber when it was asked): the speaker " +
-          "restarts and takes it from the module in about a minute.",
-      );
     // behind: the banner on top of the page says so, with the one button
-    else if (needs.length)
+    if (needs.length)
       banner(
         `Release ${rel.version} is available`,
         where[0].toUpperCase() + where.slice(1),
@@ -491,16 +483,15 @@ export async function updateTo(rel, needs, finishing = false) {
   return r;
 }
 
-/// Over the network: the module's system alone, the release's signed image (the speaker checks its signature); the
-/// main board takes its firmware from its system once a person at the speaker holds ON/OFF 5 s, and a boot image that
-/// differs needs USB (docs/protocol/net.md).
+/// Over the network: the module's system alone, the release's signed image (the speaker checks its signature), allowed
+/// by a person at the speaker (ON/OFF held 5 s), which allows the main board's firmware it brings too; a boot image
+/// that differs needs USB (docs/protocol/net.md).
 async function updateOverNetwork(rel, needs) {
   if (!needs.includes("system"))
     return notice(
       needs.includes("boot")
         ? "This release's boot image differs from the speaker's: that goes over USB (connect it with a cable)."
-        : "The main board takes its firmware from the module once someone at the speaker holds ON/OFF 5 s when it " +
-            "asks (its LED flashes amber). If it doesn't ask, update over USB.",
+        : "The main board's firmware doesn't match its system: update over USB.",
       "warn",
     );
   if (!rel.signed)
@@ -508,12 +499,10 @@ async function updateOverNetwork(rel, needs) {
   if (
     !(await ask(
       `Update to ${rel.version}?`,
-      "The module's system goes into the slot that doesn't run (the old one stays as the way back), then the speaker " +
-        "restarts on it. A few minutes; sound stops meanwhile, and this page connects again by itself." +
-        (needs.includes("mcu")
-          ? " The main board's firmware comes with the system: hold ON/OFF on the speaker 5 s when its LED flashes " +
-            "amber, and it installs it."
-          : ""),
+      "Someone at the speaker allows it: ON/OFF held 5 s while its LED flashes amber. Then the module's system goes " +
+        "into the slot that doesn't run (the old one stays as the way back) and the speaker restarts on it" +
+        (needs.includes("mcu") ? ", the main board taking its firmware from it" : "") +
+        ". A few minutes; sound stops meanwhile, and this page connects again by itself.",
       "Update",
     ))
   )

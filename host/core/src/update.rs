@@ -152,8 +152,19 @@ pub async fn system_signed<L: Link>(m: &mut Mcu<L>, update: &[u8]) -> Result<Slo
     let ok = |r: msg::UpdateReply, want: UpdateState| {
         if r.state == want { Ok(r) } else { Err(Error::Failed(format!("update: {}", r.text))) }
     };
+    // after the speaker's own checks of the header, a person at it allows the update (and the MCU firmware it brings:
+    // the MCU's Allow); a patient program asks again until they do or it is stopped
     let begin = SystemUpdate { op: UpdateOp::Begin, offset: 0, data: update[..at].to_vec() };
-    let r = ok(m.call(&begin).await?, UpdateState::Streaming)?;
+    let r = loop {
+        e.prompt(
+            "allow the update: hold ON/OFF on the speaker for 5 s within 30 s, while its LED flashes amber (it goes to \
+             standby at 2 s: keep holding; a press wakes it again after)",
+        );
+        match m.call(&begin).await {
+            Err(Error::Mcu(Err::Denied, _)) if e.patient() && !e.cancelled() => continue,
+            r => break ok(r?, UpdateState::Streaming)?,
+        }
+    };
     e.step(&format!("into slot {}", r.slot));
     let mut sent = 0;
     while sent < image.len() {
@@ -189,35 +200,10 @@ pub async fn system_over_network<L: Link>(
         e.wait(&format!("slot {slot} starting"), ((crate::now_ms() - t0) / 1000.0) as u64);
         let Ok(mut m) = connect().await else { continue };
         if let Ok(Some(o)) = trial(&mut m, slot).await {
-            let o = said(&*e, o, t0);
-            if let (Outcome::Running(_), Some((_, at))) = (o, crate::image::signed_system(update))
-                && let Ok(Some(carried)) = crate::image::system_mcu(&update[at..])
-            {
-                mcu_waits(&mut m, &carried, &*e).await;
-            }
-            return Ok((o, m));
+            return Ok((said(&*e, o, t0), m));
         }
     }
     Err(Error::Timeout(format!("slot {slot}: no verdict in 300 s")))
-}
-
-/// A system that carries another MCU firmware (`carried`) than the one running: its module asks the MCU for it once the
-/// slot is the good one, and the MCU waits for a person at the speaker. Told once it does (15 s at most: a dev build
-/// on either side isn't asked for, docs/protocol/net.md).
-/// Told on `e`, the update's events: the session `m` came from `connect`, whose events may be another's (a quiet one).
-async fn mcu_waits<L: Link>(m: &mut Mcu<L>, carried: &str, e: &dyn crate::Events) {
-    if m.hello.fw == carried {
-        return;
-    }
-    for _ in 0..10 {
-        if m.call(&msg::Info).await.is_ok_and(|i| i.mcu_update) {
-            e.step(&format!(
-                "the main board's firmware {carried} came with the system: hold ON/OFF on the speaker 5 s to install it"
-            ));
-            return;
-        }
-        crate::sleep(1500).await;
-    }
 }
 
 /// The verdict on a slot started once, when there is one (None: it is still on trial, or not started yet): it got

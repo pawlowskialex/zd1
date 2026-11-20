@@ -173,8 +173,8 @@ All in `src/source.c` unless said otherwise; the times are constants there.
   (AirPlay without a remote) stays paused until it plays. Held 2 s: standby. After a protection trip a press
   acknowledges it (standby); until then nothing brings a source back (a stream, a plug, the host link). While a tool
   asks for the gate it confirms that and does nothing else. **Held 5 s** (past standby): the confirmation of what
-  the network or the module asked and only a person at the speaker may allow, a pairing over the network or an MCU
-  update from the module (`inputs_confirm_take`: the key's pin, nothing the host link or the remote injects; a
+  the network asked and only a person at the speaker may allow, a pairing or a system update over the network, which
+  allows the MCU firmware it brings (`Allow`; `inputs_confirm_take`: the key's pin, nothing the host link or the remote injects; a
   shorter press or hold works as always meanwhile). The host link does the same: `zd1 play
   airplay|spotify|snapcast`.
 - **Newest wins.** Whatever starts playing takes the speaker: a receiver through its play state (the module decides
@@ -219,7 +219,7 @@ used (`re/mcu/extracted/led_patterns.txt` has them).
 | ON/OFF choosing a source | the candidate's colour, a fast pulse |
 | volume | the brightness shows the level for a second; red blinks at the ends |
 | the gate, a pairing over the network | a fast purple blink while it waits for the press (pairing: ON/OFF held 5 s), green / red after |
-| an MCU update from the module | a fast amber blink for 30 s: it waits for ON/OFF held 5 s |
+| a system update over the network | a fast amber blink while it waits for ON/OFF held 5 s (30 s), green / red after |
 | changes | 450 ms crossfades |
 
 Colours and levels are in perceptual units (0..255, the PWM gets the square): even fades and breathing on a 400-step

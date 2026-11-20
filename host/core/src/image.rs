@@ -259,13 +259,6 @@ pub fn system_release(image: &[u8]) -> Result<(String, String)> {
     Ok((get("VERSION_ID").unwrap_or_else(|| "unknown".into()), get("BUILD_DATE").unwrap_or_default()))
 }
 
-/// The MCU firmware a system image carries (usr/lib/zd1/mcu/zd1.dmb: what its module gives the MCU, docs/protocol/net.md):
-/// its version, None without one.
-pub fn system_mcu(image: &[u8]) -> Result<Option<String>> {
-    let cpio = gunzip(image)?;
-    Ok(cpio_file(&cpio, "usr/lib/zd1/mcu/zd1.dmb").and_then(ident).map(|i| i.version))
-}
-
 /// A system image signed for the network (`protocol/release`, docs/protocol/net.md): its header, made from the
 /// image's version and build date and signed with `seed` (a signing key), then the image.
 pub fn sign_system(image: &[u8], seed: &[u8; 32]) -> Result<Vec<u8>> {

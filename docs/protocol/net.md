@@ -109,7 +109,9 @@ the 120 s; cleared the same way. A change that cuts the link not tried on the un
    a developer's, put there over USB, `zd1 console run 'echo KEY > /data/zd1/keys/NAME.pub'`), unless it is at least
    as new as the running system (its build date: an older signed release can't be replayed onto the speaker; going
    back is the USB updater's), while another update runs (USB or network: one lock, `zd1_slot::update_lock`), or
-   while the running slot is on trial (the good slot is the way back).
+   while the running slot is on trial (the good slot is the way back). Then a person at the speaker allows it: our OS
+   asks the MCU's `Allow` (ON/OFF held 5 s within 30 s, the LED flashing amber; the client says so), which allows the
+   MCU firmware the system brings too; nobody: `Error DENIED`, nothing written.
 2. **DATA**, the image in order, up to 32 KB a request: unpacked into the slot that doesn't run as it comes
    (`zd1-slot`, as `zd1-update` does), each reply the bytes taken.
 3. **END**: the stream's end checked (the gzip CRC, the SHA-256 of the header), the slot stamped `VERSION SHA[:12]
@@ -138,10 +140,11 @@ signed by another key refused at BEGIN ("signed by none of the keys this speaker
 **The MCU follows its OS**: each system carries its MCU app (`/usr/lib/zd1/mcu/zd1.dmb`, the same build's: `nix
 build .#os-image` takes `.#mcu`); at the MCU's hello (its version, then the good slot), on a confirmed slot (not the
 rescue, not on trial), with the MCU's version not the app's and neither a dev build (`-dirty`), `zd1-linkd` stages it
-and asks the MCU (`docs/mcu/bootloader-hbl.md`). The MCU takes it only once a person at the speaker holds ON/OFF
-5 s (the LED flashes amber for 30 s when asked; the request waits until the MCU restarts): the MCU is what keeps the
-amp safe, and a module someone took over must not be able to give it a firmware without them. The system asks again
-at every hello until then; a version the bootloader took twice and the MCU doesn't run isn't sent again
+and asks the MCU (`docs/mcu/bootloader-hbl.md`). The MCU takes it only within 10 minutes after a person at the
+speaker allowed it, once: the network update's start asks for that (BEGIN, `Allow`), so the hold that allows a system
+also allows the MCU firmware it brings, and nothing waits afterwards. The MCU is what keeps the amp safe, and a module
+someone took over must not be able to give it a firmware without them. Without an allowance the request is refused
+(the MCU logs it); a version the bootloader took twice and the MCU doesn't run isn't sent again
 (`/data/zd1/mcu/follow`: VERSION TRIES).
 [HW 2026-11-19: the MCU on 249a535, the system 6512879 on its confirmed slot: asked at the ready, the MCU through our
 preloader, back as 6512879 45 s later (`docs/mcu/bootloader-hbl.md`).]
@@ -152,7 +155,7 @@ the system (`usr/lib/zd1/mcu/zd1.dmb`) is the same build's `.#mcu`, byte for byt
 
 | From | Takes | The MCU |
 |---|---|---|
-| our OS, over the network | `system-V.signed` | its app from the new system, once someone holds ON/OFF 5 s; only when its version (the app's content) differs |
+| our OS, over the network | `system-V.signed`, after ON/OFF held 5 s on the speaker | its app from the new system, under the same hold; only when its version (the app's content) differs |
 | any of our releases or the stock firmware, over USB (the page's Update, `zd1`) | `os-V.bcd` when the stub or kernel differ, and the system from it (its rescue installs itself); else `system-V.cpio.gz`; `zd1-V.hex` | over DFU, the whole region: the preloader too |
 | a ZD1L, its first install (key-hold, BL2) | `zd1l-V.fw` | B&W's bootloader takes the `.fw`'s app from BL2 |
 

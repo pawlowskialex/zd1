@@ -21,9 +21,10 @@ bespoke exploit for this one device: that is cheap now, so "nobody would bother 
 ## What holds that line
 - **No MCU firmware from the module without a person.** Both bootloaders that take an app from the module (our ZD1
   preloader, the ZD1L's B&W "Net HBL") check only a CRC, and both start only when our app sends the MCU there (or by
-  hand, ON/OFF at power-up). Our app goes only after ON/OFF is held 5 s on the speaker (`mcufw_request`,
-  `docs/mcu/bootloader-hbl.md`), read from the key's pin (`inputs_confirm_take`): nothing on SPI, the host link or IR
-  can fake it.
+  hand, ON/OFF at power-up). Our app goes only within 10 minutes after a person at the speaker allowed it, once: the
+  host link's `Allow`, which our OS asks at the start of a network update, takes ON/OFF held 5 s (`mcufw_allow`,
+  `mcufw_request`, `docs/mcu/bootloader-hbl.md`), read from the key's pin (`inputs_confirm_take`): nothing on SPI, the
+  host link or IR can fake it. Without an allowance the module's request is refused, and nothing waits.
 - **The MCU's parsing of what the module sends is bounded**: every notification is read into a fixed buffer with its
   length kept (`dm870_reg_read_v`, `drain`), handlers check lengths before they index (`wifi.c`, `track`), strings are
   copied with their bound (`copy_str`); a network request through the tunnel goes through the same generated decoder

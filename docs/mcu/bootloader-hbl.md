@@ -74,8 +74,9 @@ A bootloader quiet for 7 s mid-transfer gets the block again; 30 s ends it.
   "ReceiveHostFirmware() - Done", "Restart", "Reset", and B&W's app ran (to RUN; it then asserts on our OS's link, as
   the stock app with our OS always does).
 - How our OS starts it: `zd1-ctl mcu-update` (or anything that writes `mcu-update` to /run/zd1link) checks the staged
-  `.dmb` and notifies 0xD7 (`MCU_FW`, `docs/protocol/registers.md`); our MCU firmware flashes the LED amber for 30 s
-  and waits (until it restarts) for a person to hold ON/OFF 5 s on the speaker; then it goes where it is taken
+  `.dmb` and notifies 0xD7 (`MCU_FW`, `docs/protocol/registers.md`); our MCU firmware takes it within 10 minutes after
+  a person allowed it (the host link's `Allow`: ON/OFF held 5 s, asked at a network update's start; else it refuses,
+  and by hand `zd1 allow` over USB first), and goes where it is taken
   (`mcu/src/mcufw.c`): our preloader on the ZD1 (GPLP0 bit 25, the good slot in GPLP1 for our boot stub, the module
   off, a watchdog reset), the HBL on the ZD1L (ISP_FORCE: `selfdfu_enter`). The image stays staged. The system
   asks by itself when the MCU runs another version than the app it carries (`/usr/lib/zd1/mcu/zd1.dmb`, the same

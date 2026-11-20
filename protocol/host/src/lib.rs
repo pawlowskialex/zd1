@@ -768,8 +768,6 @@ messages! {
         volume_cap: u8,
         /// the module's console is open over the host link (`Console`)
         console_open: bool,
-        /// an MCU app our OS has staged waits for a person at the speaker: ON/OFF held 5 s installs it (`docs/protocol/net.md`)
-        mcu_update: bool,
     }
     /// Open the gate: the MCU waits up to 30 s for a press of ON/OFF on the speaker (its LED flashes purple; the
     /// press does nothing else), then gated requests run until 10 minutes after the last one. `Error DENIED` if
@@ -785,7 +783,8 @@ messages! {
     }
     /// The module's system over the network (docs/protocol/net.md; our OS answers it): BEGIN with the signed header
     /// (`protocol/release`) in `data`, refused unless a key the speaker trusts signed it and it is no older than the
-    /// running system; DATA, the image in order from `offset`; END: the image checked, the slot that doesn't run
+    /// running system, then a person at the speaker allows it (`Allow`: ON/OFF held 5 s within 30 s; `Error DENIED`
+    /// if nobody did); DATA, the image in order from `offset`; END: the image checked, the slot that doesn't run
     /// stamped (DONE), then started once (ready makes it the good one). ABORT: the slot holds no system.
     0x21 SystemUpdate -> UpdateReply [gated, 60000 ms, net] [module] {
         op: UpdateOp,
@@ -794,6 +793,11 @@ messages! {
         /// BEGIN: the header; DATA: the next piece of the image
         data: Bytes[32768],
     }
+    /// A person at the speaker allows a system update from the network, and the MCU firmware it brings: the MCU waits
+    /// up to 30 s for ON/OFF held 5 s (its LED flashes amber; a shorter press works as always); held, it takes an app
+    /// our OS gives it (SPI reg 0xD7) once within 10 minutes, and none without. Our OS asks it at `SystemUpdate`
+    /// BEGIN (docs/protocol/net.md). `Error DENIED` if nobody held it, `Error BUSY` while another confirmation waits.
+    0x22 Allow -> Ok [free, 35000 ms] {}
     /// Close the gate now, or open it for good (kept in the EEPROM across power cycles: a lab unit driven by tools
     /// unattended; the user's choice, made at the speaker since this request is gated).
     0x0F Lock -> Ok [gated, 1000 ms] {
