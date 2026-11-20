@@ -89,8 +89,8 @@ impl Update {
         let running = zd1_sys::OsRelease::read("/etc/os-release").get("BUILD_DATE").to_string();
         if header.built < running {
             return Err(format!(
-                "{} ({}) is older than the running system ({running}): going back is USB's",
-                header.version, header.built
+                "{} is older than the running system ({running}): going back is USB's",
+                header.version
             ));
         }
         let b = zd1_slot::boot();

@@ -5,13 +5,13 @@
 use crate::linkd::{Line, Linkd};
 use crate::update::Update;
 use crate::{Identity, PairGate, Shared, say};
-use std::io::ErrorKind;
+use std::io::{ErrorKind, Write};
 use std::net::TcpStream;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 use tungstenite::handshake::server::{ErrorResponse, Request, Response};
 use tungstenite::protocol::WebSocketConfig;
-use tungstenite::{Message, WebSocket};
+use tungstenite::{HandshakeError, Message, WebSocket};
 use zd1_hostlink::codec::{self, Typed, error_reply};
 use zd1_hostlink::{Err, MESSAGES, msg, net, record};
 
@@ -37,12 +37,26 @@ pub fn run(s: TcpStream, id: &Identity, shared: &Shared) -> Result<(), String> {
         if req.uri().path() == net::PATH {
             Ok(resp)
         } else {
-            let mut r = ErrorResponse::new(Some(format!("the speaker's link is ws://SPEAKER{}\n", net::PATH)));
+            let mut r = ErrorResponse::new(Some(not_ours()));
             *r.status_mut() = tungstenite::http::StatusCode::NOT_FOUND;
             Err(r)
         }
     };
-    let mut ws = tungstenite::accept_hdr_with_config(s, path, Some(cfg)).map_err(|e| format!("not our link: {e}"))?;
+    // a request that isn't a WebSocket's (a browser opening the speaker's address) fails before `path` sees it, and
+    // tungstenite answers nothing: it gets the same 404 here
+    let spare = s.try_clone().map_err(|e| e.to_string())?;
+    let mut ws = match tungstenite::accept_hdr_with_config(s, path, Some(cfg)) {
+        Ok(ws) => ws,
+        Err(e) => {
+            if let HandshakeError::Failure(tungstenite::Error::Protocol(_)) = e {
+                let body = not_ours();
+                let head =
+                    format!("HTTP/1.1 404 Not Found\r\nContent-Length: {}\r\nConnection: close\r\n\r\n", body.len());
+                let _ = (&spare).write_all((head + &body).as_bytes());
+            }
+            return Err(format!("not our link: {e}"));
+        }
+    };
 
     // Noise_XX: -> e; <- e, ee, s, es; -> s, se. The client's static key is its identity from here on.
     let noise = |e: snow::Error| format!("the handshake: {e}");
@@ -78,6 +92,11 @@ pub fn run(s: TcpStream, id: &Identity, shared: &Shared) -> Result<(), String> {
     let why = s.serve(shared).unwrap_or_else(|e| e);
     say(&format!("{}: {why}", s.who));
     Ok(())
+}
+
+/// What anything but the link gets, with a 404.
+fn not_ours() -> String {
+    format!("the speaker's link is ws://SPEAKER{}\n", net::PATH)
 }
 
 /// The next binary message (the handshake's).
