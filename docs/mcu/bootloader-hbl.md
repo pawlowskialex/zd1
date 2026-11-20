@@ -106,7 +106,8 @@ page at 0x80007E00: the app's `.dmb` header, written after a transfer checks, er
   until DFU, its flash untouched [HW 2026-11-19]. Which of the three did it is not known; the emulator showed none.
 - **Its LED**: stock's colour for a firmware update, white, blinking slowly (1 s) while it waits for the module and
   quickly (200 ms) while the app comes in, drawn from `wait_ms` (every wait passes there); the PWM is the app's
-  (`mcu/src/led_pwm.c`). Not yet seen on the unit (4b7baee).
+  (`mcu/src/led_pwm.c`) [HW 2026-11-20, 4b7baee: the slow blink while the module started, the quick one through the
+  transfer, the app back 46 s after it left].
 - **On the unit** [HW 2026-11-19, the preloader of 249a535 in flash, its app 249a535, the system 6512879 on its
   confirmed slot B]: at the module's ready the system asked for its own MCU app (the MCU follows its OS), the MCU went
   off USB, and 45 s later the system's app 6512879 greeted with the record at 0x80007E00 (0x120A2 bytes), the module
