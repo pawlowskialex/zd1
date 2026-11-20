@@ -41,6 +41,10 @@ static uint32_t source_amp_idle_ms(void) { return (uint32_t)g_settings.amp_idle_
  * DSP and a module starting read as sound: the amp woke at boot) */
 #define LEVEL_SETTLE_MS 1000
 #define READY_LOOK_MS   30000 /* silent this long: the LED stops breathing and dims (the amp still sleeps at 5 min) */
+/* The codec's ADC is powered for AUX analog only (stock 1.00.00's set-up), so it comes up as that input is chosen.
+ * The volume stays muted this long after (ours: 1.00.00 waits 20 ms and mutes nothing when the optical lock goes
+ * while it plays; the time is a guess at the ADC's high-pass settling, not a datasheet figure). */
+#define ADC_UP_MS 600
 /* the source silent this long: to where something plays or can be heard (longer
  * than a USB stream's 10 s end, so the computer's next play is new) */
 #define SETTLE_MS        15000
@@ -74,6 +78,8 @@ static int32_t level = -1; /* the DSP's input meter, last sample (-1: not read) 
 static uint32_t t_level, t_level_read; /* over the threshold last / read last */
 static uint32_t floor_lv[SRC_N];       /* the learnt noise floor per metered source (5.23; 0: not learnt yet) */
 static uint32_t t_settle;              /* the meter decides nothing before this */
+static bool adc_up;                    /* the codec's ADC was just powered: the volume ramp waits for t_adc */
+static uint32_t t_adc;
 
 static const char *src_name(source_t s) {
     static const char *n[] = {"none", "usb", "aux", "wifi", "ipod"};
@@ -197,7 +203,14 @@ static void amp_sleep(uint32_t hold_ms) {
     phase = RUN_ASLEEP;
 }
 
+/* The codec's side of an input: stock 1.00.00 writes the ADC's power with every input, not for AUX alone */
+static void codec_input(bool analog, uint32_t now) {
+    codec_aux_mode(analog);
+    adc_up = analog;
+    t_adc = now + ADC_UP_MS;
+}
 static void route(source_t s) {
+    bool analog = false;
     switch (s) {
     case SRC_USB:
         dsp_set_input(DSP_IN_USB);
@@ -213,12 +226,13 @@ static void route(source_t s) {
             dsp_set_input(DSP_IN_OPTICAL);
         else {
             dsp_set_input(DSP_IN_AUX);
-            codec_aux_mode();
+            analog = true;
         }
         break;
     default:
         break;
     }
+    codec_input(analog, tick_ms());
 }
 
 static void announce(void) {
@@ -783,6 +797,8 @@ void source_poll(uint32_t now) {
     auto_switch(now);
     settle(now);
 
+    if (adc_up && tick_after(now, t_adc))
+        adc_up = false; /* here, not in the ramp: an amp asleep for weeks would find the time wrapped */
     if (state == SYS_RUN) {
         if (sounding(cur))
             t_active = now;
@@ -799,6 +815,8 @@ void source_poll(uint32_t now) {
             break;
         }
         case RUN_RAMP:
+            if (adc_up)
+                break; /* the ADC first */
             if (tick_after(now, t_phase + ramp_ms)) {
                 ramp_i++;
                 t_phase = now;
@@ -829,9 +847,16 @@ void source_poll(uint32_t now) {
             t_aux = now + AUX_SENSE_MS;
             dsp_input_t want = dsp_spdif_locked() == 1 ? DSP_IN_OPTICAL : DSP_IN_AUX;
             if (want != dsp_input()) {
+                if (want == DSP_IN_AUX && (phase == RUN_RAMP || phase == RUN_PLAY)) {
+                    set_vol(DSP_VOL_MUTE); /* to analog with the sound on: up again once the ADC is */
+                    phase = RUN_RAMP;
+                    ramp_i = 0;
+                    t_phase = now;
+                }
                 dsp_set_input(want);
-                if (want == DSP_IN_AUX)
-                    codec_aux_mode();
+                codec_input(want == DSP_IN_AUX, now);
+                t_settle = now + LEVEL_SETTLE_MS; /* a new input for the meter too */
+                t_level = now - LEVEL_GAP_MS;
                 log_puts(want == DSP_IN_OPTICAL ? "[src] aux: optical (S/PDIF lock)\n" : "[src] aux: analog\n");
             }
         }

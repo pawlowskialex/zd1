@@ -122,6 +122,8 @@ None of these has been seen on the unit. Treat them as "the code does something 
   that gets the keys. Spotify plays through AirPlay. Its credentials are not
   kept across boots.
 - AUX optical (needs a mini-TOSLINK cable); IR with the real remote; the iPod dock (not implemented).
+- AUX analog since the codec is set up as stock 1.00.00 did (the ADC powered for that input only, the volume muted
+  while it comes up): not tried on a unit (`docs/mcu/stock-firmware.md`, Codec).
 - Wi-Fi setup without a computer (the stock JBConnect flow).
 - Our OS with the stock MCU firmware: not supported (it answers none of the stock MCU's checks: "9112", the
   network-settings backup; `docs/protocol/spi-registers.md`, section 4.2).

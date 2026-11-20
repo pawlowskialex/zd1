@@ -92,7 +92,8 @@ USB, Wi-Fi and AUX analog play on the unit with our firmware [HW]; AUX optical a
 - **Codec DAC master mute** = codec reg 4 bit 0. The codec init leaves it set; stock clears it right after the amp
   unmute and sets it on every source switch. Missing this = silence. [HW]
 - Bring-up order that works: CS2000 first (it makes the codec's MCLK), then DSP power/reset/download, then codec
-  (PLL lock ~30 ms after the kick). Details: `docs/mcu/stock-firmware.md`. [HW]
+  (clocked from that MCLK itself, stock 1.00.00's set-up; with 2.04.05's, from the codec's PLL, locked ~30 ms after
+  its kick). Details: `docs/mcu/stock-firmware.md`. [HW]
 
 ## Power
 - Mains → SMPS → logic rails, plus a **separate amp supply gated by PB09**; ~2 s soft start before PB16 may unmute.

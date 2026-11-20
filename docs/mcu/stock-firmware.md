@@ -121,8 +121,28 @@ writes on some paths are input-path selectors, not a mute: `FUN_800200b4` writes
 writes none of them: with the download's defaults USB, AUX analog and the module play [HW].
 
 ## Codec (AD193x, TWI 0x04) and CS2000
-- Init `FUN_80020db0`: reg0 = 0x19, 20 ms, reg0 = 0x18, poll reg1 bit 3 (PLL lock, needs MCLK from the CS2000 first;
-  ~30 ms), reg2 = 0x02, reg4 = 0x01, reg5 = 0xC0, reg14 = 0x7E (0x72 for AUX), reg0 = 0x98. PB27 high during init only.
+- 2.04.05's init `FUN_80020db0`: reg0 = 0x19, 20 ms, reg0 = 0x18, poll reg1 bit 3 (PLL lock, needs MCLK from the
+  CS2000 first; ~30 ms), reg2 = 0x02, reg4 = 0x01, reg5 = 0xC0, reg14 = 0x7E (0x72 for AUX), reg0 = 0x98. PB27 high
+  during init only. The codec's DAC and ADC run from its PLL, the rate fields (reg2 bits 2:1, reg14 bits 7:6) at 1.
+- **1.00.00's set-up is another one, and ours follows it** (addresses in a unit's own 1.00.00 dump, which isn't in
+  `blobs/`) [RE]: init `FUN_80016a34` writes reg2 = 0x04, reg5 = 0xC0, reg1 = 0x03, reg0 = 0xB8, reg14 = 0xBF,
+  reg4 = 0x01, with no PLL kick and no wait: the DAC and ADC are clocked from MCLK itself (reg1 bits 1:0), the rate
+  fields at 2. The DSP download, its parameters, the volume table and the CS2000's 44.1 kHz ratio are the same bytes
+  in both versions; the codec's registers are what differs in the audio path.
+  - Reg 14 (ADC control 0) is kept in RAM, 0xB3 after the set-up (the ADC powered down, bit 0). The input select
+    `FUN_8001606c` writes it: AUX analog powers the ADC (`FUN_80016998`) and unmutes ADC1 (`FUN_800169b4`: kept &
+    0xF3), every other input mutes ADC1 (`FUN_800169d0`: kept | 0x0C) and powers the ADC down (`FUN_8001697c`),
+    20 ms after the DSP's input.
+  - The AUX source's S/PDIF poll (`FUN_800161b0`, every 350 ms) calls that input select with the sound on: 1.00.00
+    powers the ADC up unmuted when the optical lock goes. Ours mutes the volume around it (`ADC_UP_MS`,
+    `mcu/src/source.c`).
+  - Mute and unmute write reg 14 after reg 4: `FUN_80016a10` (reg4 = 1, reg14 = kept | 0x0C), `FUN_800169ec`
+    (reg4 = 0, reg14 = kept & 0xF3). Ours leaves ADC1 unmuted on AUX analog while the DAC is muted: the input meter
+    that wakes a sleeping amp listens through it.
+  - On the unit [HW 2026-11-20, before the volume's wait for the ADC was added]: this set-up boots (`codec AD193x:
+    ok`), the module's source plays with no fault, and its owner, who had 1.00.00 before, hears it as the sound he
+    knew, where 2.04.05's set-up sounded thinner to him (by ear, days apart, no measurement). AUX analog and
+    optical with it: not tried on a unit.
 - **reg4 bit 0 = DAC master mute.** Stock clears it right after the amp unmute (`FUN_80013a68` → `FUN_80020d68`) and
   sets it on every source switch (`FUN_800138f0` → `FUN_80020d8c`) [HW].
 - CS2000 ratios (12.20, 12 MHz reference): 0x000AEC33 = 32 kHz, 0x000F0D84 = 44.1 kHz, 0x0010624D = 48 kHz. Not
