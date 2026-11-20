@@ -414,7 +414,7 @@ impl Speaker {
     /// The speaker on the network at `addr` (an address, NAME.local; HOST:PORT), this browser being `identity`
     /// (`newIdentity`'s text). `known`: the speaker's key met at this address before (hex; another one there is an
     /// error: not the speaker this browser paired with), else the page keeps `speakerKey` now. The first request that
-    /// needs it asks for the pairing (events.prompt: a press of ON/OFF on the speaker).
+    /// needs it asks for the pairing (events.prompt: ON/OFF held 5 s on the speaker).
     #[wasm_bindgen(js_name = connectNet)]
     pub async fn connect_net(
         addr: String,

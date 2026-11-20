@@ -41,7 +41,7 @@ struct Cli {
     #[arg(long, global = true)]
     log: bool,
     /// The speaker over the network, at HOST (its address or NAME.local; HOST:PORT): through our module OS, a client
-    /// paired with a press of ON/OFF on the speaker the first time (docs/protocol/net.md). What changes the boards'
+    /// paired the first time by holding ON/OFF on the speaker for 5 s (docs/protocol/net.md). What changes the boards'
     /// firmware other than the system update stays USB's.
     #[arg(long, global = true, value_name = "HOST")]
     net: Option<String>,

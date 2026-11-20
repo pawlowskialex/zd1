@@ -172,7 +172,10 @@ All in `src/source.c` unless said otherwise; the times are constants there.
   receiver resumes its sender and pauses the others (SPI 0xC2, `zd1-linkd`); a sender that can't be resumed from here
   (AirPlay without a remote) stays paused until it plays. Held 2 s: standby. After a protection trip a press
   acknowledges it (standby); until then nothing brings a source back (a stream, a plug, the host link). While a tool
-  asks for the gate it confirms that and does nothing else. The host link does the same: `zd1 play
+  asks for the gate it confirms that and does nothing else. **Held 5 s** (past standby): the confirmation of what
+  the network or the module asked and only a person at the speaker may allow, a pairing over the network or an MCU
+  update from the module (`inputs_confirm_take`: the key's pin, nothing the host link or the remote injects; a
+  shorter press or hold works as always meanwhile). The host link does the same: `zd1 play
   airplay|spotify|snapcast`.
 - **Newest wins.** Whatever starts playing takes the speaker: a receiver through its play state (the module decides
   among its own, `module/os/README.md`; the speaker follows its `pl`), AUX by being plugged in, and a USB stream that
@@ -215,7 +218,8 @@ used (`re/mcu/extracted/led_patterns.txt` has them).
 | playing / ready (silent, paused) / amp asleep | steady / breathing (4 s) for the first 30 s of silence, then dim (the amp itself sleeps after its idle time, 5 min unless set) / dim |
 | ON/OFF choosing a source | the candidate's colour, a fast pulse |
 | volume | the brightness shows the level for a second; red blinks at the ends |
-| the gate | a fast purple blink while it waits for the press, green / red after |
+| the gate, a pairing over the network | a fast purple blink while it waits for the press (pairing: ON/OFF held 5 s), green / red after |
+| an MCU update from the module | a fast amber blink for 30 s: it waits for ON/OFF held 5 s |
 | changes | 450 ms crossfades |
 
 Colours and levels are in perceptual units (0..255, the PWM gets the square): even fades and breathing on a 400-step

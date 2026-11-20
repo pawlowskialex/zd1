@@ -35,8 +35,10 @@ static uint32_t ack_t0;
  * seen on the unit. Wi-Fi without a named receiver shares AirPlay's white (the speaker's main use); its states differ
  * by animation, and the freed colour is the dock's. */
 static const rgb8_t RED = {255, 0, 0};
-static const rgb8_t flash_color[] = {
-    [FLASH_PURPLE] = {170, 0, 255}, [FLASH_GREEN] = {0, 255, 40}, [FLASH_RED] = {255, 0, 0}};
+static const rgb8_t flash_color[] = {[FLASH_PURPLE] = {170, 0, 255},
+                                     [FLASH_GREEN] = {0, 255, 40},
+                                     [FLASH_RED] = {255, 0, 0},
+                                     [FLASH_AMBER] = {255, 110, 0}};
 #define WHITE LED_WHITE
 static const rgb8_t src_color[SRC_N] = {
     [SRC_NONE] = {255, 0, 0}, [SRC_USB] = {0, 174, 255},  [SRC_AUX] = {255, 221, 0}, /* AUX orange here */

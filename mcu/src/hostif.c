@@ -110,7 +110,7 @@ void hostif_first_start(void) {
 }
 
 bool hostif_key(uint8_t key) {
-    if (confirm_wait && key == KEY_ONOFF) {
+    if (confirm_wait && !cur_net && key == KEY_ONOFF) { /* the USB gate's Unlock (a network Pair takes the gesture) */
         confirmed = true;
         swallow_release = true;
         return true;
@@ -386,7 +386,9 @@ static bool gate_pass(void) {
     return true;
 }
 
-/* From the network it is our OS's `Pair`: it always waits for a press, and opens nothing on USB (the gate is USB's) */
+/* From the network it is our OS's `Pair`: it always waits for the confirmation (ON/OFF held 5 s: an ON/OFF press
+ * someone makes to switch the speaker on or off must not pair whoever asked meanwhile), and opens nothing on USB (the
+ * gate is USB's) */
 static void req_unlock(void) {
     uint16_t secs;
     if (!cur_net && hostif_gate(&secs) != ZD1H_GATE_LOCKED) {
@@ -397,7 +399,7 @@ static void req_unlock(void) {
     confirm_until = uptime + CONFIRM_MS;
     confirm_wait = true; /* hostif_poll finishes it */
     led_flash(FLASH_PURPLE, CONFIRM_MS);
-    log_puts(cur_net ? "[net] press ON/OFF on the speaker within 30 s to pair a client on the network\n"
+    log_puts(cur_net ? "[net] hold ON/OFF on the speaker for 5 s within 30 s to pair a client on the network\n"
                      : "[gate] press ON/OFF on the speaker within 30 s to allow the computer to change it\n");
 }
 
@@ -909,13 +911,21 @@ void hostif_poll(uint32_t now) {
         modcon_host_open(false); /* nobody reads it */
         log_puts("[con] the module's console: closed (the host stopped polling)\n");
     }
+    if (inputs_confirm_take()) { /* the confirmation: a network Pair waiting, else an MCU update our OS asked for */
+        if (confirm_wait && cur_net)
+            confirmed = true;
+        else if (mcufw_waiting())
+            mcufw_enter();
+        else
+            log_puts("[key] ON/OFF held 5 s: nothing waits for a confirmation\n");
+    }
     if (confirm_wait) { /* an Unlock: the press, or its time runs out (the request stays in) */
         static const zd1h_ok_t ok;
         if (confirmed) {
             confirm_wait = false;
             led_flash(FLASH_GREEN, 500);
             if (cur_net)
-                log_puts("[net] pressed: our OS pairs the client\n");
+                log_puts("[net] confirmed: our OS pairs the client\n");
             else {
                 unlocked = true;
                 unlock_until = now + GATE_MS;
@@ -926,7 +936,8 @@ void hostif_poll(uint32_t now) {
             confirm_wait = false;
             led_flash(FLASH_RED, 500);
             log_puts(cur_net ? "[net] not confirmed: not paired\n" : "[gate] not confirmed: still locked\n");
-            error(ZD1H_ERR_DENIED, "nobody pressed ON/OFF on the speaker within 30 s");
+            error(ZD1H_ERR_DENIED, cur_net ? "nobody held ON/OFF on the speaker for 5 s within 30 s"
+                                           : "nobody pressed ON/OFF on the speaker within 30 s");
         } else
             return;
         request_done();

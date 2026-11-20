@@ -21,7 +21,7 @@ typedef struct {
     uint8_t kind, source, player, act;
 } led_look_t; /* source_t, ZD1_PLAYER_*, led_act_t */
 
-typedef enum { FLASH_PURPLE, FLASH_GREEN, FLASH_RED } led_flash_t;
+typedef enum { FLASH_PURPLE, FLASH_GREEN, FLASH_RED, FLASH_AMBER } led_flash_t; /* AMBER: an MCU update waits */
 
 void led_init(void);
 void led_show(const led_look_t *l);           /* what the speaker does now (cheap when unchanged: call it often) */

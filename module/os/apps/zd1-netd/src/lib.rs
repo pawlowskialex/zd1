@@ -1,6 +1,6 @@
 //! zd1-netd: the network link (docs/protocol/net.md). Paired clients (the web page, `zd1 --net`) reach the speaker's
 //! host link over the LAN: HTTP on port 80, `GET /zd1` upgraded to a WebSocket, a Noise_XX session inside it, the host
-//! link's messages inside that. A client the speaker hasn't paired may say `Hello` and `Pair` (a press of ON/OFF on
+//! link's messages inside that. A client the speaker hasn't paired may say `Hello` and `Pair` (ON/OFF held 5 s on
 //! the speaker); a paired one makes the requests the spec marks `net`. We answer `Pair` and `SystemUpdate`; the rest
 //! goes to zd1-linkd (`host SEQ HEX`), which answers the module's own (settings, records) and passes the MCU's to it.
 //! One thread per connection, at most `net::SESSIONS`.

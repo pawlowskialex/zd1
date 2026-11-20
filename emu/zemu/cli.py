@@ -141,6 +141,8 @@ def run(a):
                     s.send(v)
                 elif kind == "press":
                     s.press(float(v))
+                elif kind == "confirm":
+                    s.confirm(float(v))
                 elif kind == "sh":
                     rc, out = s.sh(v, a.timeout)
                     if a.quiet:
@@ -246,7 +248,14 @@ def main(argv=None):
         "--press",
         action=Step,
         metavar="SECS",
-        help="ON/OFF pressed SECS (virtual) from now, while the next steps run (a person at the speaker: pairing)",
+        help="ON/OFF pressed SECS (virtual) from now, while the next steps run (a person at the speaker: the USB gate)",
+    )
+    g.add_argument(
+        "--confirm",
+        action=Step,
+        metavar="SECS",
+        help="ON/OFF held 5 s, SECS (virtual) from now, while the next steps run (a person at the speaker: pairing, "
+        "an MCU update from the module)",
     )
     g.add_argument("--spi", action=Step, metavar="CMDS", help='the SPI test host (module alone): "rd 0x11 rdv 0xc0"')
     g.add_argument(

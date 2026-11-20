@@ -193,12 +193,14 @@ impl<L: Link> Mcu<L> {
             Err(Error::Mcu(Err::Locked, _)) if unlock => {}
             r => return r,
         }
-        // the firmware waits 30 s for the press; a patient program (a person at it) asks again until they press or
+        // the firmware waits 30 s for the press (pairing: ON/OFF held 5 s); a patient program (a person at it) asks again until they press or
         // stop it
         let (how, req) = self.link.unlock();
         loop {
             self.ev.prompt(&if how == "Pair" {
-                "pair with the speaker: press ON/OFF on it within 30 s (its LED flashes purple)".to_string()
+                "pair with the speaker: hold ON/OFF on it for 5 s within 30 s, while its LED flashes purple (it goes to standby at \
+                 2 s: keep holding; a press wakes it again after)"
+                    .to_string()
             } else {
                 format!(
                     "{name} changes the speaker: press ON/OFF on it within 30 s to allow it (its LED flashes purple)"
@@ -206,13 +208,18 @@ impl<L: Link> Mcu<L> {
             });
             match self.call_once(how, &req).await {
                 Err(Error::Mcu(Err::Denied, _)) if self.ev.patient() && !self.ev.cancelled() => continue,
+                // another pairing waits, or one was just refused (anyone on the network can ask): in a moment
+                Err(Error::Mcu(Err::Busy, _)) if how == "Pair" && self.ev.patient() && !self.ev.cancelled() => {
+                    crate::sleep(3000).await;
+                    continue;
+                }
                 Err(Error::Mcu(Err::Denied, _)) if self.ev.cancelled() => return Err(Error::Cancelled),
                 r => {
                     r?;
                 }
             }
             self.ev.step(if how == "Pair" {
-                "paired: ON/OFF pressed on the speaker"
+                "paired: confirmed on the speaker"
             } else {
                 "allowed: ON/OFF pressed on the speaker"
             });

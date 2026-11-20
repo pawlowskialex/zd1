@@ -26,7 +26,9 @@ static uint8_t qh, qt;
 static uint32_t rep_at;
 static int rep_key = -1;
 static uint32_t onoff_at;
-static bool onoff_down; /* ON/OFF press time, held and not yet a hold */
+static bool onoff_down;  /* ON/OFF press time, held and not yet a hold */
+static uint32_t held_at; /* ON/OFF down since, until the confirmation */
+static bool held, confirm;
 
 static void push(key_event_t k) {
     uint8_t n = (qt + 1) & 7;
@@ -44,6 +46,11 @@ key_event_t inputs_key(void) {
     return k;
 }
 const inputs_t *inputs(void) { return &st; }
+bool inputs_confirm_take(void) {
+    bool c = confirm;
+    confirm = false;
+    return c;
+}
 
 void inputs_init(void) {
     for (int i = 0; i < D_N; i++) {
@@ -78,12 +85,14 @@ void inputs_poll(uint32_t now) {
                         rep_at = now + REPEAT_DELAY;
                     }
                     if (i == D_ONOFF) {
-                        onoff_down = true;
-                        onoff_at = now;
+                        onoff_down = held = true;
+                        onoff_at = held_at = now;
                     }
                 } else {
                     if (rep_key == i)
                         rep_key = -1;
+                    if (i == D_ONOFF)
+                        held = false;
                     if (i == D_ONOFF && onoff_down) {
                         onoff_down = false;
                         push(KEY_ONOFF_SHORT);
@@ -95,6 +104,10 @@ void inputs_poll(uint32_t now) {
     if (onoff_down && tick_after(now, onoff_at + ONOFF_HOLD_MS)) {
         onoff_down = false;
         push(KEY_ONOFF_HOLD);
+    }
+    if (held && tick_after(now, held_at + CONFIRM_HOLD_MS)) { /* the confirmation */
+        held = false;
+        confirm = true;
     }
     if (rep_key >= 0 && d[rep_key].stable && tick_after(now, rep_at)) {
         push(keyof[rep_key]); /* auto-repeat */

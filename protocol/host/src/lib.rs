@@ -139,6 +139,21 @@ pub mod net {
     pub const SESSIONS: usize = 4;
     /// A session with nothing for this long ends, s.
     pub const IDLE_S: u32 = 300;
+    /// A client the speaker hasn't paired has this long from its connection, s: its `Hello` and one `Pair` (whose
+    /// wait for the person at the speaker is 30 s), so nobody holds the sessions without pairing.
+    pub const UNPAIRED_S: u32 = 60;
+    /// The web pages that may open the link (the WebSocket's `Origin`): the published page, and the page served from
+    /// a checkout on this computer (`tools/zeppelin web`, any port). Programs (`zd1`) send none. Any other site the
+    /// person has open would otherwise reach the speaker from their browser, which is on the speaker's network.
+    pub fn origin_allowed(origin: &str) -> bool {
+        let local = |p: &str| {
+            origin.strip_prefix(p).is_some_and(|rest| {
+                rest.is_empty()
+                    || rest.strip_prefix(':').is_some_and(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()))
+            })
+        };
+        origin == "https://pawlowskialex.github.io" || local("http://localhost") || local("http://127.0.0.1")
+    }
     /// A setting or action that can cut a client off the speaker (an interface's address, the Wi-Fi's networks, the
     /// defaults back): made over the network it is provisional, kept once that client connects again within
     /// [`CONFIRM_S`], else the settings from before come back. Only a session opened [`SETTLE_S`] or more after the
@@ -755,8 +770,9 @@ messages! {
     /// nobody pressed. Answered at once when the gate is open.
     0x0E Unlock -> Ok [free, 35000 ms] {}
     /// Pair this client with the speaker (the network link: our OS answers it, docs/protocol/net.md). The MCU waits up
-    /// to 30 s for a press of ON/OFF on the speaker (its LED flashes purple), whatever the gate says; pressed, the
-    /// client's key is kept with `name`. `Error DENIED` if nobody pressed, `Error BUSY` while another one waits.
+    /// to 30 s for ON/OFF held 5 s on the speaker (its LED flashes purple; a shorter press works as always, the 2 s
+    /// hold still goes to standby), whatever the gate says; confirmed, the client's key is kept with `name`.
+    /// `Error DENIED` if nobody confirmed, `Error BUSY` while another one waits.
     0x20 Pair -> Ok [free, 35000 ms, net] [module] {
         /// what the client calls itself (the `Controllers` record): a browser, a computer
         name: String[32],

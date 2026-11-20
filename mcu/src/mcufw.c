@@ -1,6 +1,7 @@
 #include <string.h>
 #include <pm.h>
 #include "log.h"
+#include "led.h"
 #include "modboot.h"
 #include "selfdfu.h"
 #include "mcufw.h"
@@ -17,7 +18,22 @@ static bool in_flash(uint32_t from, uint32_t to, const char *what) {
 bool mcufw_preloader_present(void) { return in_flash(0x80004000u, MCUFW_RECORD, MCUFW_PRELOADER_MAGIC); }
 bool mcufw_hbl_present(void) { return in_flash(0x80000000u, 0x80008000u, "Net HBL"); }
 
-/* our OS asks for the app it has staged (reg 0xD7): into what takes it from the module. The module goes off first
+static bool waiting;
+
+void mcufw_request(void) {
+    if (!mcufw_preloader_present() && !mcufw_hbl_present()) {
+        log_puts(
+            "[mcufw] our OS has an app for us, but no bootloader here takes one from the module (a ZD1 without the "
+            "preloader): ignored\n");
+        return;
+    }
+    waiting = true;
+    led_flash(FLASH_AMBER, 30000);
+    log_puts("[mcufw] our OS has an app for the MCU: hold ON/OFF on the speaker for 5 s to install it\n");
+}
+bool mcufw_waiting(void) { return waiting; }
+
+/* a person confirmed the app our OS has staged (reg 0xD7): into what takes it from the module. The module goes off first
  * (selfdfu: it boots again under the bootloader, which asks it for BL2). */
 void mcufw_enter(void) {
     if (mcufw_preloader_present()) {

@@ -936,18 +936,19 @@ impl App {
                 self.say(&format!("[zd1-linkd] MCU {}, this system's {carried}: left alone ({why})\n", self.mcu))
             }
             mcufw::Follow::GaveUp => self.say(&format!(
-                "[zd1-linkd] MCU {}: asked {} times for {carried}, it didn't take it: not again\n",
+                "[zd1-linkd] MCU {}: sent {carried} {} times, it doesn't run it: not again\n",
                 self.mcu,
                 mcufw::TRIES
             )),
             mcufw::Follow::Ask(n) => {
+                // the MCU takes it once a person confirms at the speaker (mcu/src/mcufw.c): asked at every hello until
+                // then; a try counts when its bootloader takes the transfer (mcu_firmware_to_serve)
                 self.say(&format!(
-                    "[zd1-linkd] MCU {}: this system carries {carried}: asking for it ({n})\n",
+                    "[zd1-linkd] MCU {}: this system carries {carried}: asking for it (transfer {n})\n",
                     self.mcu
                 ));
-                let staged = std::fs::create_dir_all("/data/zd1/mcu")
-                    .and_then(|_| std::fs::write(mcufw::FOLLOWED, format!("{carried} {n}\n")))
-                    .and_then(|_| std::fs::write(mcufw::PENDING, &app));
+                let staged =
+                    std::fs::create_dir_all("/data/zd1/mcu").and_then(|_| std::fs::write(mcufw::PENDING, &app));
                 match staged {
                     Ok(()) => self.mcu_update(),
                     Err(e) => self.say(&format!("[zd1-linkd] {}: {e}\n", mcufw::PENDING)),
@@ -983,7 +984,18 @@ impl App {
         }
         let image = std::fs::read(mcufw::PENDING).ok()?;
         match mcufw::check_dmb(&image) {
-            Ok(()) => Some(image),
+            Ok(()) => {
+                // a try of this version (FOLLOWED: a version the MCU never takes is sent mcufw::TRIES times)
+                if let Some(v) = zd1_release::ident::find(&image).map(|i| i.version) {
+                    let before = std::fs::read_to_string(mcufw::FOLLOWED).unwrap_or_default();
+                    let n = match before.split_once(' ') {
+                        Some((w, n)) if w == v => n.trim().parse::<u32>().unwrap_or(0) + 1,
+                        _ => 1,
+                    };
+                    let _ = std::fs::write(mcufw::FOLLOWED, format!("{v} {n}\n"));
+                }
+                Some(image)
+            }
             Err(e) => {
                 self.say(&format!("[zd1-linkd] {}: {e}: not served\n", mcufw::PENDING));
                 None

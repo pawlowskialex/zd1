@@ -19,7 +19,8 @@ use std::time::{Duration, Instant};
 pub const PENDING: &str = "/data/zd1/mcu/pending.dmb";
 /// The MCU's app this system carries (module/os/assemble.py: the release's `zd1.dmb`): the MCU follows its OS.
 pub const CARRIED: &str = "/usr/lib/zd1/mcu/zd1.dmb";
-/// How often the MCU was asked for which version (`VERSION TRIES`): a version it never takes is asked for twice.
+/// How often the MCU's bootloader took which version (`VERSION TRIES`): a version that never ends up running is sent
+/// twice. Asking alone doesn't count: the MCU waits for a person's confirmation (mcu/src/mcufw.c).
 pub const FOLLOWED: &str = "/data/zd1/mcu/follow";
 pub const TRIES: u32 = 2;
 
@@ -30,13 +31,13 @@ pub enum Follow {
     Same,
     /// not now: why
     Not(&'static str),
-    /// ask for it, the `n`th time for this version
+    /// ask for it: its `n`th transfer for this version
     Ask(u32),
-    /// asked [`TRIES`] times for this version already
+    /// its bootloader took this version [`TRIES`] times already and it doesn't run it
     GaveUp,
 }
 
-/// The MCU runs `has`, this system carries `carried`, asked `asked` (`FOLLOWED`: version, times) before; the system
+/// The MCU runs `has`, this system carries `carried`, sent `asked` (`FOLLOWED`: version, times) before; the system
 /// runs from a confirmed slot (`confirmed`: not the rescue, not on trial).
 pub fn follow(has: &str, carried: &str, asked: Option<(&str, u32)>, confirmed: bool) -> Follow {
     if has == carried {

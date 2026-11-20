@@ -35,6 +35,10 @@ static inline int mcufw_header_ok(const volatile uint8_t *h) {
 #include <stdbool.h>
 bool mcufw_preloader_present(void); /* the ZD1 with our preloader at 0x80004000 */
 bool mcufw_hbl_present(void);       /* the ZD1L: B&W's "Net HBL" at 0x80000000 */
-void mcufw_enter(void);             /* our OS has an app staged: into what takes it (no return), else log */
+/* Our OS has an app staged (reg 0xD7). A module can be taken over and the MCU is what keeps the amp safe, so the app
+ * is only taken with a person's confirmation at the speaker (inputs_confirm_take): until then it waits (RAM). */
+void mcufw_request(void);
+bool mcufw_waiting(void);
+void mcufw_enter(void); /* into what takes the module's app (no return), else log */
 #endif
 #endif

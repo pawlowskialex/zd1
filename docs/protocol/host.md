@@ -38,8 +38,8 @@ press is its own check. `zd1` and the web page ask for the press and unlock by t
 ## Over the network
 
 The same messages reach the speaker over the LAN through our module OS (`net.md`): a WebSocket, a Noise session, a
-client paired once with a press of ON/OFF (`Pair`). Only the requests marked in the Network column travel: `net` ones
-our OS passes to the MCU (SPI reg 0xD9: past the gate, the pairing was the press), `our OS` ones it answers itself.
+client paired once by holding ON/OFF 5 s on the speaker (`Pair`). Only the requests marked in the Network column travel: `net` ones
+our OS passes to the MCU (SPI reg 0xD9: past the gate, the pairing was the person at it), `our OS` ones it answers itself.
 
 ## Requests
 
@@ -50,7 +50,7 @@ The host's timeout is the request's own: the MCU answers within it, or the host 
 | 0x01 | Hello |  | net | - | HelloReply | 1 s | Which firmware this is. Also answered from the interrupt as `usb::HELLO` (no CALL needed). |
 | 0x02 | Info |  | net | - | InfoReply | 2 s | The speaker's state at a glance: the MCU, the source and amp, the network module. |
 | 0x0E | Unlock |  |  | - | Ok | 35 s | Open the gate: the MCU waits up to 30 s for a press of ON/OFF on the speaker (its LED flashes purple; the press does nothing else), then gated requests run until 10 minutes after the last one. `Error DENIED` if nobody pressed. Answered at once when the gate is open. |
-| 0x20 | Pair |  | our OS | `name` str <= 32: what the client calls itself (the `Controllers` record): a browser, a computer | Ok | 35 s | Pair this client with the speaker (the network link: our OS answers it, docs/protocol/net.md). The MCU waits up to 30 s for a press of ON/OFF on the speaker (its LED flashes purple), whatever the gate says; pressed, the client's key is kept with `name`. `Error DENIED` if nobody pressed, `Error BUSY` while another one waits. |
+| 0x20 | Pair |  | our OS | `name` str <= 32: what the client calls itself (the `Controllers` record): a browser, a computer | Ok | 35 s | Pair this client with the speaker (the network link: our OS answers it, docs/protocol/net.md). The MCU waits up to 30 s for ON/OFF held 5 s on the speaker (its LED flashes purple; a shorter press works as always, the 2 s hold still goes to standby), whatever the gate says; confirmed, the client's key is kept with `name`. `Error DENIED` if nobody confirmed, `Error BUSY` while another one waits. |
 | 0x21 | SystemUpdate | gated | our OS | `op` [UpdateOp](#updateop)<br>`offset` u32: DATA: where `data` goes in the image<br>`data` bytes <= 32768: BEGIN: the header; DATA: the next piece of the image | UpdateReply | 60 s | The module's system over the network (docs/protocol/net.md; our OS answers it): BEGIN with the signed header (`protocol/release`) in `data`, refused unless a key the speaker trusts signed it and it is no older than the running system; DATA, the image in order from `offset`; END: the image checked, the slot that doesn't run stamped (DONE), then started once (ready makes it the good one). ABORT: the slot holds no system. |
 | 0x0F | Lock | gated |  | `open` bool: true: open for good; false: locked (and no longer open for good) | Ok | 1 s | Close the gate now, or open it for good (kept in the EEPROM across power cycles: a lab unit driven by tools unattended; the user's choice, made at the speaker since this request is gated). |
 | 0x04 | Peek | gated |  | `addr` u32: address<br>`len` u16: bytes, at most 248<br>`words` bool: 32-bit reads (registers): `addr` and `len` multiples of 4; the data big-endian, as in memory | Data | 1 s | Read memory (gated: the MCU's RAM passes settings through). |
@@ -105,7 +105,7 @@ The host's timeout is the request's own: the MCU answers within it, or the host 
 Encoded by the module OS with this codec, relayed by the MCU (`ModRecord`), decoded by the host: the MCU's C has none of them. A field marked set is a setting (docs/module/settings.md): the host writes it with `SetSetting`, the key the field's name with dots for underscores, the value in its string form (bools `on` / `off`, enums by name); the module checks it against the type, the maximum and the format.
 
 ### Pair (0x20)
-Pair this client with the speaker (the network link: our OS answers it, docs/protocol/net.md). The MCU waits up to 30 s for a press of ON/OFF on the speaker (its LED flashes purple), whatever the gate says; pressed, the client's key is kept with `name`. `Error DENIED` if nobody pressed, `Error BUSY` while another one waits.
+Pair this client with the speaker (the network link: our OS answers it, docs/protocol/net.md). The MCU waits up to 30 s for ON/OFF held 5 s on the speaker (its LED flashes purple; a shorter press works as always, the 2 s hold still goes to standby), whatever the gate says; confirmed, the client's key is kept with `name`. `Error DENIED` if nobody confirmed, `Error BUSY` while another one waits.
 
 | Field | Type | Setting | |
 |---|---|---|---|

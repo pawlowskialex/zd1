@@ -138,9 +138,9 @@ void wifi_notify(uint8_t reg, const uint8_t *b, uint16_t n) {
         if (dm870_native() && n >= 1)
             module_volume(b0);
         break;
-    case ZD1_REG_MCU_FW: /* our OS has an app for us staged */
+    case ZD1_REG_MCU_FW: /* our OS has an app for us staged: it waits for a person's confirmation */
         if (dm870_native() && b0 == 1)
-            mcufw_enter();
+            mcufw_request();
         break;
     default:
         break;

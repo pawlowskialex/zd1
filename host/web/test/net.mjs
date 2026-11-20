@@ -1,7 +1,7 @@
 // The page's WebAssembly over the network (docs/protocol/net.md), in node: its `Speaker.connectNet` through node's own
-// WebSocket to the emulator's forwarded port. A press of ON/OFF must come while the first request waits for it (the
-// pairing): zemu's --press.
-//   zemu run --mcu --fwd 18080:80 --press 5 --host 'node host/web/test/net.mjs "$(nix build --no-link --print-out-paths .#web)" 127.0.0.1:18080'
+// WebSocket to the emulator's forwarded port. ON/OFF held 5 s must come while the first request waits for it (the
+// pairing): zemu's --confirm.
+//   zemu run --mcu --fwd 18080:80 --confirm 5 --host 'node host/web/test/net.mjs "$(nix build --no-link --print-out-paths .#web)" 127.0.0.1:18080'
 // With SIGNED=FILE (a signed system image, `zd1 sign`) the speaker also gets it (it needs slots: `zemu run --nand`).
 import fs from "node:fs";
 import path from "node:path";

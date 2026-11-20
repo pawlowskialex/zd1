@@ -15,7 +15,8 @@ use tungstenite::{HandshakeError, Message, WebSocket};
 use zd1_hostlink::codec::{self, Typed, error_reply};
 use zd1_hostlink::{Err, MESSAGES, msg, net, record};
 
-/// How long a handshake may take, and how often the session looks at zd1-linkd while the client is quiet.
+/// How long the handshakes (the WebSocket's, then Noise's) may take in all, and how often the session looks at
+/// zd1-linkd while the client is quiet.
 const HANDSHAKE: Duration = Duration::from_secs(10);
 const TICK: Duration = Duration::from_millis(200);
 /// How often a quiet session looks whether its client has been forgotten (`net.forget`): its session then ends.
@@ -26,7 +27,11 @@ const PAIR_BACKOFF: Duration = Duration::from_secs(10);
 /// A connection, to its end: the handshakes, then the session. Err: it never got to a session.
 pub fn run(s: TcpStream, id: &Identity, shared: &Shared) -> Result<(), String> {
     let peer = s.peer_addr().map(|a| a.ip().to_string()).unwrap_or_default();
-    s.set_read_timeout(Some(HANDSHAKE)).map_err(|e| e.to_string())?;
+    // one deadline for both handshakes: a read timeout alone would let a client that sends a byte now and then hold
+    // a session forever
+    let deadline = Instant::now() + HANDSHAKE;
+    let late = || Instant::now() >= deadline;
+    s.set_read_timeout(Some(TICK)).map_err(|e| e.to_string())?;
     s.set_nodelay(true).map_err(|e| e.to_string())?;
     let cfg = WebSocketConfig::default()
         .read_buffer_size(8 * 1024)
@@ -34,6 +39,13 @@ pub fn run(s: TcpStream, id: &Identity, shared: &Shared) -> Result<(), String> {
         .max_message_size(Some(net::MESSAGE_MAX))
         .max_frame_size(Some(net::MESSAGE_MAX));
     let path = |req: &Request, resp: Response| -> Result<Response, ErrorResponse> {
+        // a browser says which page opens the link: only ours (docs/protocol/net.md)
+        let origin = req.headers().get("origin").map(|o| o.to_str().unwrap_or("?"));
+        if origin.is_some_and(|o| !net::origin_allowed(o)) {
+            let mut r = ErrorResponse::new(Some("not from the speaker's page\n".into()));
+            *r.status_mut() = tungstenite::http::StatusCode::FORBIDDEN;
+            return Err(r);
+        }
         if req.uri().path() == net::PATH {
             Ok(resp)
         } else {
@@ -45,7 +57,14 @@ pub fn run(s: TcpStream, id: &Identity, shared: &Shared) -> Result<(), String> {
     // a request that isn't a WebSocket's (a browser opening the speaker's address) fails before `path` sees it, and
     // tungstenite answers nothing: it gets the same 404 here
     let spare = s.try_clone().map_err(|e| e.to_string())?;
-    let mut ws = match tungstenite::accept_hdr_with_config(s, path, Some(cfg)) {
+    let mut accept = tungstenite::accept_hdr_with_config(s, path, Some(cfg));
+    while let Err(HandshakeError::Interrupted(mid)) = accept {
+        if late() {
+            return Err("the WebSocket's handshake took too long".into());
+        }
+        accept = mid.handshake();
+    }
+    let mut ws = match accept {
         Ok(ws) => ws,
         Err(e) => {
             if let HandshakeError::Failure(tungstenite::Error::Protocol(_)) = e {
@@ -66,14 +85,13 @@ pub fn run(s: TcpStream, id: &Identity, shared: &Shared) -> Result<(), String> {
         .and_then(|b| b.build_responder())
         .map_err(noise)?;
     let mut buf = vec![0u8; 65535];
-    hs.read_message(&binary(&mut ws)?, &mut buf).map_err(noise)?;
+    hs.read_message(&binary(&mut ws, deadline)?, &mut buf).map_err(noise)?;
     let n = hs.write_message(&[], &mut buf).map_err(noise)?;
     ws.send(Message::Binary(buf[..n].to_vec().into())).map_err(|e| e.to_string())?;
-    hs.read_message(&binary(&mut ws)?, &mut buf).map_err(noise)?;
+    hs.read_message(&binary(&mut ws, deadline)?, &mut buf).map_err(noise)?;
     let client: [u8; 32] = hs.get_remote_static().and_then(|k| k.try_into().ok()).ok_or("no client key")?;
     shared.guard.lock().unwrap().connected(&client, Instant::now()); // its network changes are kept
     let noise = hs.into_transport_mode().map_err(noise)?;
-    ws.get_mut().set_read_timeout(Some(TICK)).map_err(|e| e.to_string())?;
 
     let mut s = Session {
         ws,
@@ -86,6 +104,7 @@ pub fn run(s: TcpStream, id: &Identity, shared: &Shared) -> Result<(), String> {
         linkd: Linkd::open()?,
         update: Update::default(),
         last: Instant::now(),
+        since: Instant::now(),
     };
     s.check_paired();
     say(&format!("{}: {}", s.who, if s.paired { "paired" } else { "not paired: Hello and Pair only" }));
@@ -99,11 +118,19 @@ fn not_ours() -> String {
     format!("the speaker's link is ws://SPEAKER{}\n", net::PATH)
 }
 
-/// The next binary message (the handshake's).
-fn binary(ws: &mut WebSocket<TcpStream>) -> Result<Vec<u8>, String> {
-    match ws.read().map_err(|e| format!("the handshake: {e}"))? {
-        Message::Binary(b) => Ok(b.to_vec()),
-        m => Err(format!("the handshake: a {} message", if m.is_text() { "text" } else { "control" })),
+/// The next binary message (the handshake's), by `deadline`.
+fn binary(ws: &mut WebSocket<TcpStream>, deadline: Instant) -> Result<Vec<u8>, String> {
+    loop {
+        match ws.read() {
+            Ok(Message::Binary(b)) => return Ok(b.to_vec()),
+            Ok(m) if m.is_ping() || m.is_pong() => {}
+            Ok(m) => return Err(format!("the handshake: a {} message", if m.is_text() { "text" } else { "control" })),
+            Err(tungstenite::Error::Io(e)) if matches!(e.kind(), ErrorKind::WouldBlock | ErrorKind::TimedOut) => {}
+            Err(e) => return Err(format!("the handshake: {e}")),
+        }
+        if Instant::now() >= deadline {
+            return Err("the handshake took too long".into());
+        }
     }
 }
 
@@ -119,6 +146,8 @@ struct Session {
     linkd: Linkd,
     update: Update,
     last: Instant,
+    /// when the session began (an unpaired client has `net::UNPAIRED_S` from then)
+    since: Instant,
 }
 
 impl Session {
@@ -159,6 +188,9 @@ impl Session {
             }
             if self.last.elapsed() > Duration::from_secs(net::IDLE_S as u64) {
                 return Ok(format!("nothing for {} s", net::IDLE_S));
+            }
+            if !self.paired && self.since.elapsed() > Duration::from_secs(net::UNPAIRED_S as u64) {
+                return Ok(format!("not paired within {} s", net::UNPAIRED_S));
             }
             if self.paired && self.checked.elapsed() > RECHECK && !self.check_paired() {
                 return Ok("forgotten (net.forget)".into());
@@ -202,7 +234,7 @@ impl Session {
             return Ok(error_reply(Err::Unknown, "not over the network (docs/protocol/net.md)"));
         }
         if !self.check_paired() && !matches!(m.name(), "Hello" | "Pair") {
-            return Ok(error_reply(Err::Locked, "pair first: Pair, then ON/OFF on the speaker"));
+            return Ok(error_reply(Err::Locked, "pair first: Pair, then ON/OFF held 5 s on the speaker"));
         }
         match m.name() {
             "Pair" => self.pair(seq, &m.s("name"), &shared.pair),
@@ -239,7 +271,8 @@ impl Session {
         Ok(error_reply(Err::Module, "zd1-linkd didn't answer"))
     }
 
-    /// `Pair`: a press of ON/OFF (the MCU's `Unlock`, which from the network always waits for it), then the key kept.
+    /// `Pair`: the person at the speaker confirms (ON/OFF held 5 s: the MCU's `Unlock`, which from the network always
+    /// waits for it), then the key kept.
     fn pair(&mut self, seq: u16, name: &str, gate: &Mutex<PairGate>) -> Result<Vec<u8>, String> {
         let ok = || codec::encode_msg(&msg::Ok).expect("Ok encodes");
         if self.paired {
@@ -255,7 +288,7 @@ impl Session {
             }
             g.busy = true;
         }
-        say(&format!("{}: \"{name}\" asks to pair: ON/OFF on the speaker", self.who));
+        say(&format!("{}: \"{name}\" asks to pair: ON/OFF held 5 s on the speaker", self.who));
         let r = self.call(seq, &codec::encode_msg(&msg::Unlock).expect("Unlock encodes"));
         let mut g = gate.lock().unwrap();
         g.busy = false;

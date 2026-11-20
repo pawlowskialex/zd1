@@ -8,7 +8,7 @@ messages carried by our module OS. Tags: `docs/README.md`.
 ## Goals
 - **The same page, the same flows**: connect over USB or by address; what the network can do, the page does the same
   way (`host/core`, one implementation).
-- **No weaker than USB**: a change to the speaker needs a person at it once (pairing, a press of ON/OFF) and the
+- **No weaker than USB**: a change to the speaker needs a person at it once (pairing, ON/OFF held 5 s) and the
   paired client's key from then on; nothing on the network is ever a root shell, raw memory, a flash of a bootloader or
   of the boot image.
 - **Updates over the network**: the system into the slot that doesn't run, signed by a key the speaker trusts, started
@@ -46,11 +46,22 @@ origin's: every page under the same GitHub Pages host could read them), `zd1` in
 
 ## Pairing
 After the handshake the speaker knows the client's static key. A key it hasn't paired is answered `Hello` and `Pair`
-only; anything else is `Error LOCKED` ("pair first"). **`Pair`** (with a name for the client) asks the MCU for a press
-of ON/OFF (the LED flashes purple, 30 s, as the USB gate's `Unlock`): pressed, the key is paired, kept in
-`/data/zd1/net/controllers` with its name and date. One `Pair` at a time; a refused one holds the next back 10 s.
-The gate's state is the USB side's: a gate opened for good opens nothing on the network, and a pairing opens nothing
-on USB.
+only; anything else is `Error LOCKED` ("pair first"). **`Pair`** (with a name for the client) asks the MCU for ON/OFF
+held 5 s (the LED flashes purple, 30 s): confirmed, the key is paired, kept in `/data/zd1/net/controllers` with its
+name and date. One `Pair` at a time; a refused one holds the next back 10 s. The gate's state is the USB side's: a gate
+opened for good opens nothing on the network, and a pairing opens nothing on USB.
+
+Why a 5 s hold and not the USB gate's press: anyone on the network can ask to pair at any time and keep a `Pair`
+waiting, so a press would pair whoever asked when someone next switched the speaker on or off. A short press and the
+2 s hold (standby) work as always while a `Pair` waits; the confirmation is the key's pin held past that
+(`mcu/src/inputs.h`), which nothing on the host link or the remote can fake. Pairing leaves the speaker in standby
+(the 2 s hold on the way): a press wakes it.
+
+**Which pages may open the link**: a browser sends the page's address (`Origin`) with the WebSocket's request, and
+any site the person has open could otherwise reach the speaker from their browser, on the speaker's network, and ask
+to pair. Only the published page and a page served from this computer (`localhost`, `127.0.0.1`: `tools/zeppelin web`)
+are let in (`net::origin_allowed`); programs (`zd1`) send none. Another site gets HTTP 403. A fork that publishes the
+page elsewhere adds its address there.
 
 Pairings are a record and an action, like AirPlay's: `ModRecord Controllers` lists them (over USB too), the action
 `net.forget` forgets one (its id) or `all`; a forgotten key's open sessions end. Back to the factory (`reset all`)
@@ -127,13 +138,18 @@ signed by another key refused at BEGIN ("signed by none of the keys this speaker
 **The MCU follows its OS**: each system carries its MCU app (`/usr/lib/zd1/mcu/zd1.dmb`, the same build's: `nix
 build .#os-image` takes `.#mcu`); at the MCU's hello (its version, then the good slot), on a confirmed slot (not the
 rescue, not on trial), with the MCU's version not the app's and neither a dev build (`-dirty`), `zd1-linkd` stages it
-and asks the MCU (`docs/mcu/bootloader-hbl.md`), at most twice per version (`/data/zd1/mcu/follow`: VERSION TRIES).
+and asks the MCU (`docs/mcu/bootloader-hbl.md`). The MCU takes it only once a person at the speaker holds ON/OFF
+5 s (the LED flashes amber for 30 s when asked; the request waits until the MCU restarts): the MCU is what keeps the
+amp safe, and a module someone took over must not be able to give it a firmware without them. The system asks again
+at every hello until then; a version the bootloader took twice and the MCU doesn't run isn't sent again
+(`/data/zd1/mcu/follow`: VERSION TRIES).
 [HW 2026-11-19: the MCU on 249a535, the system 6512879 on its confirmed slot: asked at the ready, the MCU through our
 preloader, back as 6512879 45 s later (`docs/mcu/bootloader-hbl.md`).]
 
 ## Limits
-Four sessions at a time (a fifth connection gets HTTP 503); a handshake within 10 s; a WebSocket message at most 40 KB;
-a session idle for 5 minutes ends; one update at a time. `zd1-netd` runs as init's service `net`; the setting `net`
+Four sessions at a time (a fifth connection gets HTTP 503); both handshakes (the WebSocket's, Noise's) within 10 s
+in all; an unpaired client's session ends 60 s after it began (its `Hello` and a `Pair`; nobody holds the sessions
+without pairing); a WebSocket message at most 40 KB; a session idle for 5 minutes ends; one update at a time. `zd1-netd` runs as init's service `net`; the setting `net`
 (`off`: nothing listens) is written over USB only.
 
 ## The ZD1L's first install from the page
@@ -159,8 +175,8 @@ field for field, against a logging stand-in for BL2 (node's fetch); never agains
   `host/cli` (`--net`, `net.rs`: the TCP WebSocket and `~/.config/zd1`; `sign`, `keygen`, `paired`), `host/web`
   (`net.rs`: the browser's WebSocket; `Speaker.connectNet`, `reachAgain`; www: `connection.js` `connectNet`,
   `zd1l.js`; `test/net.mjs`).
-- The emulator: `zemu run --mcu --fwd 18080:80 --press 5 --host '...'` (`--press`: ON/OFF pressed 5 s later, for
-  the pairing; `emu/README.md`).
+- The emulator: `zemu run --mcu --fwd 18080:80 --confirm 5 --host '...'` (`--confirm`: ON/OFF held 5 s, 5 s
+  later, for the pairing; `emu/README.md`).
 
 ## State
 On the unit [HW 2026-11-19, MCU and system 6512879, over Wi-Fi]: `zd1 --net` paired with a press, Info, the volume,

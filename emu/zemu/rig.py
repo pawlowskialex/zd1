@@ -591,6 +591,15 @@ class Session:
         self.r.on("zd1")
         self.r.cmd('board Pins "%d:PA08=0,%d:PA08=1"' % (t, t + hold_ms))
 
+    def confirm(self, secs, hold_ms=5500):
+        """ON/OFF held on the speaker from `secs` (virtual) from now: the confirmation a later step
+        waits for (pairing over the network, an MCU update from the module; mcu/src/inputs.h). Returns at once."""
+        if not self.mcu:
+            raise StepFailed("--confirm: the main board isn't in this run (--mcu)")
+        t = int((self.r.vtime() + secs) * 1000)
+        self.r.on("zd1")
+        self.r.cmd('board Pins "%d:PA08=0,%d:PA08=1"' % (t, t + hold_ms))
+
     def send(self, text, cr=True):
         """Type into the module console (a shell, KnOS, the BL1/BL2 menus); `\\xNN` escapes reach the guest raw."""
         self.begin()
