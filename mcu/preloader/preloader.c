@@ -8,7 +8,8 @@
  *     its header first, the app into 0x80008000.., checked (CRC-16) before the record at 0x80007E00 says it is good
  *   - else: straight into the app, nothing touched (the RC oscillator, the pins as the reset left them).
  * The record is erased before the first page is written: a transfer cut short leaves no good app, and the next start
- * comes here again. B&W's DFU bootloader (ON/OFF at power-up) stays the way back from anything. */
+ * comes here again. B&W's DFU bootloader (ON/OFF at power-up) stays the way back from anything. While it works the LED
+ * blinks white, stock's colour for a firmware update. */
 #include <avr32/io.h>
 #include <stdbool.h>
 #include <string.h>
@@ -21,6 +22,7 @@
 #include <cycle_counter.h>
 #include "zd1link.h"
 #include "zd1_board.h"
+#include "led_pwm.h"
 #define MCUFW_PRELOADER_BUILD
 #include "mcufw.h"
 
@@ -38,10 +40,23 @@ static uint32_t tick_ms(void) {
     return ms_now;
 }
 static bool after(uint32_t t) { return (int32_t)(tick_ms() - t) >= 0; }
+
+/* ---- its LED: stock's firmware-update white (docs/hardware/zd1-main-board.md), blinking slowly while it waits for
+ * the module, quickly while the app comes in. Drawn where every wait of the preloader passes (wait_ms; each SPI read
+ * waits there too) ---- */
+static uint32_t blink_ms = 1000;
+static void blink(void) {
+    static const rgb8_t white = LED_WHITE, dark = {0, 0, 0};
+    led_pwm_color((tick_ms() / blink_ms) & 1 ? dark : white);
+}
+
+/* the one way the preloader waits: the watchdog and the LED kept going */
 static void wait_ms(uint32_t n) {
     uint32_t end = tick_ms() + n;
-    while (!after(end))
+    while (!after(end)) {
         wdt_clear();
+        blink();
+    }
 }
 
 /* ---- its log: USART0 (PA00/PA01, 115200 8N1), the debug UART B&W's bootloaders and the stock app print on ---- */
@@ -321,6 +336,7 @@ static bool session(void) {
                                  "Application/NetIF/mode";
     uint32_t end = tick_ms() + 180000; /* a cold boot of our OS, the rescue's at worst */
     bl2 = dcr = hcr_ok = false;
+    blink_ms = 1000;
     for (;;) {
         uint16_t st = 0;
         if (after(end)) {
@@ -352,6 +368,7 @@ static bool session(void) {
         drain(100);
     }
     say("[pre] BL2 has an app: taking it\n");
+    blink_ms = 200;
     flashc_erase_page(MCUFW_RECORD_PAGE, true); /* from here on the old app is gone until this one is in */
     if (!receive()) {
         say("[pre] the transfer failed\n");
@@ -394,6 +411,7 @@ int main(void) {
     if (!board_clock_init(NULL))
         watchdog_reset(); /* the app starts next (the update asked for is forgotten) and shows it */
     board_safe_gpio();
+    led_pwm_init();
     cy_last = Get_sys_count();
     log_init();
     say(asked ? "\n[pre] zd1 preloader: the app asks for a new one from the module\n"

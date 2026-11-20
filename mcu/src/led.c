@@ -1,51 +1,16 @@
-#include <gpio.h>
-#include <pwm.h>
 #include "tick.h"
 #include "led.h"
+#include "led_pwm.h"
 #include "source.h"
 #include "zd1link.h"
 #include "settings.h"
 
-#define PERIOD   400
 #define FRAME_MS 10   /* a new colour every 10 ms (the PWM takes it at its next period, 8.5 ms) */
 #define FADE_MS  450  /* crossfade between looks */
 #define VOL_MS   1200 /* volume feedback */
 #define ACK_MS   900  /* a pick acknowledged: two pulses */
 
-/* CUPD with CMR.CPD = 0 -> new duty at the next period boundary. Async: ASF's sync variant busy-waits for the
- * period end (~8.5 ms per channel), which would stall the cooperative main loop. */
-static void duty(unsigned ch, uint16_t v) {
-    avr32_pwm_channel_t c;
-    c.cmr = 0x20A; /* anonymous union: GCC 4.4 can't designate it in an initializer */
-    c.cupd = v > PERIOD ? PERIOD : v;
-    pwm_async_update_channel(ch, &c);
-}
-static void rgb(const uint16_t v[3]) {
-    static uint16_t last[3] = {0xFFFF, 0xFFFF, 0xFFFF};
-    for (unsigned i = 0; i < 3; i++)
-        if (v[i] != last[i]) {
-            duty(i + 1, v[i]);
-            last[i] = v[i];
-        }
-}
-
-/* Stock PWM setup (zd1 emulator trace of 2.04.05): MR = 0, CMR = 0x20A (MCK/1024, CPOL = 1), CPRD = 400,
- * channels 1..3 on PB20/PB21/PB22 (function A), ENA = 0x0E. */
-void led_init(void) {
-    static const gpio_map_t pins = {{AVR32_PWM_1_PIN, AVR32_PWM_1_FUNCTION},
-                                    {AVR32_PWM_2_PIN, AVR32_PWM_2_FUNCTION},
-                                    {AVR32_PWM_3_PIN, AVR32_PWM_3_FUNCTION}};
-    const pwm_opt_t opt = {.diva = 0, .divb = 0, .prea = 0, .preb = 0};
-    avr32_pwm_channel_t c;
-    c.cmr = 0x20A;
-    c.cdty = 0;
-    c.cprd = PERIOD;
-    pwm_init(&opt);
-    for (unsigned ch = 1; ch <= 3; ch++)
-        pwm_channel_init(ch, &c);
-    gpio_enable_module(pins, 3);
-    pwm_start_channels(0x0E);
-}
+void led_init(void) { led_pwm_init(); }
 
 /* ---- what to show ---- */
 static led_look_t look = {LOOK_BOOT, SRC_NONE, ZD1_PLAYER_NONE, ACT_READY};
@@ -69,13 +34,10 @@ static uint32_t ack_t0;
  * asleep, asleep against standby, playing against the error; mcu/tools/led_palette.py with that model): 19.7,
  * seen on the unit. Wi-Fi without a named receiver shares AirPlay's white (the speaker's main use); its states differ
  * by animation, and the freed colour is the dock's. */
-typedef struct {
-    uint8_t r, g, b;
-} rgb8_t;
 static const rgb8_t RED = {255, 0, 0};
 static const rgb8_t flash_color[] = {
     [FLASH_PURPLE] = {170, 0, 255}, [FLASH_GREEN] = {0, 255, 40}, [FLASH_RED] = {255, 0, 0}};
-#define WHITE {255, 240, 120} /* little blue: a neutral white on this LED needs duties ~334/400/67 */
+#define WHITE LED_WHITE
 static const rgb8_t src_color[SRC_N] = {
     [SRC_NONE] = {255, 0, 0}, [SRC_USB] = {0, 174, 255},  [SRC_AUX] = {255, 221, 0}, /* AUX orange here */
     [SRC_WIFI] = WHITE,       [SRC_IPOD] = {255, 0, 161},                            /* the dock: magenta-pink */
@@ -171,10 +133,9 @@ static void glow_frame(uint32_t now) {
     uint16_t v[3];
     for (int i = 0; i < 3; i++) {
         out[i] = (uint16_t)((int32_t)from[i] + ((int32_t)tgt[i] - (int32_t)from[i]) * (int32_t)e / 256);
-        uint32_t p = out[i] >> 8;
-        v[i] = (uint16_t)(p * p * PERIOD / 65025);
+        v[i] = led_pwm_duty((uint8_t)(out[i] >> 8));
     }
-    rgb(v);
+    led_pwm_set(v);
 }
 
 /* ---- the API ---- */
@@ -211,11 +172,8 @@ void led_poll(uint32_t now) {
         return;
     next_frame = now + FRAME_MS;
     if (overlay) { /* 50 ms on, 50 ms off, like stock's flashes */
-        rgb8_t c = flash_color[overlay_c];
-        uint32_t on = (now / 50) & 1 ? 0 : 1;
-        uint16_t v[3] = {(uint16_t)(c.r * c.r * PERIOD / 65025 * on), (uint16_t)(c.g * c.g * PERIOD / 65025 * on),
-                         (uint16_t)(c.b * c.b * PERIOD / 65025 * on)};
-        rgb(v);
+        static const rgb8_t dark = {0, 0, 0};
+        led_pwm_color((now / 50) & 1 ? dark : flash_color[overlay_c]);
         return;
     }
     glow_frame(now);
