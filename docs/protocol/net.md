@@ -111,7 +111,10 @@ the 120 s; cleared the same way. A change that cuts the link not tried on the un
    back is the USB updater's), while another update runs (USB or network: one lock, `zd1_slot::update_lock`), or
    while the running slot is on trial (the good slot is the way back). Then a person at the speaker allows it: our OS
    asks the MCU's `Allow` (ON/OFF held 5 s within 30 s, the LED flashing amber; the client says so), which allows the
-   MCU firmware the system brings too; nobody: `Error DENIED`, nothing written.
+   MCU firmware the system brings too; nobody: `Error DENIED`, nothing written [HW 2026-11-20: the refusal]. [EMU
+   2026-11-20, `zemu run --nand --mcu --fwd 18080:80 --confirm 15 --host 'zd1 --net 127.0.0.1:18080 update ...'`: the
+   hold, "allowed: an app from the module, once, within 10 minutes", the update into slot B, its trial, then at the
+   MCU's hello the system's MCU app asked for and taken at once: the preloader, "app in flash and checked".]
 2. **DATA**, the image in order, up to 32 KB a request: unpacked into the slot that doesn't run as it comes
    (`zd1-slot`, as `zd1-update` does), each reply the bytes taken.
 3. **END**: the stream's end checked (the gzip CRC, the SHA-256 of the header), the slot stamped `VERSION SHA[:12]
