@@ -71,8 +71,11 @@ to start it now (`BootState` / `Boot` in `docs/protocol/host.md`).
 **The rescue** is the system itself, from RAM: everything runs as from a slot (`zd1.rescue` on the command line, no
 `zd1.slot`). With the slot an update would take empty (a first install: the slots are new), init's `self-install` copies
 the running root into it (`zd1-slot install-self`: file by file, staying on the root's own file system, mount points
-empty, the two device nodes a slot has) and stamps it with the version, so the next start is that slot's [EMU
-2026-11-19: "slot a: ... installed (9959 KB of files, 8496 KB of the partition used)" 15 s after the rescue's start].
+empty, the two device nodes a slot has) and stamps it with the version, so the next start is that slot's [HW
+2026-11-19, `os.bcd` 6512879 with both slots erased: B and A failed, the rescue ready 60 s after the power-up, "slot b:
+6512879 installed (10161 KB of files, 8660 KB of the partition used)" 29 s into its start, 20 s of copying; slot B
+started next and got ready]. Whether a slot holds a system is read from its record (`/data/zd1/stamp.a|b`):
+`zd1-slot erase` of a slot clears it, else the erased slot reads as the system it held.
 It is as new as the app partition's last install (BL2, the relay); a speaker whose slots both fail still runs and
 plays, and takes an update as from a slot (`zd1 update` writes the good slot, `updater.md`).
 
@@ -103,8 +106,8 @@ B, the rescue, the self-install, and from then on it updates a slot at a time.
 `zd1-update`, which writes the slot that doesn't run (from the rescue: the good one) and stamps it; then the slot is
 started once. The `.bcd` that BL2 or the relay install carries the stub, the kernel and the system as the rescue: a
 speaker whose slots are empty (its first install) boots slot A, slot B, then the rescue (each empty slot is one
-failed boot: a panic and `panic=10`'s restart, ~15 s) [HW 2026-10-26, with the barebones rescue of then], which fills
-slot A [EMU]. Through the ZD1's USB relay (~23 KB/s) the 6.6 MB `os.bcd` takes ~5 min (the barebones rescue's 1.9 MB
+failed boot: a panic and `panic=10`'s restart, ~15-20 s) [HW 2026-10-26, 2026-11-19], which fills the good slot (slot A
+on a new speaker) [HW 2026-11-19]. Through the ZD1's USB relay (~23 KB/s) the 6.6 MB `os.bcd` takes ~5 min (the barebones rescue's 1.9 MB
 took 85 s).
 
 ## On the unit [HW 2026-10-26 on]

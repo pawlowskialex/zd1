@@ -198,6 +198,15 @@ fn stamp_from_slot(s: Slot) -> Option<String> {
 
 // ---- erasing: flash_eraseall -j (busybox miscutils/flash_eraseall.c) ----
 
+/// Slot `s` emptied: its record says no system first (as `install`'s erase does), so that what was there isn't read as
+/// still there (`stamp`, and init's self-install from it), then the partition erased (`erase`).
+pub fn erase_slot(s: Slot) -> Result<u32, String> {
+    let n = mtd(s.partition()).ok_or(format!("no partition {}", s.partition()))?;
+    let _lock = lock(true);
+    let _ = zd1_sys::write_private(&record(s), "\n");
+    erase(n)
+}
+
 /// Erase MTD partition `n` for JFFS2: every good block erased, a cleanmarker in its first page's spare area. Bad blocks
 /// are skipped (JFFS2 skips them too). The number of bad blocks.
 pub fn erase(n: u32) -> Result<u32, String> {

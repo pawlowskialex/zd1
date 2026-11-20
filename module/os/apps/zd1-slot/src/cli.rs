@@ -6,7 +6,7 @@
 //!                               cleanmarkers (bad blocks left alone); refused while it is mounted. The vendor's: never
 //! Which slot starts is the MCU's (`zd1 slot`).
 
-use crate::{Slot, boot, erase, install, install_running, mtd};
+use crate::{Slot, boot, erase, erase_slot, install, install_running, mtd};
 
 pub fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -39,7 +39,8 @@ pub fn main() {
             if root || mounts.lines().any(|l| l.split(' ').next() == Some(&format!("/dev/mtdblock{n}"))) {
                 die(&format!("{name} (mtd{n}) is mounted: unmount it first (the rescue: `umount /data`)"));
             }
-            match erase(n) {
+            let slot = [Slot::A, Slot::B].into_iter().find(|s| s.partition() == *name);
+            match slot.map_or_else(|| erase(n), erase_slot) {
                 Ok(bad) => println!("{name}: erased ({bad} bad blocks left alone)"),
                 Err(e) => die(&e),
             }
