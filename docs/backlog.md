@@ -18,8 +18,9 @@ and what is known. What already works: `status.md`; checks that need a person at
   a release's (or a temporary clean commit's) image in the emulator, then on the unit: the module serving the MCU's
   app (ZD1L: B&W's bootloader; ZD1: our preloader, which first needs the new layout flashed over DFU, with the
   owner's OK).
-- **The ZD1L's first install from the page** (`zd1l.js`, no-cors to BL2): a ZD1L owner in Chrome; whether BL2 takes
-  the browser's multipart upload as it takes `bl2web`'s; the system as the rescue and its self-install on a real ZD1L.
+- **The ZD1L's first install from the page** (`zd1l.js`, no-cors to BL2; whole in the emulator): a ZD1L owner in
+  Chrome; whether Chrome sends BL2 the requests from the hosted page (Local Network Access, mixed content); the
+  rescue's self-install and slot A's start on a real ZD1L.
 - **A developer's key onto a speaker**: today `zd1 console run 'echo KEY > /data/zd1/keys/NAME.pub'` over USB; a
   request of its own (gated, USB only) would make it a step of the page.
 - **Discovery**: browsers can't browse mDNS, so the page asks for an address; `zd1 --net` could find speakers

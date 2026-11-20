@@ -37,9 +37,12 @@ with the AVR32 toolchain's objdump and Ghidra over an SRAM image, scripts there)
      Nothing else in the header is looked at. A good transfer also needs an HCR status OK after it.
   6. Status 0x2500 (BL2 finished), 10 s, the module off (PA17, 3 s, PA04), a watchdog reset into the app.
   ON/OFF held 3 s in most waiting states restarts into the app. With no module answering it waits for that press.
-- The reference trace: the real BL2 (`blobs/zd1l/module/bl2.bin`) and this bootloader in the emulator, `bl2web` with
-  B&W's 2.04.35 `.fw` [EMU 2026-11-19; `re/gen/mcu-bl-zd1l/hbl_bl2_trace_spi.txt`]. The emulated transfer broke at
-  block 0x1E (BL2 skipped a block); on a real ZD1L it works [HW, the owners' installs].
+- **A broken escape fails the block**: BL2 sends a data 0xFF as `27 01`; idle 0xFF bytes between two data bytes are
+  skipped, but between the `27` and its second byte they are taken as the escape, the block's CRC fails, NAK, and BL2
+  cancels after its retries. In the emulator the module's TX FIFO used to run dry inside long replies (the link's
+  latency held its credits back: `emu/renode/cr870/J2Link.cs`, `TxAhead`), so BL2 never got an app across
+  (`27 FF FF .. 01` in the SPI trace); on a real ZD1L it works [HW, the owners' installs]. With the FIFO kept ahead,
+  the whole install goes through in the emulator (below).
 
 ## Our side: zd1-linkd plays BL2 [EMU]
 `module/os/apps/zd1-linkd/src/mcufw.rs`. With a good `.dmb` in `/data/zd1/mcu/pending.dmb`, an HCR 0x2120 from a host
@@ -67,6 +70,12 @@ A bootloader quiet for 7 s mid-transfer gets the block again; 30 s ends it.
   without a word (on a ZD1L the full system) and the HBL's first contact is `zd1-linkd`.
 - **The staged image must be on the NAND before the MCU goes**: an image fetched seconds before lost its tail in the
   power cut on the MCU's way to its bootloader [EMU]; `mcu-update` syncs first.
+- **The ZD1L's first install, end to end** [EMU 2026-11-20, a stock ZD1L (`zd1lv20435.fw`'s module image on a ZD1L
+  NAND, the HBL and B&W's app in the MCU flash, board variant 2) held at power-up, the page's `bl2Upload` against BL2
+  with `zd1l.fw`]: "ReceiveHostFirmware() - Done" (our app), BL2's burn, "Restart", "Reset", our app answering the
+  stub, A and B empty, the rescue into slot A and slot A started and good; then, `zd1 allow` with the hold,
+  `zd1-ctl mcu-update` with our app staged: our OS played BL2 to the HBL to "ReceiveHostFirmware() - Done" and the
+  restart.
 - **End to end** [EMU 2026-11-19, `zemu run` of the ZD1L test NAND (its BL2, HWID 0xBE) with `os-zd1l.bcd`, the HBL and
   `.#mcu-emu`'s app in the MCU flash, board variant 2, `--quantum-us 100`]: the first start's self-install, then
   `zd1-ctl mcu-update` with B&W's 2.04.35 `.dmb` staged: "[mcufw] into B&W's bootloader", the stub silent ("no knock"),

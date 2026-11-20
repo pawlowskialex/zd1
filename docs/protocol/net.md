@@ -185,7 +185,12 @@ answers (`no-cors`): the status page (only a network error says nothing is there
 apply page, which the browser follows: it arms the confirm), the expert page, the expert confirm. Then it waits up to
 15 minutes for our OS's link to answer at the address and connects. A refused file (another model) or a new address
 shows only as no answer. Releases carry `zd1l-VERSION.fw` (`kind` fw in the manifest). The requests are `bl2web`'s,
-field for field, against a logging stand-in for BL2 (node's fetch); never against a real BL2 from a browser yet.
+field for field. [EMU 2026-11-20, a stock ZD1L (its BL2 and HWID, KnOS, B&W's bootloader and app) held at power-up,
+`bl2Upload` cut out of `zd1l.js` and run in node against BL2: every request answered 200, the upload's redirect to the
+apply page followed, the confirm redirected to the status page (armed); BL2 sent the MCU part to B&W's bootloader,
+burned the module image, the bootloader started our app, the rescue filled slot A and started it, and the page's
+WebAssembly (`test/net.mjs`) paired with the hold on slot A: 374 s in all. `docs/mcu/bootloader-hbl.md`.] Never from
+a browser against a real BL2 yet.
 
 ## Where things are
 - The spec: `protocol/host/src/lib.rs` (the `net` marker, `Pair`, `SystemUpdate`, `Controllers`; `net`: the

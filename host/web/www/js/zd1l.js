@@ -4,27 +4,10 @@
 // them but read none of the answers ("no-cors"): no progress, no refusal. The page then waits for our software to
 // answer at the address.
 import { newIdentity, Speaker } from "../pkg/zd1_web.js";
+import { bl2Upload } from "./bl2.js";
 import { connectNet, events, job } from "./connection.js";
 import { fetchImage, releases } from "./software.js";
 import { ask, notice } from "./ui.js";
-
-/// The confirm's button value (BL2's aspSetFirmwareUploadConfirmationHandler), form-encoded.
-const OK = "++++++Ok++++++";
-
-/// BL2's upload: prepare (it arms the upload), the file (its 302 to the apply page, which the browser follows: that page
-/// arms the confirm, without it the confirm burns nothing), the expert page, the expert confirm (it starts the burn: the
-/// MCU's part first, through the MCU's bootloader, then the module's).
-export async function bl2Upload(addr, fw, name, mode = "no-cors") {
-  const at = (path, init = {}) => fetch(`http://${addr}${path}`, { mode, cache: "no-store", ...init });
-  await at("/1000/firmware_status.asp"); // fails only when nothing answers at the address
-  await at("/1000/firmware_prepare.asp");
-  const form = new FormData();
-  form.append("appFirmware", new Blob([fw]), name);
-  form.append("appFirmwareFile", "Upload");
-  await at("/goform/formPostHandler", { method: "POST", body: form });
-  await at("/1000/firmware_expert.asp");
-  await at(`/goform/formExpertDownloadConfirmationHandler?button=${OK}`);
-}
 
 /// Our software at `addr`: its network link answers the session's handshake.
 async function ours(addr) {

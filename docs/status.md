@@ -123,7 +123,7 @@ None of these has been seen on the unit. Treat them as "the code does something 
 - **The Lightning model's image with the system as the rescue** (the ZD1's is on the unit, above).
 - **The network link's rest** (`docs/protocol/net.md`; `zd1 --net` is on the unit, above): the page's WebAssembly
   over the network (Chrome's Local Network Access from the hosted page not tried anywhere); a provisional change that
-  cuts the link going back after 120 s; the ZD1L's first install from the page (its requests checked against a stand-in only). `Dfu`
+  cuts the link going back after 120 s; the ZD1L's first install from the page (whole in the emulator: the page's requests, both chips, the first start). `Dfu`
   refused on a ZD1L (its bootloader has no USB).
 
 ## Not done

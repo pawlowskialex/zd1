@@ -15,6 +15,12 @@
 //                    Request(level), Reset() (chip reset: FIFOs gone)
 // The host side mirrors the module's TX FIFO and answers every SPI byte from it at once; a TX byte keeps its FIFO
 // slot on the module until the host reports it clocked out, so BL2's flow control (waiting for TX space) works.
+// That report comes a round trip (two quanta) after the byte left: the module sees its FIFO fuller than it is by the
+// bytes the host clocked meanwhile, and with a 200 us quantum the host drains all 63 (~3 us a byte) before any
+// refill arrives. A long reply then reaches the host with idle bytes inside it, which no real module's firmware keeps
+// up with poorly enough to produce: B&W's ZD1L MCU bootloader reads 27 FF.. 01 as a broken escape and refuses the
+// block, so BL2 never got an app across. The module may therefore run ahead of the FIFO by what the host can clock
+// in the round trip (TxAhead); the host's mirror holds those bytes, so nothing is lost or reordered.
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -185,6 +191,18 @@ namespace Antmicro.Renode.Peripherals.CR870
 
         public ulong PollHalts { get; private set; }
 
+        /// <summary>
+        /// TX bytes the module may hold beyond its 63-byte FIFO before the host's credits come back: what the host
+        /// clocks in the link's round trip (two quanta) at 2 us a byte, faster than any host here. -1: that, from the
+        /// quantum; 0: the FIFO as the module sees it, unmasked.
+        /// </summary>
+        public int TxAhead { get; set; } = -1;
+
+        private int Ahead => TxAhead >= 0 ? TxAhead : (int)(2 * J2Registry.QuantumNs / 2000);
+
+        /// <summary>The FIFO's fill as the module's firmware sees it.</summary>
+        private int TxFill => Math.Max(0, txUsed - Ahead);
+
         public void Reset()
         {
             Wake();
@@ -314,7 +332,7 @@ namespace Antmicro.Renode.Peripherals.CR870
             }
         }
 
-        private uint Status => (rx.Count > 0 ? 0x100u : 0) | (txUsed < 63 ? 0x400u : 0);
+        private uint Status => (rx.Count > 0 ? 0x100u : 0) | (TxFill < 63 ? 0x400u : 0);
 
         private void Update()
         {
@@ -335,7 +353,7 @@ namespace Antmicro.Renode.Peripherals.CR870
                     IdlePoll();
                     return (uint)rx.Count;
                 case 0xF1C:
-                    return (uint)(63 - txUsed);
+                    return (uint)(63 - TxFill);
                 case 0xF44:
                     IdlePoll();
                     return Status;
@@ -361,7 +379,7 @@ namespace Antmicro.Renode.Peripherals.CR870
                     ToHost(h => h.Idle((byte)v));
                     return;
                 case 0xE80:
-                    if (txUsed < 63)
+                    if (TxFill < 63)
                     {
                         txUsed++;
                         var b = (byte)v;
