@@ -163,15 +163,16 @@ void dm870_reg_write(uint8_t reg, uint8_t b0, uint8_t b1) {
  * Update BEGIN, 70 bytes]. After the header it waits a tick (zd1-linkd then polls without sleeping until the request
  * is complete), then sends the data 32 bytes at a time: to our OS 15 ms apart, since zd1-linkd is a process
  * that others preempt for a scheduler slice (up to ~20 ms) while the services start, and at 1 ms apart a request
- * still arrived short after boot [HW 2026-11-02: an Update BEGIN half received, zd1-linkd 0b28a16]; to BL2 and the
- * bootloader's relay (bare metal, polling) 1 ms apart. Short writes (the stock app's) go as they always did.
+ * still arrived short after boot [HW 2026-11-02: an Update BEGIN half received, zd1-linkd 0b28a16]. BL2, bare metal
+ * polling its slave, takes a write whole: 1 KB XModem frames unpaced, 0 retries [HW 2026-10-26, 9.5 KB/s]; paced it
+ * spent 53 ms on each [HW 2026-11-19, 6.9 KB/s]. Short writes (the stock app's) go as they always did.
  * To our OS the write is acknowledged: the module echoes every write (02 reg 00 00), read like a reply; without the
  * echo the bytes were lost (the FIFO overran while zd1-linkd was busy: right after its boot, with the services
  * starting, the Update BEGIN arrived short and the half-received request wedged the slave's parser until the
  * link was restarted [HW 2026-10-31]) and the write goes again, up to three times, once the module has dropped the
  * half it got (100 ms of silence): at most ~1.6 s in all (a 170-byte setting). BL2 and the bootloader's relay get no such check. */
 static bool write_v_once(uint8_t reg, const uint8_t *d, uint16_t n) {
-    bool pace = n > 48;
+    bool pace = ours && n > 48;
     mod_cs(true);
     spi0_xfer(ZD1_WIRE_WRITE_V);
     mod_put(reg);
@@ -181,7 +182,7 @@ static bool write_v_once(uint8_t reg, const uint8_t *d, uint16_t n) {
         delay_ms(15);
     for (uint16_t i = 0; i < n; i++) {
         if (pace && i && !(i % 32))
-            delay_ms(ours ? 15 : 1);
+            delay_ms(15);
         mod_put(d[i]);
     }
     mod_cs(false);
