@@ -888,7 +888,7 @@ static int floor1_decode(struct br *b, const struct vorbis_setup *s, const struc
         int lo = f->lo[i], hi = f->hi[i];
         int pred = render_point(f->x[lo], f->x[hi], fit[lo], fit[hi], f->x[i]);
         int hiroom = f->range - pred, loroom = pred;
-        int room = (hiroom < loroom ? hiroom : loroom) << 1;
+        int room = (hiroom < loroom ? hiroom : loroom) * 2; /* hiroom < 0 if a corrupt post put pred past range */
         int val = fit[i];
         if (val) {
             if (val >= room)

@@ -10,7 +10,7 @@ outside its memory hangs the bus.
 |---|---|
 | `flacdec.c`, `flacdec.h` | the decoder (~450 lines): frame headers (every block-size, rate and bit-depth code, the UTF-8 frame number, CRC-8), CONSTANT / VERBATIM / FIXED (orders 0-4) / LPC (orders 1-32) subframes, wasted bits, Rice and Rice2 residuals with escaped partitions, left/side, right/side and mid/side stereo, the frame's CRC-16 |
 | `rust/` | crate `zd1-flac`: the decoder for Rust with FLAC's own limits (zd1-snapcast's ARM decoder; it replaced claxon), and a libFLAC test vector (`tests/data`) |
-| `check/` | `flaccheck.c`: `dump` (a .flac file decoded to raw PCM in the stream's width), `chunks` (its frames grouped like a Snapcast server's chunks, for the Warp0 checks), `escape` (frames built bit by bit with escaped partitions: libFLAC never writes them), `fuzz` (mutated frames under ASan/UBSan, the input allocated to exactly what the decoder may read), `bench` (speed on the unit); `corpus.py` (the comparison with libFLAC over a test corpus) |
+| `check/` | `libfuzz.c` (libFuzzer: its build and run lines first), `flaccheck.c`: `dump` (a .flac file decoded to raw PCM in the stream's width), `chunks` (its frames grouped like a Snapcast server's chunks, for the Warp0 checks), `escape` (frames built bit by bit with escaped partitions: libFLAC never writes them), `fuzz` (mutated frames under ASan/UBSan, the input allocated to exactly what the decoder may read), `bench` (speed on the unit); `corpus.py` (the comparison with libFLAC over a test corpus) |
 
 Limits (FLAC_EUNSUP), per build: Warp0's (the defaults: its 48 KB of local RAM) are 2 channels and 4608-sample
 blocks (the streamable subset's limit at 48 kHz and below; libFLAC's levels use 1152 and 4096); the ARM's
@@ -43,6 +43,9 @@ blocks (the streamable subset's limit at 48 kHz and below; libFLAC's levels use 
   partitions, fixed orders 0-4: decoded as built.
 - **Robustness**: 162,000 decode calls on mutated frames (bit flips, truncation, random runs, random output room)
   under ASan/UBSan: no fault, no result out of bounds, no signed overflow (the predictors' arithmetic is unsigned).
+  The stream comes from whatever answers as a snapserver: libFuzzer (`check/libfuzz.c`, STREAMINFO then chunks, every
+  buffer exactly its size) 24 million inputs with Warp0's limits and 39 million with the ARM's (8 channels, 65535-sample
+  blocks) under ASan/UBSan, 96-98 % of the lines reached: no fault.
 - **On Warp0**: in the emulator (`module/warp0/tools/emu.py flac`), six streams (level 2, LPC 32, 24-bit noise at
   level 8, mono with 4608-sample blocks, wasted bits, 48 kHz 24-bit) the same samples as libFLAC, no access outside
   Warp0's memory; on the unit, bit-identical to the ARM build, numbers in `module/warp0/README.md`.

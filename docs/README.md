@@ -6,6 +6,7 @@ What is true now, with the evidence. Start with `status.md`.
 - `status.md`: what is on the unit, what works there, what is emulator-only, what is not done, known problems
 - `backlog.md`: open work
 - `decisions.md`: why things are the way they are
+- `security.md`: what we defend (no fire, no botnet), the line between the module and the MCU, what is accepted
 - `glossary.md`
 
 **Hardware**
