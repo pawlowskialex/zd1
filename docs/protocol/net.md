@@ -158,9 +158,9 @@ the system (`usr/lib/zd1/mcu/zd1.dmb`) is the same build's `.#mcu`, byte for byt
 
 So a ZD1 on a release from before the network link (no `zd1-netd`) takes one update over USB; from then on releases
 go over the network, unless one changes the stub or the kernel, or the preloader, which only DFU writes. Over USB with
-a boot image the page goes boot image, MCU, then `Boot INSTALL` (the new MCU's): the rescue copies itself into the
-slot that isn't the good one and the MCU starts that slot once (`docs/module/storage.md`, The rescue). Between the
-boot image and the MCU an MCU from before the knock leaves the new stub silent, and it starts the rescue.
+a boot image the page does what a first install does (host/core's `install`): the boot image and the MCU firmware in
+one visit to the bootloader, our firmware started once, then `Boot INSTALL`: the rescue copies itself into the slot
+that isn't the good one and the MCU starts that slot once (`docs/module/storage.md`, The rescue).
 
 ## Limits
 Four sessions at a time (a fifth connection gets HTTP 503); both handshakes (the WebSocket's, Noise's) within 10 s
