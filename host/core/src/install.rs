@@ -9,18 +9,19 @@ use crate::backup::Backup;
 use crate::dfu::{self, Relay};
 use crate::flash::{self, Report};
 use crate::image::{McuImage, system_version};
-use crate::spec::{ModOp, ModState, Slot};
+use crate::spec::{BootOp, ModOp, ModState, Slot};
 use crate::update::{self, Outcome};
 use crate::usb::Bus;
 use crate::{Error, Events, Mcu, Result, msg};
 use std::rc::Rc;
 
 /// What goes on: the module's boot image (`os.bcd`: the stub, the kernel, the rescue; None: it is there already, a
-/// repair of the two others), our MCU firmware, the system image.
+/// repair of the two others), our MCU firmware, and the system image without a boot image (with one, its rescue is the
+/// system and installs itself: [`system_from_rescue`]).
 pub struct Images<'a> {
     pub bcd: Option<&'a [u8]>,
     pub mcu: &'a McuImage,
-    pub system: &'a [u8],
+    pub system: Option<&'a [u8]>,
 }
 
 /// How it ended: the firmware that runs, the slot the system went into (the good one now), its version.
@@ -50,13 +51,21 @@ pub async fn install<B: Bus>(
                 .into(),
         )
     })?;
-    let os = system_version(img.system)?;
+    let system = match (img.bcd, img.system) {
+        (Some(_), _) => None,
+        (None, Some(s)) => Some(s),
+        (None, None) => return Err(Error::Failed("a system image, or a boot image (its rescue is the system)".into())),
+    };
+    let os = system.map(system_version).transpose()?;
     let phases = if img.bcd.is_some() { 4 } else { 3 };
     let mut n = 0;
     ev.step(&format!(
-        "installing: MCU firmware {}, system {os}{}",
+        "installing: MCU firmware {}, {}",
         ident.version,
-        if img.bcd.is_some() { ", the module's boot image" } else { "" }
+        match &os {
+            Some(os) => format!("system {os}"),
+            None => "the module's boot image and its system".into(),
+        }
     ));
     let mut d = flash::enter_dfu(bus, None, ev.clone()).await?;
     if let Some(bcd) = img.bcd {
@@ -83,8 +92,18 @@ pub async fn install<B: Bus>(
     ev.step(&format!("the module runs {}", i.mod_os));
     n += 1;
     ev.phase(n, phases, "the system");
-    match update::system(&mut m, img.system, &update::Options::default()).await? {
+    // with a boot image the system is its rescue: it installs itself (no second upload)
+    let outcome = match system {
+        None => system_from_rescue(&mut m).await?,
+        Some(s) => update::system(&mut m, s, &update::Options::default()).await?,
+    };
+    match outcome {
         Outcome::Running(slot) => {
+            // the system the module runs now (the boot image's: its version is the module's word)
+            let os = match os {
+                Some(os) => os,
+                None => m.call(&msg::Info).await?.mod_os.split(' ').nth(1).unwrap_or_default().to_string(),
+            };
             ev.step(&format!("done: MCU firmware {}, system {os} in slot {slot}", firmware.fw));
             Ok(Installed { firmware, slot, os })
         }
@@ -140,6 +159,39 @@ pub async fn boot_image<B: Bus>(
     let i = wait_module(&mut m, FIRST_BOOT_MS).await?;
     ev.step(&format!("the module runs {}", i.mod_os));
     Ok(i)
+}
+
+/// The boot image's system into a slot, without a second upload: the MCU starts the rescue once to install itself
+/// (`Boot INSTALL`), into the slot that isn't the good one (the good one if that holds none; none if a slot holds it
+/// already), and the rescue has the MCU start that slot once; the verdict as for any update (ready: the good slot now,
+/// else the MCU went back). Needs our boot image and MCU firmware from the release that has `Boot INSTALL` on.
+pub async fn system_from_rescue<L: crate::link::Link>(m: &mut Mcu<L>) -> Result<Outcome> {
+    let ev = m.events().clone();
+    ev.step("the module's system from its boot image: the rescue installs itself into a slot");
+    m.call(&msg::Boot { op: BootOp::Install, slot: Slot::None, restart: true }).await?;
+    let (t0, mut rescue) = (crate::now_ms(), false);
+    while crate::now_ms() - t0 < FIRST_BOOT_MS * m.slow() as f64 {
+        m.sleep(1000).await;
+        let secs = ((crate::now_ms() - t0) / 1000.0) as u64;
+        // an error: the MCU busy with the module's power, asked again
+        let Ok(b) = m.call(&msg::BootState).await else { continue };
+        if b.last == Slot::Rescue {
+            rescue = true;
+            ev.wait("the rescue installing its system", secs);
+        } else if rescue && b.last != Slot::None {
+            ev.wait(&format!("slot {} starting", b.last), secs);
+            if let Ok(Some(o)) = update::trial(m, b.last).await {
+                ev.step(&match o {
+                    Outcome::FellBack { slot, now } => format!("slot {slot} didn't get ready: back on slot {now}"),
+                    Outcome::Running(slot) | Outcome::Installed(slot) => {
+                        format!("slot {slot} is up and the good slot now ({secs} s)")
+                    }
+                });
+                return Ok(o);
+            }
+        }
+    }
+    Err(Error::Timeout("the rescue didn't install its system into a slot in 7 minutes (`zd1 log`, `zd1 slot`)".into()))
 }
 
 /// The module's boot image written through BL2's XModem, our firmware driving it (`XmFrame`; ~5 min, no DFU: the

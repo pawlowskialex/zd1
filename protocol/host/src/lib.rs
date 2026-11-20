@@ -562,6 +562,10 @@ enums! {
         Good = 2,
         /// forget a try and the failures since the last ready
         Clear = 3,
+        /// start the rescue once to install the system it is (the boot image's) into the slot that isn't the good
+        /// one (into the good one if it holds none; none if a slot holds it already), then start that slot once:
+        /// a boot image's system without a second upload (docs/module/storage.md)
+        Install = 4,
     }
     /// Where the bulk OUT endpoint's data goes (`Pipe`).
     Sink {
@@ -1114,7 +1118,7 @@ messages! {
     /// Change which slot the module starts (`BootOp`); `restart`: power-cycle the module now so it does.
     0x18 Boot -> BootReply [gated, 1000 ms] {
         op: BootOp,
-        /// TRY: A, B or RESCUE; GOOD: A or B
+        /// TRY: A, B or RESCUE; GOOD: A or B; INSTALL: none
         slot: Slot,
         /// restart the module now (as `Module RESTART`)
         restart: bool,

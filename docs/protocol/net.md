@@ -153,13 +153,14 @@ the system (`usr/lib/zd1/mcu/zd1.dmb`) is the same build's `.#mcu`, byte for byt
 | From | Takes | The MCU |
 |---|---|---|
 | our OS, over the network | `system-V.signed` | its app from the new system, once someone holds ON/OFF 5 s; only when its version (the app's content) differs |
-| any of our releases or the stock firmware, over USB (the page's Update, `zd1`) | `system-V.cpio.gz`; `os-V.bcd` when the stub or kernel differ; `zd1-V.hex` | over DFU, the whole region: the preloader too |
+| any of our releases or the stock firmware, over USB (the page's Update, `zd1`) | `os-V.bcd` when the stub or kernel differ, and the system from it (its rescue installs itself); else `system-V.cpio.gz`; `zd1-V.hex` | over DFU, the whole region: the preloader too |
 | a ZD1L, its first install (key-hold, BL2) | `zd1l-V.fw` | B&W's bootloader takes the `.fw`'s app from BL2 |
 
 So a ZD1 on a release from before the network link (no `zd1-netd`) takes one update over USB; from then on releases
-go over the network, unless one changes the stub or the kernel, or the preloader, which only DFU writes. Over USB the
-page goes system, boot image, MCU: between the last two the new stub hears no knock from the old MCU and starts the
-rescue, which the MCU's flash ends.
+go over the network, unless one changes the stub or the kernel, or the preloader, which only DFU writes. Over USB with
+a boot image the page goes boot image, MCU, then `Boot INSTALL` (the new MCU's): the rescue copies itself into the
+slot that isn't the good one and the MCU starts that slot once (`docs/module/storage.md`, The rescue). Between the
+boot image and the MCU an MCU from before the knock leaves the new stub silent, and it starts the rescue.
 
 ## Limits
 Four sessions at a time (a fifth connection gets HTTP 503); both handshakes (the WebSocket's, Noise's) within 10 s

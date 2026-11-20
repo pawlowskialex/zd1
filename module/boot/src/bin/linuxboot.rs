@@ -11,8 +11,9 @@
 //!      it writes while it waits for the module): B&W's bootloaders never knock, and to the ZD1L's a module that
 //!      answers and then goes quiet for the kernel's boot is lost (docs/mcu/bootloader-hbl.md);
 //!   2. with the slots flag (header +0x2C bit 0: the module OS's image, docs/module/storage.md): ask the MCU what to
-//!      start, if it knocked within 3 s. We say "zd1-boot" on reg 0x25 and wait up to 5 s for its answer on reg 0xC4 (b0: slot A, slot B or the
-//!      rescue, b1: the good slot; our MCU firmware, mcu/src/modboot.c). A slot is the root file system (JFFS2 on its
+//!      start, if it knocked within 3 s. We say "zd1-boot" on reg 0x25 and wait up to 5 s for its answer on reg 0xC4
+//!      (b0: slot A, slot B, the rescue, or the rescue to install itself into a slot: `zd1.install`; b1: the good
+//!      slot; our MCU firmware, mcu/src/modboot.c). A slot is the root file system (JFFS2 on its
 //!      MTD partition, read-only: the initramfs is left out), the rescue is the initramfs. No answer (the MCU's
 //!      bootloader relaying an image, the stock MCU firmware): the rescue. Without the MCU we don't know which slot is
 //!      good, and a slot may hold an old system or none (an empty one panics, and the module restarts into it again);
@@ -213,6 +214,10 @@ fn main() -> ! {
             boot::RESCUE => {
                 say(&mut link, "[linuxboot] the rescue (the MCU's choice)\n");
                 add(b" zd1.rescue");
+            }
+            boot::INSTALL => {
+                say(&mut link, "[linuxboot] the rescue, to install itself into a slot (the MCU's choice)\n");
+                add(b" zd1.rescue zd1.install");
             }
             boot::SLOT_B => {
                 say(&mut link, "[linuxboot] slot B (the MCU's choice)\n");

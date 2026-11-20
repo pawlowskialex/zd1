@@ -1,12 +1,15 @@
 //! zd1-slot: the system slots (docs/module/storage.md; the library has how they work). What they hold: `zd1-ctl status`.
 //!   zd1-slot mtd NAME           the MTD number of partition NAME (system-a, system-b, data, vendor), its nodes made
 //!   zd1-slot install SLOT ID    a gzip'd cpio of a root on stdin into SLOT (a, b), stamped ID
-//!   zd1-slot install-self SLOT ID   the system that runs from RAM (the Lightning model's full-system rescue) into SLOT
+//!   zd1-slot install-self SLOT ID [--start]   the system that runs from RAM (the rescue) into SLOT, unless it holds
+//!                               ID already; --start: then the MCU starts SLOT once (zd1-linkd's `try`)
 //!   zd1-slot erase NAME         partition NAME (system-a, system-b, data) erased as from the factory, but for the
 //!                               cleanmarkers (bad blocks left alone); refused while it is mounted. The vendor's: never
 //! Which slot starts is the MCU's (`zd1 slot`).
 
-use crate::{Slot, boot, erase, erase_slot, install, install_running, mtd};
+use crate::{Slot, boot, erase, erase_slot, install, install_running, mtd, stamp};
+use std::io::Write;
+use std::os::unix::net::UnixStream;
 
 pub fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -23,11 +26,23 @@ pub fn main() {
                 Err(e) => die(&e),
             }
         }
-        ["install-self", s, id] => {
+        ["install-self", s, id, rest @ ..] if matches!(rest, [] | ["--start"]) => {
             let Some(s) = Slot::parse(s) else { die("SLOT: a or b") };
-            match install_running(s, id) {
-                Ok(m) => println!("{m}"),
-                Err(e) => die(&e),
+            if stamp(s).and_then(|st| st.split(' ').next().map(str::to_string)).as_deref() == Some(*id) {
+                println!("slot {}: holds {id} already", s.name());
+            } else {
+                match install_running(s, id) {
+                    Ok(m) => println!("{m}"),
+                    Err(e) => die(&e),
+                }
+            }
+            if rest == ["--start"] {
+                // the MCU starts it once: ready makes it the good slot (zd1-linkd: reg 0xD8)
+                let line = format!("try {}\n", s.name());
+                if let Err(e) = UnixStream::connect("/run/zd1link").and_then(|mut c| c.write_all(line.as_bytes())) {
+                    die(&format!("/run/zd1link: {e}"));
+                }
+                println!("slot {}: asked the MCU to start it once", s.name());
             }
         }
         ["erase", name @ ("system-a" | "system-b" | "data")] => {
@@ -47,7 +62,7 @@ pub fn main() {
         }
         _ => {
             eprintln!(
-                "usage: zd1-slot mtd NAME | install SLOT ID < IMAGE | install-self SLOT ID | erase system-a|system-b|data"
+                "usage: zd1-slot mtd NAME | install SLOT ID < IMAGE | install-self SLOT ID [--start] | erase system-a|system-b|data"
             );
             std::process::exit(2);
         }

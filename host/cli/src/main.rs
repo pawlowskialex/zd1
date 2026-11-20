@@ -164,8 +164,8 @@ enum Cmd {
         /// The MCU firmware (Intel HEX or the app region's .bin).
         #[arg(long)]
         mcu: Option<PathBuf>,
-        /// The system image (system.cpio.gz).
-        #[arg(long)]
+        /// The system image (system.cpio.gz), with --no-bcd (a boot image's rescue is the system: it installs itself).
+        #[arg(long, requires = "no_bcd")]
         system: Option<PathBuf>,
         /// Where the MCU backup goes (units/<unit>; the one unit in units/ by default).
         #[arg(long)]
@@ -406,6 +406,9 @@ enum SlotOp {
     Good { slot: GoodSlot },
     /// Forget a try and the failures since the last ready.
     Clear,
+    /// The boot image's system into a slot: the rescue started once installs itself into the slot that isn't the good
+    /// one, then that slot started once (what `zd1 update os.bcd` ends with).
+    Install,
 }
 
 #[derive(Subcommand)]
@@ -605,14 +608,19 @@ async fn run<B: Bus>(bus: &B, cli: Cli) -> Result<i32> {
             let bcd = if no_bcd { None } else { Some(read(&bcd.unwrap_or_else(|| repo().join("emu/img/os/os.bcd")))?) };
             let mcu_path = mcu.unwrap_or_else(|| repo().join("mcu/result/zd1.hex"));
             let img = McuImage::parse(&mcu_path.display().to_string(), &read(&mcu_path)?)?;
-            let system = read(&system.unwrap_or_else(|| repo().join("emu/img/os/system.cpio.gz")))?;
+            let system = match &bcd {
+                Some(_) => None,
+                None => Some(read(&system.unwrap_or_else(|| repo().join("emu/img/os/system.cpio.gz")))?),
+            };
             let want = img.ident().map_or("unknown".into(), |i| i.version);
             println!(
-                "install: {}MCU firmware {want} ({}), system {} ({} bytes)",
-                bcd.as_ref().map_or(String::new(), |b| format!("boot image {} bytes, ", b.len())),
+                "install: MCU firmware {want} ({}), {}",
                 mcu_path.display(),
-                zd1_host::image::system_version(&system)?,
-                system.len()
+                match (&bcd, &system) {
+                    (Some(b), _) => format!("the boot image ({} bytes) and the system it carries", b.len()),
+                    (None, Some(s)) => format!("system {} ({} bytes)", zd1_host::image::system_version(s)?, s.len()),
+                    (None, None) => unreachable!("one of them"),
+                }
             );
             if !yes {
                 println!("dry run: --yes to install");
@@ -620,7 +628,7 @@ async fn run<B: Bus>(bus: &B, cli: Cli) -> Result<i32> {
             }
             let dir = files::backup_dir(unit)?;
             term.show_log(true);
-            let images = install::Images { bcd: bcd.as_deref(), mcu: &img, system: &system };
+            let images = install::Images { bcd: bcd.as_deref(), mcu: &img, system: system.as_deref() };
             install::install(bus, &images, ev.clone(), async |b| files::save_backup(&dir, b, &*ev)).await?;
             return Ok(0);
         }
@@ -647,9 +655,14 @@ async fn run<B: Bus>(bus: &B, cli: Cli) -> Result<i32> {
                 if m.call(&msg::Info).await?.mod_state == zd1_host::spec::ModState::Bl2 {
                     install::boot_image_in_bl2(&mut m, &image).await?;
                 } else {
-                    install::boot_image(bus, Some(m), &image, ev).await?;
+                    install::boot_image(bus, Some(m), &image, ev.clone()).await?;
+                    m = open(false).await?;
                 }
-                return Ok(0);
+                // its system, which the boot image carries as the rescue, into a slot
+                return Ok(match install::system_from_rescue(&mut m).await? {
+                    update::Outcome::FellBack { .. } => 1,
+                    _ => 0,
+                });
             }
             if uart {
                 return update_uart(bus, cli.wait, &image, baud, !no_start, ev).await;
@@ -943,6 +956,12 @@ async fn speaker_cmd<L: Link>(m: &mut Mcu<L>, cmd: Cmd, ev: &Rc<dyn Events>) -> 
                     },
                 ),
                 SlotOp::Clear => (BootOp::Clear, Slot::None),
+                SlotOp::Install => {
+                    return Ok(Ok(match install::system_from_rescue(m).await? {
+                        update::Outcome::FellBack { .. } => 1,
+                        _ => 0,
+                    }));
+                }
             };
             println!("{}", fmt::boot(&m.call(&msg::Boot { op, slot, restart }).await?));
         }

@@ -347,6 +347,9 @@ consts! {
         SLOT_B: u8 = 2,
         /// The rescue initramfs in the app partition.
         RESCUE: u8 = 3,
+        /// The rescue, to install the system it is into a slot and start that slot once (host `Boot INSTALL`): the
+        /// stub adds `zd1.install` (docs/module/storage.md, The rescue).
+        INSTALL: u8 = 4,
         /// What the stub calls itself on 0x25 (the MCU answers only it).
         IDENT: &str = "zd1-boot",
         /// The whole 0xC4 word our MCU writes while it waits for the module after powering it (its knock): the stub

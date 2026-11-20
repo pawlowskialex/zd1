@@ -97,6 +97,7 @@
 #define ZD1H_BOOT_OP_TRY          1  /* start `slot` once, at the module's next boot: it becomes the good slot when the module gets ready with it, else the next boot is the good one again */
 #define ZD1H_BOOT_OP_GOOD         2  /* make `slot` (A or B) the good one */
 #define ZD1H_BOOT_OP_CLEAR        3  /* forget a try and the failures since the last ready */
+#define ZD1H_BOOT_OP_INSTALL      4  /* start the rescue once to install the system it is (the boot image's) into the slot that isn't the good one (into the good one if it holds none; none if a slot holds it already), then start that slot once: a boot image's system without a second upload (docs/module/storage.md) */
 /* Sink: Where the bulk OUT endpoint's data goes (`Pipe`). */
 #define ZD1H_SINK_DISCARD      0  /* nowhere: counted and CRC-32'd (measuring the USB path) */
 #define ZD1H_SINK_MODULE       1  /* to the network module's updater over its console UART, as it grants it (`Update` sets it) */

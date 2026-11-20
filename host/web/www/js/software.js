@@ -103,11 +103,9 @@ export async function installAll(rel) {
   )
     return;
   const r = await job(`Install release ${rel.version}`, false, async () => {
-    const [mcu, system, bcd] = [
-      await fetchImage(rel.mcu),
-      await fetchImage(rel.system),
-      rel.bcd ? await fetchImage(rel.bcd) : undefined,
-    ];
+    // with a boot image its rescue is the system (it installs itself); without one, the system image
+    const bcd = rel.bcd ? await fetchImage(rel.bcd) : undefined;
+    const [mcu, system] = [await fetchImage(rel.mcu), bcd ? undefined : await fetchImage(rel.system)];
     const r = await app.bl.install(bcd, rel.mcu.file, mcu, system);
     return `Done: MCU firmware ${r.fw}, system ${r.os} in slot ${r.slot.toUpperCase()}.`;
   });
@@ -275,12 +273,16 @@ function unfinished(rel) {
     );
     return true;
   }
-  if (ms === "ready" && app.info.mod_os?.split(" ")[2] === "rescue" && rel.system) {
+  const os = app.info.mod_os?.split(" ") ?? [];
+  if (ms === "ready" && os[2] === "rescue" && rel.system) {
+    // a rescue that is this release's system installs itself; another one takes the release's
+    const own = os[1] === rel.system.version;
     banner(
       "The install isn't finished",
-      "The module runs its rescue: it has no system yet. The system goes on (about 2 minutes).",
+      "The module runs its rescue: it has no system in a slot yet. " +
+        (own ? "It installs itself into one (about a minute)." : "The system goes on (about 2 minutes)."),
       `Finish: install ${rel.version}'s system`,
-      () => updateTo(rel, ["system"], true),
+      () => updateTo(rel, [own ? "rescue" : "system"], true),
     );
     return true;
   }
@@ -297,10 +299,10 @@ async function writeBootInBl2(rel) {
 
 async function finishAll(rel) {
   const r = await job(`Install release ${rel.version}`, false, async () => {
-    const [mcu, system, bcd] = [await fetchImage(rel.mcu), await fetchImage(rel.system), await fetchImage(rel.bcd)];
+    const [mcu, bcd] = [await fetchImage(rel.mcu), await fetchImage(rel.bcd)];
     const sp = app.sp;
     app.sp = null; // the install takes the speaker into its bootloader: this connection ends
-    const r = await sp.install(bcd, rel.mcu.file, mcu, system);
+    const r = await sp.install(bcd, rel.mcu.file, mcu, undefined); // the boot image's rescue is the system
     return `Done: MCU firmware ${r.fw}, system ${r.os} in slot ${r.slot.toUpperCase()}.`;
   });
   await connect(false);
@@ -406,54 +408,66 @@ export function drawReleases() {
   $("builds").hidden = !rows.length;
 }
 
-/// The speaker to a release: the system, the module's boot image (through the bootloader: the connection ends), then
-/// the MCU firmware (this order keeps the page connected longest), each only if it isn't there already.
+/// The speaker to a release, each part only if it isn't there already. With a boot image to write: the boot image
+/// (through the bootloader: the connection ends), the MCU firmware, then the release's system from it (its rescue
+/// installs itself into a slot: no second upload); else the system into a slot, then the MCU firmware.
 export async function updateTo(rel, needs, finishing = false) {
   if (app.sp.link() === "net") return updateOverNetwork(rel, needs);
+  const has = (k) => needs.includes(k);
+  const steps = has("boot") ? ["boot", has("mcu") && "mcu", has("system") && "rescue"].filter(Boolean) : needs;
   const parts = {
     system: "the module's system goes into the slot that doesn't run (the old one stays as the way back)",
-    boot: "the module's boot image (its start-up and its rescue) is rewritten through the bootloader, about 5 minutes (keep this tab in front: a browser slows a tab in the background)",
+    boot: "the module's boot image (its start-up, and the release's system as its rescue) is rewritten through the bootloader, about 6 minutes (keep this tab in front: a browser slows a tab in the background)",
     mcu: "the main board's firmware (a backup of it first: a download, and a copy in this browser)",
+    rescue:
+      "the release's system goes from the boot image into the slot that doesn't run (the old one stays as the way back)",
   };
-  const plan = needs.map((k) => parts[k]).join("; then ");
+  const plan = steps.map((k) => parts[k]).join("; then ");
   if (
     !finishing &&
     !(await ask(
       `Update to ${rel.version}?`,
-      `${plan[0].toUpperCase()}${plan.slice(1)}. A few minutes${needs.includes("boot") ? " more" : ""}; sound stops meanwhile.`,
+      `${plan[0].toUpperCase()}${plan.slice(1)}. A few minutes${steps.includes("boot") ? " more" : ""}; sound stops meanwhile.`,
       "Update",
     ))
   )
     return;
+  // a step that ends the connection (the bootloader): the next one needs it back
+  const again = async (after) => {
+    await connect(false);
+    if (!app.sp) throw new Error(`The speaker didn't come back after ${after}: connect again, then update.`);
+  };
   const r = await job(`Update to ${rel.version}`, false, async () => {
     const said = [];
     let n = 0;
-    if (needs.includes("system")) {
-      events.phase(++n, needs.length, "the module's system");
-      const r = await app.sp.updateSystem(await fetchImage(rel.system), true);
-      if (r.outcome === "fellBack")
-        throw new Error(
-          `The system in slot ${r.slot.toUpperCase()} didn't come up: the module is back on slot ${r.now.toUpperCase()}. Nothing else was changed.`,
-        );
-      said.push(`system ${rel.system.version} in slot ${r.slot.toUpperCase()}`);
-    }
-    if (needs.includes("boot")) {
-      events.phase(++n, needs.length, "the module's boot image");
-      const bcd = await fetchImage(rel.bcd);
-      const sp = app.sp;
-      app.sp = null; // through the bootloader: this connection ends
-      await sp.updateBoot(bcd);
-      said.push(`boot image ${rel.bcd.version}`);
-      if (needs.includes("mcu")) {
-        await connect(false);
-        if (!app.sp) throw new Error("The speaker didn't come back after its boot image: connect again, then update.");
+    for (const [i, k] of steps.entries()) {
+      const more = i < steps.length - 1;
+      if (k === "system" || k === "rescue") {
+        events.phase(++n, steps.length, "the module's system");
+        const r =
+          k === "system"
+            ? await app.sp.updateSystem(await fetchImage(rel.system), true)
+            : await app.sp.installFromRescue();
+        if (r.outcome === "fellBack")
+          throw new Error(
+            `The system in slot ${r.slot.toUpperCase()} didn't come up: the module is back on slot ${r.now.toUpperCase()}.`,
+          );
+        said.push(`system ${rel.system.version} in slot ${r.slot.toUpperCase()}`);
+      } else if (k === "boot") {
+        events.phase(++n, steps.length, "the module's boot image");
+        const bcd = await fetchImage(rel.bcd);
+        const sp = app.sp;
+        app.sp = null; // through the bootloader: this connection ends
+        await sp.updateBoot(bcd);
+        said.push(`boot image ${rel.bcd.version}`);
+        if (more) await again("its boot image");
+      } else if (k === "mcu") {
+        events.phase(++n, steps.length, "the main board's firmware");
+        const r = await app.sp.flashMcu(rel.mcu.file, await fetchImage(rel.mcu));
+        app.sp = null;
+        said.push(r.matches ? `MCU firmware ${r.fw}` : `MCU firmware: ${r.fw} runs, not the one written`);
+        if (more) await again("its main board's firmware");
       }
-    }
-    if (needs.includes("mcu")) {
-      events.phase(++n, needs.length, "the main board's firmware");
-      const r = await app.sp.flashMcu(rel.mcu.file, await fetchImage(rel.mcu));
-      app.sp = null;
-      said.push(r.matches ? `MCU firmware ${r.fw}` : `MCU firmware: ${r.fw} runs, not the one written`);
     }
     return `Done: ${said.join(", ")}.`;
   });

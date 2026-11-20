@@ -183,23 +183,24 @@ struct App {
     sessions: Vec<(u64, u8)>, // receivers with a sender connected: (client id, receiver)
     shown: [u8; 3],           // what the MCU was told on 0xC6
     next_id: u64,
-    intents: u8,                         // counts the picks (0xC0 b1)
-    greeted: bool,                       // our MCU firmware greeted us (0xC3): out of the stock-safe mode
-    ident: String,                       // "zd1-os VERSION KIND"
-    slot: Option<zd1_slot::Slot>,        // the slot we run from (none: the rescue, an initramfs)
-    boot: String,                        // the boot image's identity (zd1.boot=; empty: an older one)
-    good: Option<zd1_slot::Slot>,        // the good slot, as the MCU said at ready (0xC4 b1)
-    mcu: String,                         // the MCU firmware's version (0xC3)
-    state_shown: Vec<u8>,                // the State record as the MCU last got it (0xD6)
-    wifi: Arc<Mutex<Wifi>>,              // the supplicant's word: the Wi-Fi's state, access point, signal
-    servers: Arc<Mutex<Servers>>,        // the snapservers found over mDNS, and whether a look runs
-    stamps: Arc<Mutex<[String; 2]>>,     // what slots A and B hold (zd1-slot's stamps; read in a thread)
-    update: Option<std::process::Child>, // zd1-update while it runs
-    hbl_peer: bool,                      // the host used the configuration channel as the MCU's bootloader does
-    mcufw: Option<mcufw::Serve>,         // the MCU's own firmware going to its bootloader (we play BL2)
-    tunnel: tunnel::Tunnel,              // the network's requests for the MCU (SPI reg 0xD9)
-    pieces: Vec<(u64, u8, Vec<u8>)>,     // a record a network client reads in pieces: (client, record, its bytes)
-    state_sent: Vec<u8>,                 // the State record as the subscribers last got it
+    intents: u8,                             // counts the picks (0xC0 b1)
+    greeted: bool,                           // our MCU firmware greeted us (0xC3): out of the stock-safe mode
+    try_after_hello: Option<zd1_slot::Slot>, // a `try` asked for before the MCU's hello: sent with it
+    ident: String,                           // "zd1-os VERSION KIND"
+    slot: Option<zd1_slot::Slot>,            // the slot we run from (none: the rescue, an initramfs)
+    boot: String,                            // the boot image's identity (zd1.boot=; empty: an older one)
+    good: Option<zd1_slot::Slot>,            // the good slot, as the MCU said at ready (0xC4 b1)
+    mcu: String,                             // the MCU firmware's version (0xC3)
+    state_shown: Vec<u8>,                    // the State record as the MCU last got it (0xD6)
+    wifi: Arc<Mutex<Wifi>>,                  // the supplicant's word: the Wi-Fi's state, access point, signal
+    servers: Arc<Mutex<Servers>>,            // the snapservers found over mDNS, and whether a look runs
+    stamps: Arc<Mutex<[String; 2]>>,         // what slots A and B hold (zd1-slot's stamps; read in a thread)
+    update: Option<std::process::Child>,     // zd1-update while it runs
+    hbl_peer: bool,                          // the host used the configuration channel as the MCU's bootloader does
+    mcufw: Option<mcufw::Serve>,             // the MCU's own firmware going to its bootloader (we play BL2)
+    tunnel: tunnel::Tunnel,                  // the network's requests for the MCU (SPI reg 0xD9)
+    pieces: Vec<(u64, u8, Vec<u8>)>,         // a record a network client reads in pieces: (client, record, its bytes)
+    state_sent: Vec<u8>,                     // the State record as the subscribers last got it
 }
 
 /// Both slots' stamps, read in a thread (the slot that doesn't run is mounted to read it: seconds of JFFS2 scan).
@@ -742,6 +743,9 @@ impl App {
                 // every hello gets our state (the speaker's comes after it, 0xD2), not only the first
                 self.greeted = true;
                 self.mcu = v;
+                if let Some(slot) = self.try_after_hello.take() {
+                    self.try_slot(slot.name());
+                }
                 let p = self.shown;
                 self.notify(reg::PLAYER, &p);
                 self.state_shown.clear();
@@ -907,11 +911,13 @@ impl App {
         }
     }
 
-    /// Start a slot once (reg 0xD8): our OS installed a system there itself (zd1-netd's update).
+    /// Start a slot once (reg 0xD8): our OS installed a system there itself (zd1-netd's update, the rescue's
+    /// self-install). Asked before our MCU firmware's hello (the rescue's copy may end first), it goes with the hello.
     fn try_slot(&mut self, s: &str) {
         let Some(slot) = zd1_slot::Slot::parse(s) else { return self.say("[zd1-linkd] try a|b\n") };
         if !self.greeted {
-            return self.say("[zd1-linkd] try: no MCU firmware of ours to ask\n");
+            self.try_after_hello = Some(slot);
+            return self.say(&format!("[zd1-linkd] slot {} to start once after the MCU's hello\n", slot.name()));
         }
         self.say(&format!("[zd1-linkd] asking the MCU to start slot {} once\n", slot.name()));
         unsafe { libc::sync() };
@@ -1116,6 +1122,7 @@ pub fn main() {
         next_id: 0,
         intents: 0,
         greeted: false,
+        try_after_hello: None,
         ident: os_ident(),
         slot: zd1_slot::boot().running,
         boot: zd1_slot::boot().image,

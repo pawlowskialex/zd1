@@ -76,6 +76,11 @@ empty, the two device nodes a slot has) and stamps it with the version, so the n
 6512879 installed (10161 KB of files, 8660 KB of the partition used)" 29 s into its start, 20 s of copying; slot B
 started next and got ready]. Whether a slot holds a system is read from its record (`/data/zd1/stamp.a|b`):
 `zd1-slot erase` of a slot clears it, else the erased slot reads as the system it held.
+A new boot image brings its system that way too, without a second upload: the host's `Boot INSTALL` (the page's
+Update, `zd1 update os.bcd`, `zd1 install`, `zd1 slot install`) has the MCU start the rescue once with `zd1.install`
+(its answer `boot::INSTALL`), and the rescue copies itself into the slot that isn't the good one (the good one if that
+holds none; none if a slot holds its version already), then asks the MCU to start that slot once (`zd1-slot
+install-self SLOT ID --start`: zd1-linkd's `try`, reg 0xD8); ready makes it the good slot, else the MCU goes back.
 It is as new as the app partition's last install (BL2, the relay); a speaker whose slots both fail still runs and
 plays, and takes an update as from a slot (`zd1 update` writes the good slot, `updater.md`).
 

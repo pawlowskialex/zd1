@@ -121,6 +121,7 @@ static inline int zd1_drc_ack(uint8_t code){
 #define ZD1_BOOT_SLOT_A            1  /* System slot A (mtd1) as the root file system. */
 #define ZD1_BOOT_SLOT_B            2  /* System slot B (mtd2). */
 #define ZD1_BOOT_RESCUE            3  /* The rescue initramfs in the app partition. */
+#define ZD1_BOOT_INSTALL           4  /* The rescue, to install the system it is into a slot and start that slot once (host `Boot INSTALL`): the stub adds `zd1.install` (docs/module/storage.md, The rescue). */
 #define ZD1_BOOT_IDENT             "zd1-boot"  /* What the stub calls itself on 0x25 (the MCU answers only it). */
 #define ZD1_BOOT_KNOCK             0xFFFF  /* The whole 0xC4 word our MCU writes while it waits for the module after powering it (its knock): the stub stays silent on the link until it hears it. B&W's bootloaders never knock, and to the ZD1L's a module that answers and then goes quiet for the kernel's boot is lost (it gives up into waiting for a key). */
 

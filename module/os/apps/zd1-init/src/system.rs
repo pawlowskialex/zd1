@@ -126,7 +126,7 @@ pub const SERVICES: &[Service] = &[
     },
     Service {
         name: "self-install",
-        about: "the system, booted from RAM as the rescue (the Lightning model's image), into an empty slot: once",
+        about: "the rescue copies itself into a slot: an empty one, or when asked (zd1.install), then the MCU starts it",
         start: self_install,
         stop: None,
         lifetime: Lifetime::Once { wait: false, retry: None },
@@ -178,19 +178,31 @@ fn switched_off(c: &Ctx, switch: &str, setting: &str) -> Option<String> {
 /// The kernel's entropy pool reads 0 on this board (no driver feeds it): anything that waits for /dev/random (the
 /// AirPlay pairing keys, libsodium) would wait forever. zd1-entropy credits it from CPU timing jitter, ~0.2 s
 /// (docs/streaming.md).
-/// The Lightning model's image is the whole system as the rescue (BL2's web updater installs it; docs/module/storage.md):
-/// booted that way (the MCU's answer: no slot holds a system yet) it copies itself into the slot an update would
-/// take, so that the next start is a slot's.
+/// The rescue is the release's whole system (the boot image's initramfs, docs/module/storage.md). Booted as the rescue it
+/// copies itself into a slot: when the slot an update would take holds no system (a first install: the next start is
+/// that slot's), or when asked (`zd1.install`: the host's `Boot INSTALL` after a boot image, so that its system needs
+/// no second upload) into the slot that isn't the good one (the good one if that holds none), which the MCU then
+/// starts once; a slot holding this version already is started without a copy.
 fn self_install(c: &Ctx) -> Start {
     let b = zd1_slot::boot();
     if !c.boot.switch("zd1.rescue") || b.running.is_some() {
         return Start::Off("not the full system booted as the rescue".into());
     }
+    let id = zd1_sys::OsRelease::read("/etc/os-release").get("VERSION_ID").to_string();
+    if c.boot.switch("zd1.install") {
+        let good = b.target();
+        let holds = |s: zd1_slot::Slot| zd1_slot::stamp(s).is_some_and(|st| st.split(' ').next() == Some(&id));
+        let to = match [good.other(), good].into_iter().find(|&s| holds(s)) {
+            Some(s) => s,
+            None if zd1_slot::stamp(good).is_none() => good,
+            None => good.other(),
+        };
+        return run(&["zd1-slot", "install-self", to.name(), &id, "--start"]);
+    }
     let to = b.target();
     if zd1_slot::stamp(to).is_some() {
         return Start::Off(format!("slot {} holds a system", to.name()));
     }
-    let id = zd1_sys::OsRelease::read("/etc/os-release").get("VERSION_ID").to_string();
     run(&["zd1-slot", "install-self", to.name(), &id])
 }
 

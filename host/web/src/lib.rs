@@ -663,6 +663,25 @@ impl Speaker {
         Ok(o.into())
     }
 
+    /// The boot image's system into a slot, after a boot image (`install::system_from_rescue`): the rescue started
+    /// once installs itself into the slot that isn't the good one, which then starts once. { outcome: "running" |
+    /// "fellBack", slot, now }. USB only; our MCU firmware of the same release.
+    #[wasm_bindgen(js_name = installFromRescue)]
+    pub async fn install_from_rescue(&self) -> Result<JsValue, JsValue> {
+        let mut m = self.usb().await?;
+        let r = install::system_from_rescue(&mut m).await;
+        self.put(Conn::Usb(m));
+        let o = Object::new();
+        let (outcome, slot, now) = match r.map_err(js_err)? {
+            update::Outcome::FellBack { slot, now } => ("fellBack", slot, now),
+            update::Outcome::Running(s) | update::Outcome::Installed(s) => ("running", s, s),
+        };
+        set(&o, "outcome", outcome);
+        set(&o, "slot", slot.to_string());
+        set(&o, "now", now.to_string());
+        Ok(o.into())
+    }
+
     /// The module's boot image (our .bcd) through BL2's XModem, for a module in BL2 with no image to start (a boot
     /// image update that stopped: `install::boot_image_in_bl2`); then the module up on its good slot. The connection
     /// stays. { os }: what the module runs. USB only.
@@ -698,12 +717,12 @@ impl Speaker {
         bcd: Option<Vec<u8>>,
         mcu_name: String,
         mcu: Vec<u8>,
-        system: Vec<u8>,
+        system: Option<Vec<u8>>,
     ) -> Result<JsValue, JsValue> {
         let m = self.usb().await?;
         self.closed.set(true);
         drop(m); // the install opens it again, to ask for the bootloader
-        install_js(bcd, &mcu_name, &mcu, &system, &self.ev, &self.js).await
+        install_js(bcd, &mcu_name, &mcu, system.as_deref(), &self.ev, &self.js).await
     }
 }
 
@@ -712,7 +731,7 @@ async fn install_js(
     bcd: Option<Vec<u8>>,
     mcu_name: &str,
     mcu: &[u8],
-    system: &[u8],
+    system: Option<&[u8]>,
     ev: &Rc<dyn Events>,
     js: &JsEvents,
 ) -> Result<JsValue, JsValue> {
@@ -832,15 +851,16 @@ impl Bootloader {
 
     /// Our firmware on both boards (host/core's `install`, docs/web.md): the module's boot image through the relay
     /// (`bcd`; undefined: it is there already), the MCU firmware (a backup first: events.backup), the module's first
-    /// boot, the system into slot A. Phases on events.phase. { fw, slot, os }; connect again afterwards.
+    /// boot, then the system: the boot image's own (its rescue installs itself), else `system` into a slot. Phases on
+    /// events.phase. { fw, slot, os }; connect again afterwards.
     pub async fn install(
         &self,
         bcd: Option<Vec<u8>>,
         mcu_name: String,
         mcu: Vec<u8>,
-        system: Vec<u8>,
+        system: Option<Vec<u8>>,
     ) -> Result<JsValue, JsValue> {
-        install_js(bcd, &mcu_name, &mcu, &system, &self.ev, &self.js).await
+        install_js(bcd, &mcu_name, &mcu, system.as_deref(), &self.ev, &self.js).await
     }
 
     /// The stock firmware back on both boards (host/core's `rollback`): the stock `.bcd` through the relay, then the

@@ -10,6 +10,7 @@
 #define RESCUE_READY_MS 180000u
 
 static uint8_t last;   /* ZD1_BOOT_* answered at the module's last boot, 0 = none */
+static bool install;   /* the rescue tried next is to install itself (BOOT_OP_INSTALL; RAM: it restarts at once) */
 static bool pending;   /* ... and it hasn't got ready yet */
 static uint8_t failed; /* bit (slot - 1): didn't get ready since the last ready */
 
@@ -40,6 +41,8 @@ uint16_t modboot_answer(void) {
         log_puts(" didn't get ready: it booted again\n");
     }
     uint8_t g = modboot_good(), t = next(), a;
+    bool inst = install;
+    install = false;
     if (t != ZD1H_SLOT_NONE && !skip(t)) {
         a = t;
         put(g, ZD1H_SLOT_NONE);
@@ -52,13 +55,15 @@ uint16_t modboot_answer(void) {
         a = ZD1_BOOT_RESCUE;
     last = a;
     pending = true;
+    inst = inst && a == ZD1_BOOT_RESCUE && t == a;
     log_puts("[boot] starting ");
     log_puts(name(a));
     log_puts(a == g                 ? "\n"
-             : a == ZD1_BOOT_RESCUE ? " (no slot got ready)\n"
+             : inst                 ? " to install itself into a slot\n"
              : t == a               ? " (a try: once)\n"
+             : a == ZD1_BOOT_RESCUE ? " (no slot got ready)\n"
                                     : " (the good one didn't get ready)\n");
-    return (uint16_t)(a << 8 | g);
+    return (uint16_t)((inst ? ZD1_BOOT_INSTALL : a) << 8 | g);
 }
 
 void modboot_ready(void) {
@@ -111,6 +116,12 @@ bool modboot_set(uint8_t op, uint8_t slot) {
         log_puts("[boot] good slot: ");
         log_puts(name(slot));
         log_putc('\n');
+        return true;
+    case ZD1H_BOOT_OP_INSTALL: /* the rescue once, told to install itself: it then asks for the slot (reg 0xD8) */
+        put(modboot_good(), ZD1H_SLOT_RESCUE);
+        failed &= (uint8_t)~(1u << (ZD1H_SLOT_RESCUE - 1));
+        install = true;
+        log_puts("[boot] next boot: the rescue, to install itself into a slot\n");
         return true;
     case ZD1H_BOOT_OP_CLEAR:
         put(modboot_good(), ZD1H_SLOT_NONE);

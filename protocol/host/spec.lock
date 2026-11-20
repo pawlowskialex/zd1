@@ -348,6 +348,7 @@ enum Slot 3 RESCUE
 enum BootOp 1 TRY
 enum BootOp 2 GOOD
 enum BootOp 3 CLEAR
+enum BootOp 4 INSTALL
 enum Sink 0 DISCARD
 enum Sink 1 MODULE
 enum UpdateOp 1 BEGIN
