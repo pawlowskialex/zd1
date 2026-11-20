@@ -52,7 +52,11 @@ COMPILER_WORD_ALIGNED
 UDC_DESC_STORAGE usb_dev_desc_t udc_device_desc = {
 	.bLength                   = sizeof(usb_dev_desc_t),
 	.bDescriptorType           = USB_DT_DEVICE,
+#ifdef USB_DEVICE_BOS
+	.bcdUSB                    = LE16(0x0210), // zd1: a BOS descriptor (USB_DEVICE_BOS) is read from 2.01 on
+#else
 	.bcdUSB                    = LE16(USB_V2_0),
+#endif
 	.bDeviceClass              = 0,
 	.bDeviceSubClass           = 0,
 	.bDeviceProtocol           = 0,
@@ -162,6 +166,9 @@ UDC_DESC_STORAGE udc_config_speed_t   udc_config_hs[1] = {{
 UDC_DESC_STORAGE udc_config_t udc_config = {
 	.confdev_lsfs = &udc_device_desc,
 	.conf_lsfs = udc_config_lsfs,
+#ifdef USB_DEVICE_BOS
+	.conf_bos = USB_DEVICE_BOS, // zd1
+#endif
 #ifdef USB_DEVICE_HS_SUPPORT
 	.confdev_hs = &udc_device_desc,
 	.qualifier = &udc_device_qual,

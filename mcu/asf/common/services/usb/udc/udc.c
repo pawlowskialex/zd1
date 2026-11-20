@@ -749,7 +749,7 @@ static bool udc_req_std_dev_get_descriptor(void)
 			return false;
 		}
 		udd_set_setup_payload( (uint8_t *) udc_config.conf_bos,
-				udc_config.conf_bos->wTotalLength);
+				le16_to_cpu(udc_config.conf_bos->wTotalLength)); // zd1: le16 (the AVR32 is big-endian)
 		break;
 
 	case USB_DT_STRING:

@@ -16,18 +16,24 @@
  * re-allocates every endpoint above one whose alternate setting changes, and macOS switches audio's while it plays:
  * with the pipe above audio, a switch mid-transfer loses a 512-byte buffer [HW 2026-10-26]. VID/PID stay the
  * dev-bridge ones (the host tools find the device by them, and the host link's interface by its class); bcdDevice
- * 2.02 marks this descriptor set (2.01: with the CDC port). */
+ * 2.03 marks this descriptor set (2.02: without the BOS; 2.01: with the CDC port): Windows keeps what it read of a
+ * device per VID:PID:bcdDevice. */
 
 #define USB_DEVICE_VENDOR_ID     0x03EB /* Atmel */
 #define USB_DEVICE_PRODUCT_ID    0x2FE0 /* dev-bridge (zd1 finds the device by it) */
 #define USB_DEVICE_MAJOR_VERSION 2
-#define USB_DEVICE_MINOR_VERSION 2
+#define USB_DEVICE_MINOR_VERSION 3
 #define USB_DEVICE_POWER         100 /* mA on VBUS */
 #define USB_DEVICE_ATTR          (USB_CONFIG_ATTR_SELF_POWERED)
 
 #define USB_DEVICE_MANUFACTURE_NAME "Bowers & Wilkins" /* stock's strings (19B5:0005: "Bowers & Wilkins", */
 #define USB_DEVICE_PRODUCT_NAME     "Zeppelin Air"     /* "Zeppelin Air", "304"): what the host calls it */
 #define USB_DEVICE_SERIAL_NAME      "ZD1"              /* fixed, so the host keeps its settings for us */
+
+/* Windows: WinUSB for the host link's interface by itself (Microsoft OS 2.0 descriptors, msos.c): a BOS descriptor
+ * (bcdUSB 2.10 with it: udi_composite_desc.c), and its vendor request, which reaches no interface (device recipient) */
+#define USB_DEVICE_BOS                ((usb_dev_bos_desc_t UDC_DESC_STORAGE *)msos_bos)
+#define USB_DEVICE_SPECIFIC_REQUEST() msos_request()
 
 /* UDC events */
 #define UDC_VBUS_EVENT(b_vbus_high)
@@ -63,4 +69,5 @@
 #include "udi_hid_cc.h"
 #include "udi_hostif.h"
 #include "main.h"
+#include "msos.h"
 #endif /* _CONF_USB_H_ */

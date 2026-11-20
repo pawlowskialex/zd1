@@ -15,8 +15,8 @@ images offered under `images/` instead (`index.json` names them). The three view
   address to connect over the network (`docs/protocol/net.md`: the browser's Local Network Access, pairing with a
   press the first time; `Speaker.connectNet`), and a triage by what the speaker does: our firmware by its light, B&W's
   software (never in the list: the key-hold into DFU), the Lightning model's first install over the network (its
-  BL2's web updater, `zd1l.js`), a stopped update, and a speaker that isn't listed (cable, browsers, Windows not yet,
-  the Linux udev rule).
+  BL2's web updater, `zd1l.js`), a stopped update, and a speaker that isn't listed (cable, browsers, WinUSB on Windows for
+  B&W's bootloader, the Linux udev rule).
 - **Over the network** the app view is the same, less what is USB's (the MCU's firmware, the boot image, the console,
   the debug services, the gate, the amp's lock, the slots' way back: hidden, `body.net .usb-only`), plus the paired
   clients (Advanced) with Forget; the update installs the release's signed system (`system-VERSION.signed`) and the
@@ -58,7 +58,10 @@ as a glow on the line, read from Diag's `led` with each refresh (`js/led.js`: th
 `mcu/src/led.c`), sound off both ends while it plays (as far as the volume), the gate's purple blink while the press
 dialog is open, a long job's progress round the outline. `design.html` shows the system without a speaker.
 
-What it can't do yet: run on Windows (no WinUSB descriptors in the firmware), install without a release manifest beside it (the bootloader view's Install wants a release;
+Windows: our firmware declares WinUSB for the host link's interface (Microsoft OS 2.0 descriptors, `mcu/src/msos.c`),
+so it needs no driver installed; B&W's DFU bootloader declares nothing and can't be changed (its region is
+protected): it wants WinUSB installed once by hand (Zadig), as do our releases before the descriptors for their
+interface 3. What it can't do yet: install without a release manifest beside it (the bootloader view's Install wants a release;
 files go one board at a time).
 
 ## Goals
@@ -143,8 +146,8 @@ cross-origin.
 
 ## The three views
 **Not connected** is a triage, not a button: the states a speaker can be in by its light and its behaviour, the
-key-hold into DFU, "Connect", and the requirements (Chrome, Edge, Brave, Opera, Android Chrome too; Windows once
-the firmware has WinUSB descriptors; Linux's udev rule shown to copy). A stock speaker under its own firmware never
+key-hold into DFU, "Connect", and the requirements (Chrome, Edge, Brave, Opera, Android Chrome too; on Windows
+WinUSB by hand for B&W's bootloader; Linux's udev rule shown to copy). A stock speaker under its own firmware never
 shows up on the chooser: the triage says so and sends it into DFU.
 
 **Bootloader** is the installer. From the boot log and the manifest it offers one primary action:
@@ -226,8 +229,7 @@ cases (a wrong key, none in range, two networks). Next, in order:
 1. The rest of the unit's checks; the page's MCU install on the unit (its backup kept in the browser).
 2. `zd1 install` with the relay as one flow on the unit (`zd1 rollback` has run as one: 2026-11-03), then the
    page's Install and Roll back on it.
-3. WinUSB (MS OS 2.0) descriptors in the MCU firmware, for Windows.
-4. Later: a small HTTP API on the module for home automation serving `State` as JSON (`docs/backlog.md`).
+3. Later: a small HTTP API on the module for home automation serving `State` as JSON (`docs/backlog.md`).
 
 ## Working notes for the next agent
 - **The rules first** (`AGENTS.md`, and the local `CLAUDE.md` for the unit's own): a flash to the unit, a change of

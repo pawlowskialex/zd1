@@ -232,7 +232,11 @@ that must be told apart (19.7; `mcu/tools/led_palette.py` with the measured mode
   PCM16 stereo, iso adaptive OUT EP 0x06) + HID consumer (IF2: play/pause, next, previous) + vendor (IF3: the host link
   on EP0, the module's console among it, the pipe on bulk OUT EP 0x05, two banks: no faster than one, ~910 KB/s, the
   MCU's handling of its 512-byte buffers is the limit), 03EB:2FE0, stock's strings ("Bowers &
-  Wilkins", "Zeppelin Air") and serial "ZD1"; no serial port. The endpoint RAM is under 1 KB (`config/conf_usb.h`):
+  Wilkins", "Zeppelin Air") and serial "ZD1"; no serial port. For Windows, Microsoft OS 2.0 descriptors (`src/msos.c`:
+  bcdUSB 2.10 for the BOS, vendor request 0x20 for the set) give IF3 WinUSB as its compatible ID and the interface
+  GUID {A360CB65-12F3-41A0-ACCE-E3AD90285403}, so Windows binds WinUSB to it by itself; bcdDevice 2.03 marks them (Windows
+  keeps a device's per VID:PID:bcdDevice) [HW 2026-11-20: macOS reads the BOS and the 178-byte set from the unit,
+  audio, HID and the host link as before; Windows itself not tried]. The endpoint RAM is under 1 KB (`config/conf_usb.h`):
   audio 512, the pipe 128, HID and the status interrupt 8 each; EP3 and EP4 are free. The pipe sits below audio, whose
   alternate-setting switches re-allocate every endpoint above it. The status interrupt (`src/udi_audio.c`): a status
   word from the feature unit when the volume changes on the speaker (the keys, the remote, the page, the module's

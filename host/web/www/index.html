@@ -114,7 +114,10 @@
         <ul>
           <li>Use a USB cable that carries data (some only charge), straight to the computer.</li>
           <li>The browser: Chrome, Edge, Brave or Opera, on a desktop or on Android. Safari and Firefox have no WebUSB.</li>
-          <li>Windows can't open the speaker yet: its firmware lacks the descriptors Windows needs (macOS, Linux and Android work).</li>
+          <li>Windows: our firmware brings its own driver setting (WinUSB). B&amp;W's bootloader doesn't: for it (the speaker
+              in DFU, "AT32UC3A" in the Device Manager), install WinUSB once with <a href="https://zadig.akeo.ie">Zadig</a>
+              (Options, List All Devices). Our firmware of a release before this one wants the same for its "Interface 3"
+              only, never the whole speaker: sound and keys keep Windows' own drivers.</li>
           <li>Linux: give your user the device with this rule, then plug the speaker in again:
             <pre class="copy">sudo tee /etc/udev/rules.d/70-zd1.rules &lt;&lt;'EOF'
 SUBSYSTEM=="usb", ATTR{idVendor}=="03eb", ATTR{idProduct}=="2fe0", TAG+="uaccess"
