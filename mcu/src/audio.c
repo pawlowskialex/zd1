@@ -48,8 +48,5 @@ int audio_init(void) {
     rc_line("codec AD193x", rc);
     if (rc && !worst)
         worst = rc;
-    log_puts("  codec PLL lock after ");
-    log_dec(codec_lock_ms());
-    log_puts(" ms\n");
     return worst;
 }
