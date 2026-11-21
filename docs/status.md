@@ -84,7 +84,7 @@ A result counts once it was seen on the unit. An emulator run says the code does
 | zd1-airplay against what shairplay's review found (an AirPlay 1 DMAP length near 2^32, a plaintext SETUP or ANNOUNCE with a PIN set; the rest in the fork's tests): the DMAP probe answered 200 with the receiver running on, an ANNOUNCE before pairing refused 470 | 2026-11-02, system ebe57e6 on | `module/os/forks.md` |
 | AirPlay 1 from a test sender, decrypted and decoded on Warp0, sample for sample the source | 2026-10-24 on | `docs/streaming.md` |
 | AirPlay 1 asks for lost packets again (10 missing, 20 asks in 10 s over Wi-Fi; the test sender doesn't resend, so recovery is unseen); zd1-airplay lives on at a full `/tmp` with its log there | 2026-10-31, system 5f66c37 (by hand before the install) | `docs/streaming.md`, Lost packets |
-| **Snapcast**: a snapserver found over mDNS, its stream played (PCM and FLAC, FLAC on Warp0), the server's client volume setting the speaker's; a network stall stretched, nothing lost | 2026-10-29 | `docs/streaming.md`; `module/os/README.md`, Snapcast |
+| **Snapcast**: a snapserver found over mDNS, its stream played (PCM and FLAC, FLAC on Warp0), the server's client volume setting the speaker's; a network stall stretched, nothing lost | 2026-10-29; found and played again on v0.2.1 (snapserver 0.31, FLAC) 2026-11-21 | `docs/streaming.md`; `module/os/README.md`, Snapcast |
 | **Spotify Connect** (`zd1-spotify`): advertised, picked in the app, logged in, the queue loaded; Spotify refuses the test account every audio key (Not done, below), and the receiver stops on the track instead of skipping. The decode-and-output path (our Vorbis decoder on Warp0) plays a file sample for sample | 2026-10-25, 2026-10-28 | `docs/streaming.md` |
 
 ### Warp coprocessors and decoders
@@ -136,6 +136,13 @@ Work items: `backlog.md`. Checks that need a person at the unit: `units/<unit>/h
   receivers' play state from before the restart is kept (`mcu/src/wifi.c`, `play`) and a receiver takes the speaker
   only when it changes, so a reconnected Snapcast's first `playing` counts as no change. Reset when the module
   greets again in MCU 515c689 (flashed 2026-10-30): not seen yet.
+- **A Snapcast session starts at the server's volume, not the speaker's** [2026-11-21, v0.2.1]: a new client on
+  snapserver 0.31 (volume 100 there): the speaker went from 11/71 to the cap (40) when the stream took it, while the
+  server kept the speaker's 28 % that zd1-snapcast sent it. The server's first `ServerSettings` (its stored volume,
+  sent in answer to the hello) crosses the client's `ClientInfo`, and `zd1-snapcast` passes it to the speaker as a
+  change from the server (`module/os/apps/zd1-snapcast/src/lib.rs`, `ServerSettings`). The fix (PR #16) run by hand on
+  the unit: the speaker's volume kept (11/71 through the stream, the server at 28 %), a volume set on the server
+  still reaching the speaker; not installed yet.
 - **Telnet from the Mac times out after a module reboot** until the module has sent the Mac a packet (a ping from the
   module console fixes it); not every time. Not understood; the MAC's address filter is right.
 - **The Wi-Fi doesn't get back on after the AP restarts** [2026-11-15, system 05cf98f]: the AP (a UniFi Dream Router 7)
