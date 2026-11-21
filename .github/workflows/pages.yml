@@ -53,6 +53,69 @@ jobs:
         env: { GH_TOKEN: "${{ github.token }}" }
         run: gh release upload "$GITHUB_REF_NAME" out/* --clobber
 
+  # zd1-app for computers without nix (host/app, docs/web.md): zd1.app for any Mac and the Windows zip from nix (the
+  # Intel half of zd1.app through Rosetta), the Flatpak for each Linux CPU from flatpak-builder in GNOME's SDK. Each
+  # goes to the release as zd1-app-SYSTEM.EXT, unsigned, without the version: the README links
+  # releases/latest/download/NAME. The site leaves them there.
+  app:
+    if: github.event_name == 'release'
+    strategy:
+      matrix:
+        include:
+          - { runner: macos-14, package: app-macos, file: macos.zip }
+          - { runner: ubuntu-latest, package: app-windows, file: windows-x64.zip }
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Rosetta, for zd1.app's Intel half
+        if: runner.os == 'macOS'
+        run: softwareupdate --install-rosetta --agree-to-license
+      - uses: DeterminateSystems/nix-installer-action@v16
+        with: { extra-conf: "extra-platforms = x86_64-darwin" }
+      - uses: cachix/cachix-action@v15
+        if: ${{ vars.CACHIX_NAME != '' }}
+        with: { name: "${{ vars.CACHIX_NAME }}", authToken: "${{ secrets.CACHIX_AUTH_TOKEN }}" }
+      - name: build and attach
+        env: { GH_TOKEN: "${{ github.token }}" }
+        run: |
+          set -eu
+          mkdir out
+          cp "$(nix build .#${{ matrix.package }} --print-out-paths)"/*.zip "out/zd1-app-${{ matrix.file }}"
+          gh release upload "$GITHUB_REF_NAME" out/* --clobber
+
+  app-linux:
+    if: github.event_name == 'release'
+    strategy:
+      matrix:
+        include:
+          - { runner: ubuntu-latest, arch: x86_64 }
+          - { runner: ubuntu-24.04-arm, arch: aarch64 }
+    runs-on: ${{ matrix.runner }}
+    container: { image: "ghcr.io/flathub-infra/flatpak-github-actions:gnome-51", options: --privileged }
+    steps:
+      - uses: actions/checkout@v4
+      - name: the Flatpak
+        run: |
+          set -eu
+          flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+          flatpak-builder --user --install-deps-from=flathub --disable-rofiles-fuse --repo=repo --force-clean build \
+            host/app/linux/io.github.pawlowskialex.zd1.yml
+          mkdir out
+          flatpak build-bundle repo "out/zd1-app-linux-${{ matrix.arch }}.flatpak" \
+            io.github.pawlowskialex.zd1 --runtime-repo=https://dl.flathub.org/repo/flathub.flatpakrepo
+      - uses: actions/upload-artifact@v4
+        with: { name: "flatpak-${{ matrix.arch }}", path: out }
+
+  app-linux-attach:
+    needs: [app-linux]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with: { pattern: flatpak-*, merge-multiple: true, path: out }
+      - name: attach them to the release
+        env: { GH_TOKEN: "${{ github.token }}" }
+        run: gh release upload "$GITHUB_REF_NAME" out/* --clobber --repo "$GITHUB_REPOSITORY"
+
   site:
     needs: [assets]
     if: always() && (needs.assets.result == 'success' || needs.assets.result == 'skipped')
@@ -85,7 +148,10 @@ jobs:
               # a release whose images aren't built yet (its own run still going) has no manifest: left out until then
               assets = json.loads(subprocess.check_output(["gh", "release", "view", tag, "--json", "assets"]))["assets"]
               if not any(a["name"] == "manifest.json" for a in assets): continue
-              subprocess.check_call(["gh", "release", "download", tag, "--dir", d, "--clobber"])
+              # the images the manifest names, not the rest of the release (zd1-app's packages: the release's own)
+              subprocess.check_call(["gh", "release", "download", tag, "--dir", d, "--clobber", "-p", "manifest.json"])
+              names = [json.loads(l)["file"] for l in open(os.path.join(d, "manifest.json"))]
+              subprocess.check_call(["gh", "release", "download", tag, "--dir", d, "--clobber"] + sum((["-p", n] for n in names), []))
               notes = subprocess.check_output(["gh", "release", "view", tag, "--json", "body", "--jq", ".body"], text=True).strip()
               e = {"version": v, "date": r["publishedAt"][:10], "notes": notes}
               for line in open(os.path.join(d, "manifest.json")):

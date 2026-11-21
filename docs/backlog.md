@@ -10,14 +10,19 @@ and what is known. What already works: `status.md`; checks that need a person at
 - **The hosted page over the network in Chrome**: Local Network Access's permission and `ws://` to a private address
   from https://pawlowskialex.github.io (Chrome 154 on: WebSockets); what Chrome says when it is refused, and that the
   page's text matches. Then Edge, Brave, Opera.
+- **The app (`host/app`), what is left**: on the unit, an MCU install through it (DFU's transfers through the
+  polyfill, the device leaving and coming back as the bootloader) and the network link (a pairing: the hold); Linux
+  (WebKitGTK) and Windows (WebView2, WinUSB) untried; releases don't build it (a signed macOS bundle, Windows, Linux);
+  it could browse mDNS for the page (Discovery, below).
 - **The MCU follows its OS on a ZD1L**: B&W's bootloader taking our app from our OS (emulator only,
   `docs/mcu/bootloader-hbl.md`); needs a ZD1L owner.
 - **The ZD1L's first install from the page** (`zd1l.js`, no-cors to BL2; whole in the emulator): whether Chrome sends
   BL2 the requests from the hosted page (Local Network Access, mixed content); the rest on a real ZD1L: Other models.
 - **A developer's key onto a speaker**: today `zd1 console run 'echo KEY > /data/zd1/keys/NAME.pub'` over USB; a
   request of its own (gated, USB only) would make it a step of the page.
-- **Discovery**: browsers can't browse mDNS, so the page asks for an address; `zd1 --net` could find speakers
-  (`_zd1._tcp`, or the AirPlay records' host) and the page could list the addresses a USB connection reported.
+- **Discovery**: browsers can't browse mDNS, so the page asks for an address (and lists the speakers it paired with);
+  zd1-app lists our speakers from their AirPlay records, so one with AirPlay off isn't found. A `_zd1._tcp` record
+  from zd1-netd would find each one by its link; `zd1 --net` could browse it too.
 - **The page's keys** are in its origin's storage, which every page under the same GitHub Pages host shares; a
   non-extractable WebCrypto key (X25519) would keep the secret out of reach, with snow on a resolver of its own.
 

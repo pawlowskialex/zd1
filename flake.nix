@@ -72,6 +72,17 @@
         s.packages
         // nixpkgs.lib.optionalAttrs (linuxOf ? ${system}) (
           nixpkgs.lib.getAttrs moduleImage perSystem.${linuxOf.${system}}.packages
+          // {
+            # what a release ships of zd1-app (nix/default.nix): zd1.app with both Macs' CPUs (an Apple Silicon Mac
+            # builds the Intel half through Rosetta), the Windows zip from x86_64 Linux
+            app-macos = s.appMacos (
+              map (sys: perSystem.${sys}.packages.app) [
+                "aarch64-darwin"
+                "x86_64-darwin"
+              ]
+            );
+            inherit (perSystem.x86_64-linux.packages) app-windows;
+          }
         )
       ) perSystem;
     in

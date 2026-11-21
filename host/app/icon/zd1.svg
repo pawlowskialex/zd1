@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <!-- zd1-app's icon: the speaker as the page draws it (host/web/www/js/zd-speaker.js), its outline and the line
+       down its middle, lit, with its reflection, on a black tile (macOS's grid: an 824 px tile in 1024) -->
+  <defs>
+    <linearGradient id="tile" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1d1d1f"/>
+      <stop offset="1" stop-color="#000"/>
+    </linearGradient>
+    <linearGradient id="fade" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fff" stop-opacity="0.32"/>
+      <stop offset="0.6" stop-color="#fff" stop-opacity="0"/>
+    </linearGradient>
+    <filter id="glow" x="-20%" y="-50%" width="140%" height="200%"><feGaussianBlur stdDeviation="9"/></filter>
+    <path id="shape" d="M40 118C40 82 170 32 340 32S640 82 640 118 510 204 340 204 40 154 40 118Z"/>
+    <mask id="below"><rect x="0" y="560" width="1024" height="300" fill="url(#fade)"/></mask>
+  </defs>
+  <rect x="100" y="100" width="824" height="824" rx="185" fill="url(#tile)"/>
+  <g transform="translate(149 330) scale(1.0667)" fill="none" stroke-linecap="round">
+    <use href="#shape" stroke="#f5f5f7" stroke-width="13" filter="url(#glow)" opacity="0.35"/>
+    <use href="#shape" stroke="#f5f5f7" stroke-width="12"/>
+    <path d="M340 32V204" stroke="#f5f5f7" stroke-width="12"/>
+  </g>
+  <!-- the reflection on the floor, as the page's -->
+  <g mask="url(#below)">
+    <g transform="translate(149 812) scale(1.0667 -1.0667)" fill="none" stroke-linecap="round">
+      <use href="#shape" stroke="#f5f5f7" stroke-width="12"/>
+      <path d="M340 32V204" stroke="#f5f5f7" stroke-width="12"/>
+    </g>
+  </g>
+</svg>

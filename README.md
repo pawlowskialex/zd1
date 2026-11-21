@@ -3,6 +3,12 @@
 <p align="center"><a href="https://pawlowskialex.github.io/zd1/"><img src="docs/img/page-speaker.png" width="600"
 alt="The web page's drawing of the speaker: its outline lit white while it plays AirPlay, sound coming off both ends"></a></p>
 
+<p align="center"><b><a href="https://pawlowskialex.github.io/zd1/">Web</a></b> ·
+<a href="https://github.com/pawlowskialex/zd1/releases/latest/download/zd1-app-macos.zip">macOS</a> ·
+<a href="https://github.com/pawlowskialex/zd1/releases/latest/download/zd1-app-windows-x64.zip">Windows</a> ·
+<a href="https://github.com/pawlowskialex/zd1/releases/latest/download/zd1-app-linux-x86_64.flatpak">Linux (x86_64)</a> ·
+<a href="https://github.com/pawlowskialex/zd1/releases/latest/download/zd1-app-linux-aarch64.flatpak">Linux (ARM)</a></p>
+
 The Bowers & Wilkins Zeppelin Air (2011, the one with the 30-pin iPod dock) is a very good speaker that B&W stopped
 updating long ago: AirPlay 1 only, on a network module from 2010. This project replaces the
 firmware on both of its boards, so the same speaker plays **AirPlay 2** (multi-room, in step with your other AirPlay
@@ -74,8 +80,10 @@ on a 2010 ARM9 for all of this. What works and how it was checked: `docs/status.
 ## Installing
 **With the web page**: **https://pawlowskialex.github.io/zd1/**, in Chrome, Edge or Brave (WebUSB; Windows untried),
 with a USB cable to the speaker's rear USB-B port (the Lightning model: an Ethernet cable, as the page's Install
-shows). It installs, updates, configures and rolls back,
-and needs nothing else on the computer.
+shows). It installs, updates, configures and rolls back, and needs nothing else on the computer. **Or the app** (the
+links at the top): the same page in a window of its own instead of a browser, nothing to allow, the speaker found on
+the network by itself. They're unsigned: the first time, Control-click and Open on macOS, More info and Run anyway on
+Windows; on Linux a double click installs the Flatpak. With nix: `nix run github:pawlowskialex/zd1#app`.
 1. Unplug the speaker, then hold ON/OFF while plugging it back in: the speaker starts B&W's bootloader, which the
    page can talk to whatever firmware is on it.
 2. Open the page, **Connect**, pick the speaker, **Install**. It puts the network module's boot image on through the

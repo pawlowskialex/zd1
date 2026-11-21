@@ -1,0 +1,53 @@
+# zd1-app as a Flatpak, Linux's package for it (nix/app.nix is for nix): the web view is WebKitGTK, which GNOME's
+# runtime has, so the bundle is the app alone and runs on any distribution with Flatpak. A release ships it as
+# zd1-app-linux-ARCH.flatpak (.github/workflows/pages.yml); from a checkout:
+#   flatpak-builder --user --install --force-clean build host/app/linux/io.github.pawlowskialex.zd1.yml
+# The speaker's USB devices still want the host's udev rule for the user's access (the page's Help shows it).
+id: io.github.pawlowskialex.zd1
+runtime: org.gnome.Platform
+runtime-version: "51"
+sdk: org.gnome.Sdk
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.rust-stable
+command: zd1-app
+finish-args:
+  - --share=ipc
+  - --socket=wayland
+  - --socket=fallback-x11
+  # the speaker over USB (usbfs; nusb watches its coming and going), and the GPU
+  - --device=all
+  # the page, and the speaker on the local network: its link, BL2's updater, mDNS
+  - --share=network
+  # the MCU's backups, downloaded as a browser does
+  - --filesystem=xdg-download
+build-options:
+  append-path: /usr/lib/sdk/rust-stable/bin
+  # cargo fetches the crates Cargo.lock pins (a bundle of our own, not Flathub's offline build)
+  build-args:
+    - --share=network
+  env:
+    CARGO_HOME: /run/build/zd1-app/cargo-home
+modules:
+  - name: zd1-app
+    buildsystem: simple
+    build-commands:
+      - cargo build --release --locked -p zd1-app
+      - install -Dm755 target/release/zd1-app /app/bin/zd1-app
+      - install -Dm644 host/app/icon/zd1.svg /app/share/icons/hicolor/scalable/apps/io.github.pawlowskialex.zd1.svg
+      - install -Dm644 host/app/linux/io.github.pawlowskialex.zd1.desktop -t /app/share/applications
+      - install -Dm644 host/app/linux/io.github.pawlowskialex.zd1.metainfo.xml -t /app/share/metainfo
+    sources:
+      # the checkout, less what the app's build never reads
+      - type: dir
+        path: ../../..
+        skip:
+          - .git
+          - target
+          - result
+          - emu
+          - units
+          - downloads
+          - blobs
+          - re
+          - mcu
+          - docs
