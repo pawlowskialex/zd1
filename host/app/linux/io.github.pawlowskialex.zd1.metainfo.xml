@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- zd1-app's AppStream entry (the Flatpak: io.github.pawlowskialex.zd1.yml) -->
+<component type="desktop-application">
+  <id>io.github.pawlowskialex.zd1</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+  <name>zd1</name>
+  <summary>Install, update and set up a B&amp;W Zeppelin Air running zd1</summary>
+  <description>
+    <p>The zd1 web page in a window of its own: the speaker over USB with nothing to allow first, and on the network,
+       found by itself. It installs zd1 on a Zeppelin Air from its bootloader, updates it, sets up its Wi-Fi and its
+       receivers, and goes back to B&amp;W's software.</p>
+  </description>
+  <launchable type="desktop-id">io.github.pawlowskialex.zd1.desktop</launchable>
+  <url type="homepage">https://pawlowskialex.github.io/zd1/</url>
+  <url type="vcs-browser">https://github.com/pawlowskialex/zd1</url>
+  <developer id="io.github.pawlowskialex"><name>zd1</name></developer>
+  <content_rating type="oars-1.1"/>
+  <supports><control>pointing</control><control>keyboard</control></supports>
+</component>

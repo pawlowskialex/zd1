@@ -14,6 +14,7 @@ members = [
   "host/core",
   "host/cli",
   "host/web",
+  "host/app",
   "module/dm870",
   "module/link",
   "module/boot",

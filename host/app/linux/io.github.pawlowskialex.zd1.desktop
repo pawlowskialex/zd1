@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=zd1
+GenericName=Zeppelin Air
+Comment=Install, update and set up a B&W Zeppelin Air running zd1
+Exec=zd1-app
+Icon=io.github.pawlowskialex.zd1
+Terminal=false
+Categories=AudioVideo;Audio;Settings;HardwareSettings;
+Keywords=Zeppelin;Bowers;Wilkins;speaker;firmware;
+StartupWMClass=zd1-app

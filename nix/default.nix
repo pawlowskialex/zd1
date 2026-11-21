@@ -172,7 +172,7 @@ let
   };
 
   # host tools: the AirPlay test sender; zd1 (the speaker over USB, host/cli) and the web page (host/web), host/core's
-  # two front-ends
+  # two front-ends; the page in a window (host/app)
   airplay2-rs = pkgs.callPackage ./airplay2-rs.nix { craneLib = hostCraneLib; };
   zd1 = pkgs.callPackage ./zd1.nix {
     craneLib = hostCraneLib;
@@ -181,6 +181,26 @@ let
   web = pkgs.callPackage ./web.nix {
     craneLib = hostCraneLib;
     inherit workspace;
+  };
+  # the page in a window of its own (host/app), and what a release ships of it: zd1.app for any Mac (the slices of both
+  # CPUs: flake.nix), the Windows zip (built on Linux); the Flatpak is built by flatpak-builder (host/app/linux)
+  app-icons = pkgs.callPackage ./app-icons.nix { };
+  app = pkgs.callPackage ./app.nix {
+    craneLib = hostCraneLib;
+    inherit workspace;
+    icons = app-icons;
+    build = version;
+  };
+  appMacos =
+    slices:
+    pkgs.callPackage ./app-macos.nix {
+      inherit llvm slices version;
+      icons = app-icons;
+      build = version;
+    };
+  app-windows = pkgs.callPackage ./app-windows.nix {
+    inherit crane workspace version;
+    icons = app-icons;
   };
 
   # `nix fmt`, and what `nix flake check` runs: every file formatted and linted (treefmt.nix), clippy on every crate as
@@ -234,6 +254,7 @@ let
     '';
 in
 {
+  inherit appMacos;
   packages = {
     inherit
       llvm
@@ -245,6 +266,8 @@ in
       airplay2-rs
       zd1
       web
+      app
+      app-icons
       ;
     inherit (module)
       busybox
@@ -269,7 +292,9 @@ in
       inherit src os-image;
       mcu = stampMcu mcu.mcu-raw;
     };
-  };
+  }
+  # cross-compiled with MinGW, which nixpkgs' cache has for Linux
+  // lib.optionalAttrs pkgs.stdenv.isLinux { inherit app-windows; };
 
   formatter = treefmt;
   checks = {
@@ -336,6 +361,14 @@ in
     clippy-web = clippy {
       pname = "zd1-web";
       cargoExtraArgs = "--locked --target wasm32-unknown-unknown -p zd1-web";
+    };
+    clippy-app = clippy {
+      pname = "zd1-app";
+      cargoExtraArgs = "--locked -p zd1-app";
+      cargoClippyExtraArgs = "--all-targets";
+      # the app's libraries (Linux: WebKitGTK), not its derivation's hooks
+      nativeBuildInputs = lib.optional pkgs.stdenv.isLinux pkgs.pkg-config;
+      inherit (app) buildInputs;
     };
     clippy-boot = clippy {
       pname = "zd1-boot";
