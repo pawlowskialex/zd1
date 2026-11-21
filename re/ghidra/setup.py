@@ -39,6 +39,15 @@ def mcu_app():
     return bytes(ihex.image(open(paths.MCU_STOCK_HEX).read(), 0x80000000, 0x40000)[1]).rstrip(b"\xff")
 
 
+def mcu_app_a7():
+    """The A7's stock MCU app (AZ1_v2-04-77.dmb in blobs/a7/a7v20477.fw) at 0x80008000, behind 0x8000 of zeros (its own
+    bootloader was never read), so that addresses match the flash."""
+    from zeppelin.fw import bwfw
+
+    _, _, _, dmb = bwfw.parse(open(paths.A7_STOCK_FW, "rb").read())
+    return bytes(0x8000) + dmb[1]
+
+
 def bl2_stages(path=paths.MODULE_BL2):
     """(stage 1, stage 2) of a module BL2 partition (docs/module/boot-chain.md, "Boot header")."""
     b = open(path, "rb").read()
@@ -73,6 +82,20 @@ IMAGES = {
         [
             ("ZdDump.java", ["{out}"]),
             ("OrphanDec.java", ["{out}/decomp_orphans.c", "%x" % MCU_CODE[0], "%x" % MCU_CODE[1]]),
+        ],
+        [
+            ["re/scripts/resolve_decomp.py", "{img}", "{out}/decomp_all.c", "{out}/decomp_resolved.c"],
+            ["re/scripts/resolve_decomp.py", "{img}", "{out}/decomp_orphans.c", "{out}/decomp_orphans.c"],
+        ],
+    ),
+    "mcu-app-a7": (  # the A7's (docs/models/a7.md); the same code base as mcu-app, another build
+        mcu_app_a7,
+        "avr32:BE:32:default",
+        0x80000000,
+        ["ZdPre.java"],
+        [
+            ("ZdDump.java", ["{out}"]),
+            ("OrphanDec.java", ["{out}/decomp_orphans.c", "%x" % 0x80008000, "%x" % 0x80037000]),
         ],
         [
             ["re/scripts/resolve_decomp.py", "{img}", "{out}/decomp_all.c", "{out}/decomp_resolved.c"],

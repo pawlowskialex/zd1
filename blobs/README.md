@@ -3,8 +3,8 @@
 The vendor binaries the tools, the emulator, the builds and a recovery need: B&W / BridgeCo firmware from 2010–2015
 and the pieces of Nokia's Linux our module OS runs on, kept here so that a checkout is complete. None of them holds
 per-unit data (MAC, settings, Wi-Fi): that lives in `units/` (gitignored) and is rebuilt from a MAC by
-`tools/zeppelin/recover/mkunit.py`. By model: `zd1/` the Zeppelin Air, `zd1l/` the Zeppelin Air with Lightning; what
-both share: `dm870/` (B&W's module images' common part) and `nokia-hd1/` (the Linux our module OS runs on).
+`tools/zeppelin/recover/mkunit.py`. By model: `zd1/` the Zeppelin Air, `zd1l/` the Zeppelin Air with Lightning, `a7/` the A7
+(`docs/models/`); what they share: `dm870/` (B&W's module images' common part) and `nokia-hd1/` (the Linux our module OS runs on).
 `tools/zeppelin/paths.py` names them for the tools.
 
 ## `zd1/`: the Zeppelin Air
@@ -31,7 +31,16 @@ both share: `dm870/` (B&W's module images' common part) and `nokia-hd1/` (the Li
 | `module/cne.bin` | 69084 | `aeb57ab5…09bbe952` | its factory CnE (`.bcd` section 1; differs from the ZD1's in `TCPIPTunnel = 'OFF'`): its BL2 writes it to the factory CnE at NAND 0x40000, so `os-zd1l.bcd` carries the ZD1L's own | `zd1lv20435.fw`'s `.bcd`, section 1 |
 
 
-## `dm870/`: both models' module images
+## `a7/`: the A7
+
+| File | Bytes | sha256 | What | Source |
+|---|---|---|---|---|
+| `a7v20477.fw` | 7036805 | `d5a9f948…8cb0970` | B&W's last release for it, 2.04.77 (March 2015), both chips: the stock module image (HWID 0xA7) and the MCU app `AZ1_v2-04-77.dmb`, whose DSP download our firmware sends on an A7 (`re/mcu/extracted/dsp-a7/`). **The way back**: its BL2's web updater, as for the ZD1L (`docs/models/a7.md`) | B&W's firmware server, recovered 2026-11-04 (`downloads/bw-zeppelin-air-software/a7/SOURCES.md`; also on archive.org, `downloads/manifest.json`); md5 `6ef68a0e…` as in B&W's manifest |
+| `module/cne.bin` | 66704 | `732d206c…c4e413e22` | its factory CnE (`.bcd` section 1: "A7" names, `A7_Setup`, `TCPIPTunnel = 'OFF'`, its own certificate), the CnE of `os-a7.bcd` | `a7v20477.fw`'s `.bcd`, section 1 |
+
+Its BL2 and MCU bootloader were never read; the emulator stands the ZD1L's in for them (`emu/tools/stockunit.py`).
+
+## `dm870/`: every model's module images
 
 | File | Bytes | sha256 | What | Source |
 |---|---|---|---|---|

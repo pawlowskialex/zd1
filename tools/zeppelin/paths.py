@@ -20,6 +20,9 @@ ZD1L_STOCK_FW = os.path.join(BLOBS, "zd1l", "zd1lv20435.fw")  # B&W's last relea
 ZD1L_MCU_BOOTLOADER = os.path.join(BLOBS, "zd1l", "mcu", "bootloader.bin")  # "Net HBL": 0x80000000-0x80007FFF
 ZD1L_BL2 = os.path.join(BLOBS, "zd1l", "module", "bl2.bin")  # its NAND 0xA0000 partition
 ZD1L_CNE = os.path.join(BLOBS, "zd1l", "module", "cne.bin")  # its factory CnE
+# the A7
+A7_STOCK_FW = os.path.join(BLOBS, "a7", "a7v20477.fw")  # B&W's last release, both chips: the way back
+A7_CNE = os.path.join(BLOBS, "a7", "module", "cne.bin")  # its factory CnE
 # both: the module's DM870 and Nokia's Linux for it
 DM870_PRELOADER = os.path.join(BLOBS, "dm870", "preloader.bin")  # B&W's stage 1 of every app image
 NOKIA_KERNEL = os.path.join(BLOBS, "nokia-hd1", "kernel.bin")  # Nokia HD-1 Kernel_A (2.6.24.7)
