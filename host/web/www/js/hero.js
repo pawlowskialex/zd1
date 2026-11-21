@@ -25,8 +25,11 @@ export function heroProgress(x) {
   else $("art").setAttribute("progress", String(x));
 }
 
-// The gate's press: the purple blink while its dialog is open.
-new MutationObserver(() => $("art").toggleAttribute("press", $("press").open)).observe($("press"), {
+// The gate's press or a hold: the LED's blink in its colour while its dialog is open.
+new MutationObserver(() => {
+  if ($("press").open) $("art").setAttribute("press", $("press").dataset.led ?? "purple");
+  else $("art").removeAttribute("press");
+}).observe($("press"), {
   attributes: true,
   attributeFilter: ["open"],
 });

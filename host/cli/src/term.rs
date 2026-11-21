@@ -4,7 +4,7 @@
 use std::cell::{Cell, RefCell};
 use std::io::Write as _;
 use std::sync::atomic::{AtomicBool, Ordering};
-use zd1_host::{Error, Events, Result};
+use zd1_host::{Confirm, Error, Events, Result};
 
 static STOP: AtomicBool = AtomicBool::new(false);
 
@@ -51,7 +51,7 @@ impl Events for Term {
             let _ = std::io::stdout().flush();
         }
     }
-    fn prompt(&self, s: &str) {
+    fn prompt(&self, _how: Confirm, s: &str) {
         self.end_line();
         eprintln!("{s}");
     }

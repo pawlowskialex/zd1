@@ -108,6 +108,9 @@ html {
   height: 10px;
   animation: press-blink 0.2s steps(1) infinite;
 }
+#press[data-led="amber"] .press-lamp {
+  --lamp: var(--led-amber);
+}
 @keyframes press-blink {
   50% {
     opacity: 0.15;

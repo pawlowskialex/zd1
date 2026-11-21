@@ -19,7 +19,7 @@ use zd1_host::image::McuImage;
 use zd1_host::spec::{BootOp, Key, ModOp, Slot, SpecEnum};
 use zd1_host::usb::{Bus, EmuBus, NusbBus};
 use zd1_host::{
-    Error, Events, Link, Mcu, Result, console, flash, install, lab, msg, settings, speaker, update, xmodem,
+    Confirm, Error, Events, Link, Mcu, Result, console, flash, install, lab, msg, settings, speaker, update, xmodem,
 };
 
 #[derive(Parser)]
@@ -781,12 +781,12 @@ async fn speaker_cmd<L: Link>(m: &mut Mcu<L>, cmd: Cmd, ev: &Rc<dyn Events>) -> 
         }
         Cmd::Gate { action: None } => println!("{}", speaker::gate(&m.call(&msg::Info).await?)),
         Cmd::Gate { action: Some(GateAction::Unlock) } => {
-            ev.prompt("press ON/OFF on the speaker within 30 s (its LED flashes purple)");
+            ev.prompt(Confirm::Press, "press ON/OFF on the speaker within 30 s (its LED flashes purple)");
             m.call(&msg::Unlock).await?;
             println!("unlocked");
         }
         Cmd::Allow => {
-            ev.prompt("hold ON/OFF on the speaker for 5 s within 30 s, while its LED flashes amber");
+            ev.prompt(Confirm::Allow, "hold ON/OFF on the speaker for 5 s within 30 s, while its LED flashes amber");
             m.call(&msg::Allow).await?;
             println!(
                 "allowed: the MCU takes an app from the module once, until 60 s after the module's next ready (10 minutes at most)"

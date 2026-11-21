@@ -12,6 +12,33 @@ import { $, ask, failed, hex4, notice } from "./ui.js";
 // ---- what the flows tell the page -------------------------------------------------------------------------------
 
 export let jobRunning = false;
+
+/// What the speaker waits for (host/core's `Confirm`): the dialog's title, the LED's flash colour, what to do. The
+/// holds: the MCU reads the pin for 5 s and flashes green when it has them; the speaker's own 2 s hold (standby)
+/// comes on the way.
+const HOLD =
+  "Hold ON/OFF until the light flashes green and this window closes, about 5 seconds; keep holding when the speaker " +
+  "switches to standby at 2 seconds.";
+const PROMPTS = {
+  press: [
+    "Press ON/OFF on the speaker",
+    "purple",
+    "Its light flashes purple: a press there allows this change (and the next ones for 10 minutes). The press does " +
+      "nothing else.",
+  ],
+  pair: [
+    "Hold ON/OFF on the speaker",
+    "purple",
+    `Its light flashes purple. ${HOLD} That pairs this browser with it for good (Advanced lists the browsers and ` +
+      "computers paired). Then a press wakes it from standby.",
+  ],
+  allow: [
+    "Hold ON/OFF on the speaker",
+    "amber",
+    `Its light flashes amber. ${HOLD} That allows this update, and the firmware it brings for the speaker's main ` +
+      "board, once.",
+  ],
+};
 /// The press arrived (or the flow went on without one): its dialog goes, whatever comes next says so.
 function pressDone() {
   if ($("press").open) $("press").close();
@@ -21,13 +48,12 @@ export const events = {
   text(s) {
     appendLog(s);
   },
-  prompt() {
-    $("press-what").textContent =
-      app.sp?.link() === "net"
-        ? "Its light flashes purple: a press there pairs this browser with the speaker, for good (Advanced lists the " +
-          "browsers and computers paired). The press does nothing else."
-        : "Its light flashes purple: a press there allows this change (and the next ones for 10 minutes). The press " +
-          "does nothing else.";
+  /// The speaker waits for a person at it: `how` is host/core's `Confirm` ("press", "pair", "allow").
+  prompt(how) {
+    const [title, colour, what] = PROMPTS[how] ?? PROMPTS.press;
+    $("press").dataset.led = colour;
+    $("press-title").textContent = title;
+    $("press-what").textContent = what;
     if (!$("press").open) $("press").showModal(); // asked again while it waits (a person away: no deadline)
   },
   step(s) {
@@ -242,7 +268,7 @@ export async function job(title, stoppable, f) {
       e?.code === "CANCELLED"
         ? "Stopped."
         : e?.code === "DENIED"
-          ? "Nobody pressed ON/OFF on the speaker in time: nothing changed."
+          ? "ON/OFF on the speaker wasn't pressed (or held) in time: nothing changed."
           : `${e?.message ?? e}${
               e?.code === "GONE"
                 ? " The speaker's connection went away: plug it in again and connect; the page shows the state it is in and the way out (in its bootloader: Repair, or a backup)."

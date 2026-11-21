@@ -157,6 +157,7 @@ pub async fn system_signed<L: Link>(m: &mut Mcu<L>, update: &[u8]) -> Result<Slo
     let begin = SystemUpdate { op: UpdateOp::Begin, offset: 0, data: update[..at].to_vec() };
     let r = loop {
         e.prompt(
+            crate::Confirm::Allow,
             "allow the update: hold ON/OFF on the speaker for 5 s within 30 s, while its LED flashes amber (it goes to \
              standby at 2 s: keep holding; a press wakes it again after)",
         );
