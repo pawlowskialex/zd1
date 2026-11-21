@@ -464,6 +464,7 @@ struct ieee80211_conf {
 	int beacon_int;
 	u32 flags;
 	int power_level;
+	int user_power_level; /* Nokia's: the TX power fixed by SIOCSIWTXPOW, 0 = the channel's maximum (in their sulu_wlan's ABI) */
 	int max_antenna_gain;
 	u8 antenna_sel_tx;
 	u8 antenna_sel_rx;

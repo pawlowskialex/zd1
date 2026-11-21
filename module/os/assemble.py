@@ -11,8 +11,8 @@ Nix builds the files git knows: `git add` a new source file first. No image carr
 settings do (`zd1 wifi`, docs/module/settings.md).
 
 The images (emu/img/os/; docs/module/storage.md):
-    system.cpio.gz          a system slot's root (busybox, the full zd1, /etc, Nokia's modules and firmware, ALSA,
-                            Wi-Fi): what `zd1 update` installs (deterministic: sorted, root-owned, mtime 0)
+    system.cpio.gz          a system slot's root (busybox, the full zd1, /etc, the kernel modules, Nokia's firmware,
+                            ALSA, Wi-Fi): what `zd1 update` installs (deterministic: sorted, root-owned, mtime 0)
     system-debug.cpio.gz    the same with zd1's debug build (os.toml [image.debug])
     rescue.cpio(.gz)        the rescue, the app partition's initramfs: its busybox, the core programs, /init
     payload_dev.bin         emulator dev boot (`zemu run os`): the debug system as one plain initramfs at
@@ -106,9 +106,10 @@ def make_rescue(cfg, parts, root):
 
 def make_system(cfg, parts, root, version, built, debug=False):
     """A system slot's tree, the whole root the kernel mounts (read-only): busybox, the full zd1 (/usr/bin/zd1: the
-    core programs and the rest, a link each; /sbin/init), /etc, Nokia's kernel modules and Wi-Fi firmware,
-    wpa_supplicant, ALSA's configuration and tools; mount points for what init mounts (/dev, /run, /tmp, /var: tmpfs;
-    /data its partition). `debug`: zd1's debug build, with its programs' links."""
+    core programs and the rest, a link each; /sbin/init), /etc, the kernel modules (Nokia's, our cfg80211 and
+    mac80211) and Nokia's Wi-Fi firmware, wpa_supplicant, ALSA's configuration and tools; mount points for what init
+    mounts (/dev, /run, /tmp, /var: tmpfs; /data its partition). `debug`: zd1's debug build, with its programs'
+    links."""
     v, a = cfg["vendor"], cfg["apps"]
     vroot = os.path.join(REPO, v["root"])
     copy_tree(os.path.join(parts, "busybox"), root)
@@ -134,10 +135,12 @@ def make_system(cfg, parts, root, version, built, debug=False):
     for d in ("modules", "firmware"):
         os.symlink("/usr/lib/" + d, os.path.join(root, "lib", d))
     kver = "2.6.24.7"
-    for m in v["modules"]:
-        dst = os.path.join(usr, "lib/modules", kver, "kernel", m + ".ko")
-        os.makedirs(os.path.dirname(dst), exist_ok=True)
-        shutil.copyfile(os.path.join(vroot, "lib/modules", kver, "kernel", m + ".ko"), dst)
+    # Nokia's modules, and ours (cfg80211, mac80211: module/wifi) from the parts
+    for base, mods in ((vroot, v["modules"]), (os.path.join(parts, "wifi"), cfg["wifi"]["modules"])):
+        for m in mods:
+            dst = os.path.join(usr, "lib/modules", kver, "kernel", m + ".ko")
+            os.makedirs(os.path.dirname(dst), exist_ok=True)
+            shutil.copyfile(os.path.join(base, "lib/modules", kver, "kernel", m + ".ko"), dst)
     for f in v["firmware"]:  # lib/firmware/... -> usr/lib/firmware/...
         src, dst = os.path.join(vroot, f), os.path.join(usr, f)
         os.makedirs(os.path.dirname(dst), exist_ok=True)

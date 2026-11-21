@@ -213,7 +213,9 @@ static int ieee80211_ioctl_giwrange(struct net_device *dev,
 	IW_EVENT_CAPA_SET(range->event_capa, SIOCGIWAP);
 	IW_EVENT_CAPA_SET(range->event_capa, SIOCGIWSCAN);
 
+#ifdef IW_SCAN_CAPA_ESSID	/* compat: 2.6.24's iw_range has no scan_capa */
 	range->scan_capa |= IW_SCAN_CAPA_ESSID;
+#endif
 
 	return 0;
 }
@@ -642,6 +644,7 @@ static int ieee80211_ioctl_siwtxpower(struct net_device *dev,
 
 	if (data->txpower.fixed) {
 		new_power_level = data->txpower.value;
+		local->hw.conf.user_power_level = new_power_level;
 	} else {
 		/*
 		 * Automatic power level. Use maximum power for the current
@@ -652,6 +655,7 @@ static int ieee80211_ioctl_siwtxpower(struct net_device *dev,
 			return -EINVAL;
 
 		new_power_level = chan->max_power;
+		local->hw.conf.user_power_level = 0;
 	}
 
 	if (local->hw.conf.power_level != new_power_level) {

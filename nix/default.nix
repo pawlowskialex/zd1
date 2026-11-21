@@ -43,6 +43,9 @@ let
 
   # the MCU's toolchain only runs here
   pkgsX86 = import nixpkgs { system = "x86_64-linux"; };
+  # Linux of this machine's CPU (the Linux builder from a Mac): what only builds on Linux, the kernel modules
+  pkgsLinux =
+    if pkgs.stdenv.isLinux then pkgs else import nixpkgs { system = lib.replaceStrings [ "darwin" ] [ "linux" ] system; };
 
   repo = ../.;
   # a derivation's source: only these paths (relative to the repo's top), so it rebuilds when they change and not
@@ -138,6 +141,9 @@ let
     debug-tools = self.callPackage ./module/debug-tools.nix { };
   });
 
+  # cfg80211 and mac80211 from module/wifi for Nokia's kernel
+  wifi = pkgsLinux.callPackage ./module/wifi.nix { inherit src os; };
+
   boot = pkgs.callPackage ./boot.nix {
     inherit llvm workspace;
     craneLib = hostCraneLib;
@@ -145,7 +151,7 @@ let
 
   # what module/os/assemble.py assembles the images from
   module-os-parts = pkgs.linkFarm "zd1-module-os-parts" {
-    inherit boot;
+    inherit boot wifi;
     inherit (module)
       busybox
       busybox-rescue
@@ -229,6 +235,7 @@ in
     inherit
       llvm
       boot
+      wifi
       module-os-parts
       os-image
       test-unit

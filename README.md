@@ -134,9 +134,10 @@ is in other speakers of that era too, so the module side is written for any CR87
 
 ## License
 Our code is MIT (`LICENSE`). Not ours and not under it: `blobs/` (B&W's, BridgeCo's and Nokia's binaries), `re/`
-(material derived from the vendor firmware), `mcu/src/dsp_data.c` (B&W's DSP data), `mcu/asf/` and
-`mcu/link_zd1.lds` (Microchip's ASF license), `mcu/dfp-include/` (Apache-2.0), `emu/renode/avr32/insn.decode` and the
-decoder generated from it (LGPL-2.1). A few files are built from LGPL code (the AAC tables, the Warp0 ALAC decoder),
-and the images hold GPL and LGPL programs: `NOTICE.md` lists each with its license and where its source is.
+(material derived from the vendor firmware), `mcu/src/dsp_data.c` (B&W's DSP data), `mcu/asf/` and `mcu/link_zd1.lds`
+(Microchip's ASF license), `mcu/dfp-include/` (Apache-2.0), `emu/renode/avr32/insn.decode` and the decoder generated
+from it (LGPL-2.1), `module/wifi/` but `kernel.py` (Linux's wireless code, GPL-2.0). A few files are built from LGPL
+code (the AAC tables, the Warp0 ALAC decoder), and the images hold GPL and LGPL programs: `NOTICE.md` lists each with
+its license and where its source is.
 
 Not affiliated with Bowers & Wilkins, Apple or Spotify.
