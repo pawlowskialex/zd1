@@ -97,6 +97,92 @@ pub mod record {
     pub const REPLY: u8 = 2;
     /// The module's console, raw bytes in order (while `Console` has it open).
     pub const CONSOLE: u8 = 3;
+    /// The network link only: a message the speaker pushes (`State` when it changes).
+    pub const EVENT: u8 = 4;
+
+    /// A record: its kind, u16 length (little-endian), the payload.
+    pub fn encode(kind: u8, payload: &[u8]) -> alloc::vec::Vec<u8> {
+        let mut r = alloc::vec::Vec::with_capacity(3 + payload.len());
+        r.push(kind);
+        r.extend_from_slice(&(payload.len() as u16).to_le_bytes());
+        r.extend_from_slice(payload);
+        r
+    }
+
+    /// The records in `b`, one after another: (kind, payload). A record cut short ends them, its payload what there is.
+    pub fn split(b: &[u8]) -> impl Iterator<Item = (u8, &[u8])> {
+        let mut i = 0;
+        core::iter::from_fn(move || {
+            if i + 3 > b.len() {
+                return None;
+            }
+            let (kind, len) = (b[i], u16::from_le_bytes([b[i + 1], b[i + 2]]) as usize);
+            let body = &b[i + 3..(i + 3 + len).min(b.len())];
+            i += 3 + len;
+            Some((kind, body))
+        })
+    }
+}
+
+/// The network link (docs/protocol/net.md): the host link's messages over a WebSocket to our module OS, inside a Noise
+/// session. A call is `u16 seq` + a request; the speaker answers in [`record`]s (REPLY, TEXT, EVENT).
+pub mod net {
+    /// HTTP's port and the WebSocket's path.
+    pub const PORT: u16 = 80;
+    pub const PATH: &str = "/zd1";
+    /// The Noise protocol and the prologue both ends bind the session to.
+    pub const NOISE: &str = "Noise_XX_25519_ChaChaPoly_SHA256";
+    pub const PROLOGUE: &[u8] = b"zd1-net 1";
+    /// The largest WebSocket message either end sends or takes (a Noise message is at most 64 KB).
+    pub const MESSAGE_MAX: usize = 40 * 1024;
+    /// The most sessions at once.
+    pub const SESSIONS: usize = 4;
+    /// A session with nothing for this long ends, s.
+    pub const IDLE_S: u32 = 300;
+    /// A client the speaker hasn't paired has this long from its connection, s: its `Hello` and one `Pair` (whose
+    /// wait for the person at the speaker is 30 s), so nobody holds the sessions without pairing.
+    pub const UNPAIRED_S: u32 = 60;
+    /// The web pages that may open the link (the WebSocket's `Origin`): the published page, and the page served from
+    /// a checkout on this computer (`tools/zeppelin web`, any port). Programs (`zd1`) send none. Any other site the
+    /// person has open would otherwise reach the speaker from their browser, which is on the speaker's network.
+    pub fn origin_allowed(origin: &str) -> bool {
+        let local = |p: &str| {
+            origin.strip_prefix(p).is_some_and(|rest| {
+                rest.is_empty()
+                    || rest.strip_prefix(':').is_some_and(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()))
+            })
+        };
+        origin == "https://pawlowskialex.github.io" || local("http://localhost") || local("http://127.0.0.1")
+    }
+    /// A setting or action that can cut a client off the speaker (an interface's address, the Wi-Fi's networks, the
+    /// defaults back): made over the network it is provisional, kept once that client connects again within
+    /// [`CONFIRM_S`], else the settings from before come back. Only a session opened [`SETTLE_S`] or more after the
+    /// last change counts: the change has taken effect by then (init restarts what uses it 1.5 s after a burst of
+    /// changes; a session opened sooner may still go over the old settings).
+    pub fn provisional(key: &str) -> bool {
+        key.starts_with("eth.") || key.starts_with("wifi.") || key == "reset"
+    }
+    pub const CONFIRM_S: u32 = 120;
+    pub const SETTLE_S: u32 = 10;
+
+    /// One end's static key (X25519), as each keeps it: the speaker in `/data/zd1/net/key`, `zd1` in
+    /// `~/.config/zd1/net-key`, the page in its storage. One line, the private key then the public one, in hex.
+    #[derive(Clone, PartialEq, Eq)]
+    pub struct KeyPair {
+        pub private: [u8; 32],
+        pub public: [u8; 32],
+    }
+
+    impl KeyPair {
+        pub fn to_text(&self) -> alloc::string::String {
+            alloc::format!("{} {}\n", zd1_text::hex(&self.private), zd1_text::hex(&self.public))
+        }
+
+        pub fn from_text(t: &str) -> Option<KeyPair> {
+            let mut w = t.split_whitespace().map(zd1_text::unhex_n::<32>);
+            Some(KeyPair { private: w.next()??, public: w.next()?? })
+        }
+    }
 }
 
 /// A field's type, as the table and the wire have it.
@@ -273,7 +359,10 @@ pub struct Message {
     pub wait: Option<(&'static str, u32)>,
     /// Only the emulator's build has this request.
     pub emu: bool,
-    /// A record of the module OS (`ModRecord`): encoded by the module, decoded by the host; the MCU relays its bytes.
+    /// A paired client may make this request over the network (docs/protocol/net.md).
+    pub net: bool,
+    /// The module OS's: a record (`ModRecord`: encoded by the module, decoded by the host; the MCU relays its bytes),
+    /// or a request our OS answers itself over the network (the MCU has none of them).
     pub module: bool,
     pub doc: &'static str,
 }
@@ -402,6 +491,9 @@ enums! {
         Servers = 3,
         /// the controllers paired with the AirPlay receiver: a list of `Pairing`, the oldest first
         Pairings = 4,
+        /// the clients paired over the network (docs/protocol/net.md): a list of `Controller`, the oldest first
+        /// (`Actions`: `net.forget`)
+        Controllers = 5,
     }
     ModState {
         /// unpowered
@@ -470,6 +562,10 @@ enums! {
         Good = 2,
         /// forget a try and the failures since the last ready
         Clear = 3,
+        /// start the rescue once to install the system it is (the boot image's) into the slot that isn't the good
+        /// one (into the good one if it holds none; none if a slot holds it already), then start that slot once:
+        /// a boot image's system without a second upload (docs/module/storage.md)
+        Install = 4,
     }
     /// Where the bulk OUT endpoint's data goes (`Pipe`).
     Sink {
@@ -482,8 +578,13 @@ enums! {
     UpdateOp {
         /// start the module's updater: it takes `size` bytes from the bulk pipe into the slot that doesn't run
         Begin = 1,
-        /// stop sending; the module gives up on its own (10 s without data)
+        /// stop sending; the module gives up on its own (10 s without data). `SystemUpdate`: at once, the slot holds
+        /// no system
         Abort = 2,
+        /// `SystemUpdate`: the next piece of the image
+        Data = 3,
+        /// `SystemUpdate`: that was all of it: check it, stamp the slot, start it once
+        End = 4,
     }
     /// Where an update is (`UpdateReply`).
     UpdateState {
@@ -592,7 +693,7 @@ messages! {
         data: Bytes[248],
     }
     /// Which firmware this is. Also answered from the interrupt as `usb::HELLO` (no CALL needed).
-    0x01 Hello -> HelloReply [free, 1000 ms] {}
+    0x01 Hello -> HelloReply [free, 1000 ms, net] {}
     0x41 HelloReply {
         /// the protocol version (`VERSION`): another one is a break the tools refuse
         proto: u16,
@@ -608,7 +709,7 @@ messages! {
         requests: Bytes[32],
     }
     /// The speaker's state at a glance: the MCU, the source and amp, the network module.
-    0x02 Info -> InfoReply [free, 2000 ms] {}
+    0x02 Info -> InfoReply [free, 2000 ms, net] {}
     0x42 InfoReply {
         /// as `HelloReply.fw`
         fw: String[40],
@@ -672,6 +773,32 @@ messages! {
     /// press does nothing else), then gated requests run until 10 minutes after the last one. `Error DENIED` if
     /// nobody pressed. Answered at once when the gate is open.
     0x0E Unlock -> Ok [free, 35000 ms] {}
+    /// Pair this client with the speaker (the network link: our OS answers it, docs/protocol/net.md). The MCU waits up
+    /// to 30 s for ON/OFF held 5 s on the speaker (its LED flashes purple; a shorter press works as always, the 2 s
+    /// hold still goes to standby), whatever the gate says; confirmed, the client's key is kept with `name`.
+    /// `Error DENIED` if nobody confirmed, `Error BUSY` while another one waits.
+    0x20 Pair -> Ok [free, 35000 ms, net] [module] {
+        /// what the client calls itself (the `Controllers` record): a browser, a computer
+        name: String[32],
+    }
+    /// The module's system over the network (docs/protocol/net.md; our OS answers it): BEGIN with the signed header
+    /// (`protocol/release`) in `data`, refused unless a key the speaker trusts signed it and it is no older than the
+    /// running system, then a person at the speaker allows it (`Allow`: ON/OFF held 5 s within 30 s; `Error DENIED`
+    /// if nobody did); DATA, the image in order from `offset`; END: the image checked, the slot that doesn't run
+    /// stamped (DONE), then started once (ready makes it the good one). ABORT: the slot holds no system.
+    0x21 SystemUpdate -> UpdateReply [gated, 60000 ms, net] [module] {
+        op: UpdateOp,
+        /// DATA: where `data` goes in the image
+        offset: u32,
+        /// BEGIN: the header; DATA: the next piece of the image
+        data: Bytes[32768],
+    }
+    /// A person at the speaker allows a system update from the network, and the MCU firmware it brings: the MCU waits
+    /// up to 30 s for ON/OFF held 5 s (its LED flashes amber; a shorter press works as always); held, it takes an app
+    /// our OS gives it (SPI reg 0xD7) once, within 10 minutes and no later than 60 s after the module's next ready (the
+    /// update's trial, or the good slot's after one that failed), and none without. Our OS asks it at `SystemUpdate`
+    /// BEGIN (docs/protocol/net.md). `Error DENIED` if nobody held it, `Error BUSY` while another confirmation waits.
+    0x22 Allow -> Ok [free, 35000 ms] {}
     /// Close the gate now, or open it for good (kept in the EEPROM across power cycles: a lab unit driven by tools
     /// unattended; the user's choice, made at the speaker since this request is gated).
     0x0F Lock -> Ok [gated, 1000 ms] {
@@ -697,7 +824,8 @@ messages! {
         words: bool,
     }
     /// Into the B&W DFU bootloader (03EB:2FF8, ~3 s later): the module and amp made safe, ISP_FORCE set, a watchdog
-    /// reset. The device leaves USB right after the reply.
+    /// reset. The device leaves USB right after the reply. `Error ARG` on a ZD1L: its bootloader (B&W's "Net HBL") has
+    /// no USB, its MCU firmware comes from the module (`docs/mcu/bootloader-hbl.md`).
     0x06 Dfu -> Ok [gated, 3000 ms] {}
     /// Restart the MCU firmware (watchdog reset; the bootloader starts the app again). The module is powered off
     /// first.
@@ -723,7 +851,7 @@ messages! {
     /// module makes when asked (the configuration channel, name `zd1/@N`). The bytes are a message of this spec
     /// (`State`), read in pieces: `offset` into them, the reply says the whole length. A record the module hasn't
     /// comes back as `!` and why.
-    0x1E ModRecord -> RecordReply [free, 4000 ms] {
+    0x1E ModRecord -> RecordReply [free, 4000 ms, net] {
         /// which
         record: Record,
         /// byte offset into it
@@ -814,6 +942,9 @@ messages! {
         /// the boot image the module started from (the app partition: stub, kernel, rescue): its identity, `zd1.boot=`
         /// on the kernel command line (`zd1 image` names a .bcd's); empty: a boot image from before it had one
         boot: String[12],
+        /// the network link (docs/protocol/net.md): paired clients reach the speaker over the network; off, nothing
+        /// listens. Written over USB only
+        net: bool set = "on",
     }
     /// A Wi-Fi network seen by the module's radio (the `Scan` record, one entry per SSID; hidden networks are left
     /// out).
@@ -858,9 +989,20 @@ messages! {
         wifi_first: String[32] set ssid,
         /// forget every controller paired with AirPlay (any value): senders pair again; the accessory stays the same
         airplay_forget: String[8] set,
-        /// back to the defaults: `settings` (every setting; the networks and AirPlay's pairings stay) or `all` (those
-        /// too: as from the factory, but for the software)
+        /// back to the defaults: `settings` (every setting; the networks and the pairings stay) or `all` (those too,
+        /// the network's included: as from the factory, but for the software)
         reset: String[8] set reset,
+        /// forget a client paired over the network (`Controllers`): its id, or `all`; its sessions end
+        net_forget: String[8] set,
+    }
+    /// A client paired over the network (the `Controllers` record).
+    0x66 Controller [module] {
+        /// its key's first 8 hex digits (what `net.forget` takes)
+        id: String[8],
+        /// the name it gave when it paired (`Pair`)
+        name: String[32],
+        /// when, UTC (YYYY-MM-DD HH:MM; empty: the clock wasn't set)
+        since: String[16],
     }
     /// Read a module register over SPI (F: the two data bytes; V: the payload).
     0x09 ModRead -> Data [free, 2000 ms] {
@@ -880,13 +1022,13 @@ messages! {
     }
     /// A module OS setting (docs/module/settings.md: `name`, `wifi.ssid`, ...; `?` lists the keys), through the
     /// configuration channel (reg 0x45, names `zd1/KEY`). Secrets read back as `(set)` or empty.
-    0x0B GetSetting -> SettingReply [free, 6000 ms] {
+    0x0B GetSetting -> SettingReply [free, 6000 ms, net] {
         /// the setting
         key: String[32],
     }
     /// Change a module OS setting: written, then read back. A refused value comes back as `!` and why. The MCU tries
     /// the write three times and the read-back three times, then waits 3 s for the answer.
-    0x10 SetSetting -> SettingReply [gated, 8000 ms] {
+    0x10 SetSetting -> SettingReply [gated, 8000 ms, net] {
         /// the setting
         key: String[32],
         /// the new value (empty: back to the default)
@@ -911,13 +1053,13 @@ messages! {
         mode: Debug,
     }
     /// A key, as if pressed on the speaker or the remote: what it does depends on the state, as with a person.
-    0x11 Key -> Ok [gated, 1000 ms] {
+    0x11 Key -> Ok [gated, 1000 ms, net] {
         key: Key,
     }
     /// Play a source now, or `NONE`: standby. The amp follows (if allowed). USB and AUX only while plugged in, a
     /// receiver only with a sender connected, nothing after a protection tripped (state ERROR: only ON/OFF or
     /// standby leaves it): `Error ARG` otherwise.
-    0x12 Select -> Ok [gated, 2000 ms] {
+    0x12 Select -> Ok [gated, 2000 ms, net] {
         source: Source,
         /// WIFI: the module OS's receiver to bring to the front (its sender resumes, the others pause); NONE:
         /// whichever is in front
@@ -925,7 +1067,7 @@ messages! {
     }
     /// The volume and bass (kept in the EEPROM). While USB or AirPlay is the source, their own volume changes it
     /// again.
-    0x13 Volume -> Ok [gated, 1000 ms] {
+    0x13 Volume -> Ok [gated, 1000 ms, net] {
         /// 0 (mute) .. 71; above the volume cap (`InfoReply.volume_cap`) it is the cap
         volume: u8,
         /// 0 .. 4
@@ -977,11 +1119,11 @@ messages! {
     }
     /// Which system slot the module starts (the MCU keeps the choice in the EEPROM and tells the boot stub at every
     /// boot, SPI reg 0xC4: `docs/module/storage.md`).
-    0x17 BootState -> BootReply [free, 1000 ms] {}
+    0x17 BootState -> BootReply [free, 1000 ms, net] {}
     /// Change which slot the module starts (`BootOp`); `restart`: power-cycle the module now so it does.
     0x18 Boot -> BootReply [gated, 1000 ms] {
         op: BootOp,
-        /// TRY: A, B or RESCUE; GOOD: A or B
+        /// TRY: A, B or RESCUE; GOOD: A or B; INSTALL: none (a boot image the MCU hasn't seen does it by itself)
         slot: Slot,
         /// restart the module now (as `Module RESTART`)
         restart: bool,
@@ -1050,11 +1192,14 @@ messages! {
         trial: bool,
         /// the slots that didn't get ready since the last ready: bit 0 A, 1 B, 2 the rescue
         failed: u8,
+        /// `last` is the rescue, told to install itself into a slot (a boot image the MCU hadn't seen, or `Boot
+        /// INSTALL`): the slot it fills is tried next
+        installing: bool,
     }
     /// The speaker's behaviour, kept in the EEPROM: switching to a USB stream by itself, how long a silent source
     /// keeps the amp on, the highest volume on every source. `change` says which fields to set
     /// (0: only read them). The amp's lock is `Amp`.
-    0x1C Prefs -> PrefsReply [gated, 1000 ms] {
+    0x1C Prefs -> PrefsReply [gated, 1000 ms, net] {
         /// which of the fields after it to set
         change: u8 mask,
         /// a USB stream that starts takes the speaker from another source and wakes it from standby
@@ -1077,7 +1222,7 @@ messages! {
         volume_cap: u8,
     }
     /// The firmware's internals for debugging: protections, audio path, USB audio, the module's link, the remote.
-    0x14 Diag -> DiagReply [free, 2000 ms] {}
+    0x14 Diag -> DiagReply [free, 2000 ms, net] {}
     0x54 DiagReply {
         /// ADC4 (PA25), a second temperature (read like ADC5; runs hotter): a trip below 0x1BC
         adc4: u16,

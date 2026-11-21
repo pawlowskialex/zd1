@@ -41,6 +41,10 @@ Where the models are known to be thin (a result there means nothing for the unit
   4, 6, 12, 15, 17, high elsewhere), the strap follows MCU PB01 with `--mcu`; registers start at the chip's reset
   values (all pads released, the pad matrix unrouted). The I2C bus holds the auth chip alone, with the
   unit's registers 0-8 (no certificate).
+- **J2's SPI slave**: each side sees the other a quantum late (200 us with both boards), so the module's TX FIFO
+  runs ahead of its 63 bytes by what the host can clock in that round trip (`TxAhead` in `renode/cr870/J2Link.cs`):
+  without it the MCU emptied the FIFO in the middle of every long reply, which the unit doesn't, and B&W's ZD1L
+  bootloader refused BL2's blocks. A module's firmware that waits for its FIFO to drain sees it drained early.
 - **USB host**: not modelled. (Its "USB FIFO memory" at 0x40-0x3FFF is the SRAM alias, on the unit too.)
 - **Analog and timing**: clocks and PLLs lock at once; no supply, crystal start-up or brown-out; UART baud rates and
   line breaks are not modelled.
@@ -69,7 +73,7 @@ for `--mcu`; `CONTRIBUTING.md`, Builds) and links them into `emu/img`.
 
 | IMAGE | |
 |---|---|
-| `os` (default) | our OS: the dev payload (the debug system as a plain initramfs, `zd1.selftest zd1.debug`: telnet shell on 2323, `zd1-memsh` on 23) straight into SDRAM; with `--nand` the flashable `os.bcd` from NAND through BL1 and the preloader, like the unit |
+| `os` (default) | our OS: the dev payload (the debug system as a plain initramfs, `zd1.selftest zd1.debug`: telnet shell on 2323, `zd1-memsh` on 23) straight into SDRAM; with `--nand` the flashable `os.bcd` from NAND through BL1 and B&W's module preloader, like the unit (empty slots: with `--mcu`, whose run EEPROM has no boot image recorded, the first boot is the rescue installing itself into slot A) |
 | `stock` | the stock KnOS app (its shell on the console) |
 | `none` | no module: the main board alone, with its built-in module stand-in on J2 |
 | a file | a `.bcd` (installed into the factory NAND like BL2 does, booted from NAND), a NAND image, or a stage 2 for 0x60008000 |
@@ -89,6 +93,7 @@ NAND with BL1, BL2 and PersParam, the MCU's flash, user page and EEPROM. Nothing
 | `--patch ADDR=WORD,...` | module RAM pokes at the first MMIO write |
 | `--fwd HOST:GUEST` | a TCP port forward to the module (repeatable) |
 | `--renode MACHINE:CMD` | any Renode monitor command after setup (below; repeatable) |
+| `--quantum-us N` | the global quantum: the J2 link's latency each way (default 200 with both boards, 1000 for one; `renode/README.md`) |
 | `--keep` | after the steps, stay up in real time until Ctrl-C (or `kill`): module console on 127.0.0.1:4555, MCU USB 4620 (`ZD1DFU_EMU=127.0.0.1:4620 zd1 ...`), ports 8080->80, 2323->23, 2324->2323 |
 | `-q` | no live console; print each `--sh` command's output instead |
 | `--timeout S` | per step (300 virtual seconds) |
@@ -106,6 +111,8 @@ serial window). A wait looks at the output since the previous step began.
 | `--sh CMD` | a command in the module's Linux shell; waits for it to end, fails the session on a nonzero exit |
 | `--send TEXT` | type TEXT + CR on the module console (KnOS shell, BL1/BL2 menus; `\xNN` for raw bytes) |
 | `--sleep S` | run S seconds |
+| `--press S` | ON/OFF pressed S (virtual) seconds from now, while the next steps run: the person at the speaker the USB gate's `Unlock` waits for |
+| `--confirm S` | ON/OFF held 5 s, S (virtual) seconds from now, while the next steps run: the confirmation a pairing or a system update over the network waits for (the update's also allows the MCU firmware it brings) (`--confirm 5 --host 'zd1 --net 127.0.0.1:18080 info'`, with `--mcu --fwd 18080:80`; `docs/protocol/net.md`). Build `zd1` first: a `cargo run` that compiles takes longer than the confirmation waits |
 | `--spi CMDS` | module alone: the SPI test host plays the MCU on J2 (`rd 0x11 rdv 0x25`; `wr REG B0 B1`, `wrv REG HEX`, `req`: `emu/renode/cr870/J2Link.cs`) |
 | `--host CMD` | a host command while the boards run as fast as they go (`$RUN` = the run directory, `ZD1DFU_EMU` set with `--mcu`): `--host 'zd1 module power'` drives our MCU firmware. `zd1` is on the PATH in `nix develop` only: run zemu there (`nix develop -c python3 emu/zemu run ...`), else the step fails with exit 127 |
 
@@ -124,7 +131,7 @@ The exit code is 1 if a wait timed out, a `--sh` or `--host` command failed, or 
 | `renode.log`, `renode_log.txt` | monitor commands and Renode's own log |
 
 From Python (a longer sequence, a loop): `emu/zemu/rig.py`, `Session` with `start()`, `wait()`, `sh()`, `send()`,
-`sleep()`, `spi()`, `host()`, `hold()`, `close()`; `cli.session_config()` builds its configuration.
+`sleep()`, `spi()`, `host()`, `hold()`, `press()`, `confirm()`, `close()`; `cli.session_config()` builds its configuration.
 
 ## Recipes
 - **What does a vendor driver do to the hardware?** Trace its block and load it:
@@ -155,6 +162,11 @@ From Python (a longer sequence, a loop): `emu/zemu/rig.py`, `Session` with `star
   record's +6 is the app's version by identity (0x0005 ZD1, 0x0035 ZD1L): a record from the other identity counts as
   invalid. Board variant 2: `--renode 'zd1:board Adc "2:0x300"'`. The module's PersParam HWID (BL2's web updater
   checks it) is the 4 bytes after the reversed key "DIWH" in NAND block 1 of a `--nand-image`.
+- **A stock ZD1L** (`emu/tools/zd1lunit.py OUT`: the test unit's NAND with the ZD1L's HWID, BL2 and B&W's module
+  image, the MCU flash with its "Net HBL" bootloader and B&W's app): held at power-up it goes into BL2's web updater,
+  which takes a `.fw` for both chips (`bl2web.py`, or the page's code: `host/web/test/zd1l.mjs`), and after the burn
+  starts what it installed. `--renode 'zd1:flashc BootprotSize 0x8000' --renode 'zd1:board Adc "2:0x300"'`; the whole
+  first install of `zd1l.fw` is ~6 min (`docs/mcu/bootloader-hbl.md`).
 - **Where host time goes** (a slow boot): `ZEMU_SAMPLE=cr870 ZEMU_SAMPLE_STEP=0.01 zemu run ...`, then
   `emu/tools/prof_samples.py emu/run/NAME/samples.txt` (`ZEMU_SAMPLE_FROM=S` starts later, `ZEMU_SAMPLE_REGS=0,1`).
 - **Any other model knob** on the monitor: `core` (module: `Patch`, `TraceOnly`, `DelayLoops`, `TimerWaitPcs`, ...),
@@ -171,6 +183,7 @@ From Python (a longer sequence, a loop): `emu/zemu/rig.py`, `Session` with `star
 | `spiparse.py`, `spidiff.py` | the J2 SPI stream from the MCU trace: framing check; MCU side vs module RX FIFO (`--trace b1002e00`) |
 | `decode_i2c.py`, `decode_gpio_i2c.py` | bit-banged I2C from the MCU trace's PIN lines / the module trace's GPIO lines |
 | `bcdinstall.py` | a `.bcd` into a NAND image the way BL2 writes it (what `zemu run X.bcd` uses) |
+| `zd1lunit.py` | a stock ZD1L (NAND and MCU flash) from the test unit and B&W's ZD1L `.fw` |
 | `prof_samples.py` | host-time profile from `ZEMU_SAMPLE` output |
 | `run.py` | a Renode `.resc` script through zemu's driver |
 | `gen_decoder.py` | regenerates the AVR32 decoder from `renode/avr32/insn.decode` |

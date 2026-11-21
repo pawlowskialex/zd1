@@ -1,5 +1,5 @@
 # busybox, static (os.toml [busybox]; busybox.config = our changes on top of `make defconfig`), with the applets
-# of os.toml's `applets` (the system's) or, rescue = true, `rescue_applets` (the rescue initramfs's) and no others.
+# of os.toml's `applets` and no others.
 {
   lib,
   stdenv,
@@ -9,14 +9,13 @@
   writeText,
   os,
   repo,
-  rescue ? false,
 }:
 let
   bb = os.busybox;
-  applets = writeText "busybox-applets" (lib.concatLines (if rescue then bb.rescue_applets else bb.applets));
+  applets = writeText "busybox-applets" (lib.concatLines bb.applets);
 in
 stdenv.mkDerivation {
-  pname = if rescue then "busybox-rescue" else "busybox";
+  pname = "busybox";
   inherit (bb) version;
   src = fetchurl { inherit (bb) url sha256; };
 

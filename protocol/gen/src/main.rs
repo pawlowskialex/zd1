@@ -21,6 +21,7 @@ use zd1_spi::codec::{net, play, volume};
 mod host;
 use zd1_spi::framing::{self, READ_F, READ_V, WRITE_V};
 use zd1_spi::spec::{self, Drc, Kind, Payload, REGISTERS};
+use zd1_spi::xmodem;
 
 /// What each generated file says it comes from.
 pub(crate) const SPI_HEADER: &str =
@@ -241,7 +242,23 @@ fn test_c() -> String {
         writeln!(s, "    {{ zd1_play_matcher_t m = {{0}}; const char x[] = {:?}; int r = ZD1_PLAY_NONE, i; for(i = 0; x[i]; i++){{ int v = zd1_play_push(&m, x[i]); if(v) r = v; }} CHECK(r == {want}, \"play %s\", x); }}",
                  String::from_utf8(x).unwrap()).unwrap();
     }
-    s += "}\n\nint main(void){\n    stuffing(); messages(); volumes(); kinds_and_codes(); play_icons();\n    printf(fails ? \"zd1link_gen: %d FAILED\\n\" : \"zd1link_gen: all ok\\n\", fails);\n    return fails != 0;\n}\n";
+    // XModem: the CRC over the check string and a block's bytes, blocks built the Rust way checked the C way
+    s += "}\n\nstatic void xmodem(void){\n";
+    for data in [&b"123456789"[..], &[0xA5u8; 300][..]] {
+        writeln!(s, "    {{ const uint8_t d[] = {{{}}}; CHECK(zd1_xmodem_crc16(0, d, sizeof d) == 0x{:04X}, \"crc16 of %u bytes\", (unsigned)sizeof d); }}",
+                 c_array(data), xmodem::crc16(0, data)).unwrap();
+    }
+    for (size, n, corrupt) in [(128u16, 1usize, false), (128, 3, false), (1024, 2, false), (128, 2, true)] {
+        let mut b = [0u8; 1029];
+        let len = xmodem::block(&[0x5Au8; 2000], n, size, 0xFF, &mut b);
+        if corrupt {
+            b[7] ^= 1;
+        }
+        let want = xmodem::check(&b[..len]).map_or(-1, |k| k as i32);
+        writeln!(s, "    {{ const uint8_t b[] = {{{}}}; CHECK(zd1_xmodem_check(b, sizeof b) == {want}, \"block %d of %d\", {n}, {size}); }}",
+                 c_array(&b[..len])).unwrap();
+    }
+    s += "}\n\nint main(void){\n    stuffing(); messages(); volumes(); kinds_and_codes(); play_icons(); xmodem();\n    printf(fails ? \"zd1link_gen: %d FAILED\\n\" : \"zd1link_gen: all ok\\n\", fails);\n    return fails != 0;\n}\n";
     s
 }
 

@@ -7,3 +7,4 @@ description = "What the module OS's programs share: the kernel log, system calls
 
 [dependencies]
 libc = "0.2"
+zd1-text.workspace = true

@@ -3,7 +3,7 @@
 
 [kernel]
 # Nokia HD-1 Kernel_A (2.6.24.7, mach-sulu), unmodified: re/netmodule/NOKIA_HD1.md, provenance in blobs/README.md.
-image = "blobs/module/nokia-hd1/kernel.bin"
+image = "blobs/nokia-hd1/kernel.bin"
 # mem=31M: the top 1 MB of SDRAM stays out of Linux: the boot stub (0x61F00000, done once the kernel runs) and the
 # Warp1 program window at 0x61FC0000 (wsl.ko maps it; docs/module/warp.md). Not 32512K: this kernel panics in
 # kmem_cache_init with a memory size that is not a whole number of MB (1 MB section mappings).
@@ -15,9 +15,9 @@ image = "blobs/module/nokia-hd1/kernel.bin"
 cmdline = "console=ttyS1,115200 mem=31M mtdparts=sulu-nand:32m(vendor)ro,32m(system-a),32m(system-b),32m(data) panic=10"
 
 [vendor]
-# Binary pieces from Nokia's rootfs (blobs/module/nokia-hd1/rootfs) that only work with that kernel: its modules and the
+# Binary pieces from Nokia's rootfs (blobs/nokia-hd1/rootfs) that only work with that kernel: its modules and the
 # Wi-Fi firmware. `load` = insmod order at boot (/etc/modules), ours ([wifi]) among them.
-root = "blobs/module/nokia-hd1/rootfs"
+root = "blobs/nokia-hd1/rootfs"
 modules = [
   "drivers/base/firmware_class",
   "drivers/net/wireless/sulu/sulu_wlan",
@@ -166,37 +166,6 @@ applets = [
   "nslookup",
   "traceroute",
 ]
-# The rescue's: a look around on its console (zd1-init runs it; zd1-slot writes the slots)
-rescue_applets = [
-  "ash",
-  "sh",
-  "[",
-  "[[",
-  "test",
-  "echo",
-  "printf",
-  "true",
-  "false",
-  "cat",
-  "tee",
-  "grep",
-  "sed",
-  "mkdir",
-  "mv",
-  "rm",
-  "ls",
-  "sleep",
-  "mount",
-  "umount",
-  "mknod",
-  "sync",
-  "dmesg",
-  "reboot",
-  "ps",
-  "free",
-  "uname",
-]
-
 [alsa]
 # alsa-lib + alsa-utils (aplay, speaker-test, amixer), static against musl: the Nokia ALSA driver (snd-sulu on
 # av-device) is the audio output. Hashes: first download, 2026-10-20.
@@ -215,15 +184,14 @@ config = "module/os/wpa_supplicant.config"
 
 [apps]
 # Rust crates in module/os/apps (one workspace, std, armv5te-unknown-linux-musleabi). Installed as one executable
-# (apps/zd1, busybox style: one copy of std and the libraries) with a link per program: the core build in the rescue
-# (/bin/zd1, `rescue` in /bin: only what the rescue runs, so it changes only when that does), the full build in the
-# system (/usr/bin/zd1: `core` in /bin, `bins` in /usr/bin), and in the system's debug build `debug` too.
-# `init` is PID 1 (/sbin/init; the rescue's /init).
+# (apps/zd1, busybox style: one copy of std and the libraries) with a link per program (/usr/bin/zd1: `core` in /bin,
+# `bins` in /usr/bin), and in the system's debug build `debug` too. `init` is PID 1 (/sbin/init; /init in RAM).
 workspace = "module/os/apps"
 multicall = "zd1"
 core = [
   "init",
   "zd1-linkd",
+  "zd1-netd",
   "zd1-ctl",
   "zd1-board",
   "zd1-dhcp",
@@ -233,7 +201,6 @@ core = [
   "zd1-slot",
   "zd1-update",
 ]
-rescue = ["init", "zd1-linkd", "zd1-ctl", "zd1-board", "zd1-persparam", "zd1-settings", "zd1-slot", "zd1-update"]
 bins = ["zd1-snapcast", "zd1-airplay", "zd1-spotify"]
 debug = ["zd1-selftest", "zd1-memsh"]
 

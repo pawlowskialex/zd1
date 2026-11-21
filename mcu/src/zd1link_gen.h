@@ -10,10 +10,11 @@
 #define ZD1_REG_PENDING            0x0C  /* F R: Pending: b0 = the register with queued data (0 = none). Read while PA20 is high. [RE 0x8000ca5c] */
 #define ZD1_REG_STATUS             0x11  /* F RN: DM1000Status: 0x2100 ready; 0x2300 BL2 running; 0x27 asks the MCU to reboot into DFU. [RE 0x8000b684] */
 #define ZD1_REG_VERSION_IMAGE      0x25  /* V R: VersionImage: the stock app's build ("I2014092908219112": the stock MCU firmware wants "9112" in stripped characters 13..16, else system error 7 [RE 0x80009340]). Ours: "zd1-os VERSION KIND" (KIND release, debug or rescue) from our OS, "zd1-boot" from our boot stub while its status says booting. Our MCU reads it at ready (and at booting): ours if it starts with "zd1-". */
-#define ZD1_REG_HCR                0x28  /* F W: HCR Ctrl: 0x2100 (0x2120 from the MCU bootloader) = reboot into BL2; in BL2, 0x2220 = start an XModem download over 0x2D / 0x2C (the bootloader's relay sends it once BL2 runs) [EMU trace of the bootloader 2026-10-26]; 0x2421 factory reset. [RE] */
-#define ZD1_REG_HCR_STATUS         0x29  /* F RN: HCR status: 0x2020 / 0x2120 after HCR, 0x22xx in BL2. [RE 0x8000b60c] */
-#define ZD1_REG_XM_MODULE          0x2C  /* V RN: XModem, module -> MCU: BL2 receiving (an image through 0x2D): its control bytes 'C' / ACK / NAK / CAN, one per notification. [RE stock MCU 0x80008b40; the relay uses it, HW 2026-10-26] */
-#define ZD1_REG_XM_HOST            0x2D  /* V W: XModem, MCU -> module: a whole XModem-1K frame (1029 bytes) per V write; a 1-byte write is a control byte (EOT). [RE stock MCU 0x80008ba0, the MCU bootloader's relay] */
+#define ZD1_REG_HCR                0x28  /* F W: HCR Ctrl: 0x2100 (0x2120 from the MCU bootloader) = reboot into BL2; in BL2, 0x2220 = start an XModem download over 0x2D / 0x2C (the bootloader's relay sends it once BL2 runs) [EMU trace of the bootloader 2026-10-26]; 0x2421 factory reset. The MCU's bootloader asking for the MCU's own firmware (the ZD1L's stock HBL, our ZD1 preloader) sends 0x2120 too, after its configuration-channel writes; with an app staged our OS answers it as BL2 instead of rebooting (`docs/mcu/bootloader-hbl.md`). [RE] */
+#define ZD1_REG_HCR_STATUS         0x29  /* F RN: HCR status: 0x2020 / 0x2120 after HCR (OK), 0x22xx in BL2 (b1 a download's percent), anything else but 0x214E a failure. The MCU's bootloader counts a host-firmware transfer good only with an OK after it. [RE 0x8000b60c, the ZD1L HBL 0x4660] */
+#define ZD1_REG_DCR                0x2A  /* F N: DCR Ctrl, module -> MCU: 0x2423 = the host firmware is ready to go (BL2, after the module's part): it ends the MCU bootloader's wait and starts its XModem receiver. The stock MCU app ignores it. [RE stock 0x8000b5e0, the ZD1L HBL 0x463c; EMU trace of the ZD1L BL2 2026-11-19] */
+#define ZD1_REG_XM_MODULE          0x2C  /* V RN: XModem, module -> MCU. Direction-overloaded by the transfer: while the MCU **sends** (relay / `zd1 xmodem`, HCR 0x2220) it carries BL2's control bytes 'C' / ACK / NAK / CAN, one per notification; while the MCU's bootloader **receives** (its app: HCR 0x2120, then DCR 0x2423) it carries the data frames (`docs/protocol/sequences.md`, "MCU (host) firmware over SPI"). Both are ours: the relay's control bytes, and the MCU's own firmware to its bootloader (128-byte SOH blocks with CRC-16, then EOT; `docs/mcu/bootloader-hbl.md`). [RE stock MCU 0x80008b40; the relay uses it, HW 2026-10-26; EMU trace of the ZD1L BL2 2026-11-19] */
+#define ZD1_REG_XM_HOST            0x2D  /* V W: XModem, MCU -> module: a whole XModem-1K frame (1029 bytes) per V write; a 1-byte write is a control byte (EOT; and 'C' / ACK / NAK / CAN while the MCU's bootloader receives its own firmware on 0x2C). [RE stock MCU 0x80008ba0, the MCU bootloader's relay, the ZD1L HBL] */
 #define ZD1_REG_NET_STATUS         0x32  /* F RN: NetStatus: both characters != '0' = connected (stock live: "21", also on wired). [RE 0x8000b518] */
 #define ZD1_REG_IP                 0x38  /* V RN: IP address string. [RE 0x8000d1b4] */
 #define ZD1_REG_NETMASK            0x39  /* V RN: Netmask string (notified; not in the MCU dispatch table). [RE] */
@@ -28,7 +29,7 @@
 #define ZD1_REG_DEBUG              0xC1  /* F W: Ours: the module OS's debug services: b0 = 0 the image's default (zd1.debug), 1 on, 2 off (host::Debug). The MCU writes it at every ready of our OS once set, and when it changes. */
 #define ZD1_REG_SELECT             0xC2  /* F W: Ours: b0 = a [`player`] receiver to bring to the front, as a person chose it on the speaker (the ON/OFF key, the host link's Select): zd1-linkd tells the others to pause their senders and that one to resume. */
 #define ZD1_REG_MCU_VERSION        0xC3  /* V W: Ours: the MCU firmware's version, written at every ready of our OS (the module keeps it in /run/zd1/mcu-version). */
-#define ZD1_REG_BOOT               0xC4  /* F RW: Ours: what the boot stub starts (module/boot linuxboot, identified as "zd1-boot" on 0x25 while its status says booting): b0 = a [`boot`] value, b1 = the good slot. The MCU writes it once per boot of the stub (it reads 0 until then); without an answer the stub starts the rescue. The MCU writes it to our OS at ready too: what it runs and the good slot (a trial confirmed by that ready). */
+#define ZD1_REG_BOOT               0xC4  /* F RW: Ours: what the boot stub starts (module/boot linuxboot, identified as "zd1-boot ID" on 0x25 while its status says booting, ID its image's `zd1.image`): b0 = a [`boot`] value, b1 = the good slot; an image the MCU hasn't recorded gets INSTALL once. The MCU writes it once per boot of the stub (it reads 0 until then); without an answer the stub starts the rescue. Before that, while it waits for the module, our MCU writes [`boot::KNOCK`]: the stub answers nothing on the link until then (`docs/module/storage.md`). The MCU writes it to our OS at ready too: what it runs and the good slot (a trial confirmed by that ready). */
 #define ZD1_REG_UPDATE             0xC5  /* V W: Ours: start the updater (zd1-update, docs/module/updater.md): size u32, baud u32 (little-endian), sha256 [32], the stamp (ASCII, the rest). The system image follows on the module console's UART at that baud, in frames the module answers (docs/module/updater.md); its lines (0x02 text \n) say ready, ok or error. */
 #define ZD1_REG_PLAYER             0xC6  /* V RN: Ours: our OS's receivers: [0] the one in front (a [`player`] receiver: the one playing, else the last one paused or chosen), [1] its [`player`] state, [2] the receivers with a sender connected (bit = the receiver's value: an AirPlay sender, a Spotify Connect session, a snapserver). Notified by zd1-linkd when any of it changes (its arbitration: the newest `playing` source owns the speaker) and once our MCU firmware has written 0xC3; never before (a stock host can't read it and its queue would stay stuck on it). The MCU's source list, LED and auto-switch use it: a receiver's playing switches the source and wakes the speaker (zd1-linkd sends no 0x47). */
 #define ZD1_REG_SPEAKER            0xD2  /* V W: Ours, native ([`LINK_PROTO`]): the speaker, as our OS should see it: [0] [`native::PROTO`], [1] the module's volume, a step (0..71: the speaker's, or one the module asked for that waits for it to be the input), [2] the highest step the module may ask for (the cap; a sender's whole range maps onto 0..cap), [3] [`native`] flags (the module is the input). Written after 0xC3 at every hello and whenever any of it changes, the volume also after every 0xD4 (what was applied: the cap, the knob). */
@@ -36,13 +37,16 @@
 #define ZD1_REG_VOLUME_SET         0xD4  /* F RN: Ours, native: our OS asks for a volume: b0 a step 0..the cap (0xD2 [2]). Applied at once while the module is the input, else when it becomes it (a later knob change wins); the result comes back on 0xD2. */
 #define ZD1_REG_LINK_PROTO         0xD5  /* F R: Ours: the protocol our OS speaks, b1 ([`native::PROTO`]). The MCU reads it at every hello; another value than its own makes the module no source (the base layer still works). */
 #define ZD1_REG_STATE              0xD6  /* V N: Ours, native: the State record (the host link's `State` message: the module's settings and status, encoded by the module with the host link's codec). Notified after every hello and when something in it changes (at most once a second); the MCU keeps the last copy and serves it to the host (`ModRecord State`) without asking the module. */
+#define ZD1_REG_MCU_FW             0xD7  /* F N: Ours, native: b0 = 1, our OS has an app for the MCU staged (a .dmb) and asks the MCU to go where it is taken: our preloader on the ZD1 (GPLP0, a watchdog reset), B&W's bootloader on the ZD1L (ISP_FORCE). Either powers the module again and asks it for BL2, and our OS serves the app (`docs/mcu/bootloader-hbl.md`). Taken only after a person at the speaker allowed it (the host link's `Allow`, which our OS asks at a network update's start: ON/OFF held 5 s), once, until 60 s after the module's next ready (10 minutes at most); else refused. A ZD1 without the preloader ignores it. */
+#define ZD1_REG_TRY                0xD8  /* F N: Ours, native: b0 = a [`boot`] slot (A or B) our OS has just installed a system into itself (the signed network update, `docs/module/updater.md`): the MCU starts it once now, as the host link's `Boot` TRY with restart; its ready makes it the good slot, else the MCU goes back. */
+#define ZD1_REG_HOST               0xD9  /* V WN: Ours, native: the host link from the network (`docs/protocol/net.md`): our OS notifies a paired client's request, u16 seq (little-endian) + the message (`docs/protocol/host.md`), and the MCU writes u16 seq + its reply back, once the request has run. The MCU runs it as over USB but past the gate (the pairing was a press), and only a request the spec marks net; one request at a time, from USB or from here. */
 #define ZD1_REG_SHUTDOWN           0xE2  /* F WN: Shutdown: the MCU writes 00 00, the module answers 01 00, then power off. [RE] */
 #define ZD1_REG_DRC_ACK            0xE3  /* F RN: AirTunesPlaybackStatus: the DRC acks (b0). [RE] */
 #define ZD1_REG_VOLUME_HOST        0xE4  /* V RN: VolumeHostChange: as 0x40. [RE] */
 
 /* 'F' (2 data bytes) or 'V' (16-bit LE length + data) for every register: ours, else the stock firmware's table */
 static inline char zd1_reg_kind(uint8_t reg){
-    static const uint8_t v[32] = {0x01,0x00,0x00,0x00,0xE0,0xF0,0x08,0xF7,0xA1,0xD8,0x20,0xF3,0x7E,0x13,0xA0,0x0B,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x68,0xA9,0x47,0x30,0x10,0x00,0x00,0x00};
+    static const uint8_t v[32] = {0x01,0x00,0x00,0x00,0xE0,0xF0,0x08,0xF7,0xA1,0xD8,0x20,0xF3,0x7E,0x13,0xA0,0x0B,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x68,0xA9,0x47,0x32,0x10,0x00,0x00,0x00};
     return (v[reg >> 3] >> (reg & 7)) & 1 ? 'V' : 'F';
 }
 
@@ -77,6 +81,17 @@ static inline int zd1_drc_ack(uint8_t code){
 #define ZD1_WIRE_READ_V            3
 #define ZD1_WIRE_V_MAX             0x405  /* The longest V write the stock MCU sends [RE 0x8000b910]. */
 
+/* ---- xmodem: XModem over SPI (0x2C / 0x2D): the module image to BL2 (XModem-1K, the relay and `XmFrame`), the MCU's own app to its bootloader (128-byte blocks, from our OS or BL2); blocks with CRC-16/XMODEM (`xmodem.rs`). ---- */
+#define ZD1_XMODEM_SOH             1  /* A 128-byte block: SOH n ~n, the data, its CRC-16 big-endian. */
+#define ZD1_XMODEM_STX             2  /* A 1024-byte block (XModem-1K). */
+#define ZD1_XMODEM_EOT             4
+#define ZD1_XMODEM_ACK             6
+#define ZD1_XMODEM_NAK             0x15
+#define ZD1_XMODEM_CAN             0x18
+#define ZD1_XMODEM_START           0x43  /* The receiver's start: CRC mode. */
+#define ZD1_XMODEM_BLOCK           0x80
+#define ZD1_XMODEM_BLOCK_1K        0x400
+
 /* ---- status: DM1000Status values (0x11, the 16-bit value). ---- */
 #define ZD1_STATUS_BOOTING         0x2000  /* Our boot stub, while it waits for the MCU's choice (0xC4). */
 #define ZD1_STATUS_READY           0x2100
@@ -106,7 +121,9 @@ static inline int zd1_drc_ack(uint8_t code){
 #define ZD1_BOOT_SLOT_A            1  /* System slot A (mtd1) as the root file system. */
 #define ZD1_BOOT_SLOT_B            2  /* System slot B (mtd2). */
 #define ZD1_BOOT_RESCUE            3  /* The rescue initramfs in the app partition. */
-#define ZD1_BOOT_IDENT             "zd1-boot"  /* What the stub calls itself on 0x25 (the MCU answers only it). */
+#define ZD1_BOOT_INSTALL           4  /* The rescue, to install the system it is into a slot and start that slot once (a boot image the MCU hasn't seen, or host `Boot INSTALL`): the stub adds `zd1.install` (docs/module/storage.md, The rescue). */
+#define ZD1_BOOT_IDENT             "zd1-boot"  /* What the stub calls itself on 0x25 (the MCU answers only it), then a space and its image's identity (`zd1.image=`, 12 hex digits; none from a stub before it): a new one makes the answer INSTALL, once. */
+#define ZD1_BOOT_KNOCK             0xFFFF  /* The whole 0xC4 word our MCU writes while it waits for the module after powering it (its knock): the stub stays silent on the link until it hears it. B&W's bootloaders never knock, and to the ZD1L's a module that answers and then goes quiet for the kernel's boot is lost (it gives up into waiting for a key). */
 
 /* ---- native: The native protocol between our MCU firmware and our OS (0xD2-0xD5): the speaker's features. The MCU drives the module as a source only when 0xD5 says this very version; anything else (the stock app, our OS with another version) gets the base layer alone (status, 0x25, 0xD5, 0xC3, 0xC4, 0xC5, 0xE2, HCR; docs/web.md) and is a state the host sees. The stock app's own registers (0x40, 0x47, 0x48, 0xE3) are documented, not spoken. ---- */
 #define ZD1_NATIVE_PROTO           1  /* The version our OS answers on 0xD5 (b1) and the MCU writes in 0xD2 [0]; another one on either side: no source. */

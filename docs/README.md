@@ -6,6 +6,7 @@ What is true now, with the evidence. Start with `status.md`.
 - `status.md`: what is on the unit, what works there, what is emulator-only, what is not done, known problems
 - `backlog.md`: open work
 - `decisions.md`: why things are the way they are
+- `security.md`: what we defend (no fire, no botnet), the line between the module and the MCU, what is accepted
 - `glossary.md`
 
 **Hardware**
@@ -16,6 +17,8 @@ What is true now, with the evidence. Start with `status.md`.
 **Main board firmware**
 - `mcu/bootloader-dfu.md`: the DFU bootloader, its reset logic, the protocol, the module relay
 - `mcu/stock-firmware.md`: what B&W's MCU app does (DSP, codec, amp, sources, modes, stored data)
+- `mcu/bootloader-hbl.md`: the MCU's firmware from the module: the ZD1L's "Net HBL" bootloader, our ZD1 preloader,
+  our OS playing BL2, the allowance
 - our firmware: `../mcu/README.md`
 
 **Board-to-board protocol**
@@ -23,8 +26,10 @@ What is true now, with the evidence. Start with `status.md`.
 - `protocol/registers.md`: the registers our code uses (generated from `protocol/spi/src/spec.rs`)
 - `protocol/sequences.md`: power-up, AirPlay, source switching, BL2, telnet, shutdown
 
-**Host to MCU (USB)**
+**Host to MCU (USB, the network)**
 - `protocol/host.md`: the host link's messages (generated from `protocol/host/src/lib.rs`)
+- `protocol/net.md`: the same messages over the network: the WebSocket to our module OS, the Noise session, pairing,
+  what travels, the signed system update, the MCU following its OS, the Lightning model's first install from the page
 - `web.md`: the web page as installer and configurator: what it does, what it is to become, the supported pairings
   of the two boards, the base layer of the module link, the interlocks
 
@@ -36,7 +41,8 @@ What is true now, with the evidence. Start with `status.md`.
 - `module/jtag.md`: the module over JTAG
 - `module/storage.md`: our OS on the NAND: partitions, the system and data partitions
 - `module/settings.md`: the speaker's settings (name, Wi-Fi, receivers)
-- `module/updater.md`: updating both boards over USB: the flows, the design, what was measured (start here)
+- `module/updater.md`: updating both boards (over USB; over the network: `protocol/net.md`): the flows, the design,
+  what was measured (start here)
 - `module/warp.md`: the Warp MIPS coprocessors and the Sol DSP; our Warp0 runtime: `../module/warp0/README.md`
 
 **Streaming**
@@ -59,5 +65,5 @@ Nokia analysis, shell and register dumps): `../re/README.md`.
 | **[INF]** | inferred, untested; the text says how strong |
 
 A claim that has been seen on the unit is [HW] even if it was found by reading code first. Where hardware and the
-emulator disagree, the hardware is right and the emulator gets fixed. Older notes (the lab log at git tag
-`lab-notebook`) contain conclusions that were later corrected; these docs supersede them.
+emulator disagree, the hardware is right and the emulator gets fixed. Older notes contain conclusions that were later corrected;
+these docs supersede them.

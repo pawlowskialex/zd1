@@ -702,7 +702,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -886,9 +886,11 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "899def5c37c4fd7b2664648c28120ecec138e4d395b459e5ca34f9cce2dd77fd"
 dependencies = [
  "cfg-if",
+ "js-sys",
  "libc",
  "r-efi 5.3.0",
  "wasip2",
+ "wasm-bindgen",
 ]
 
 [[package]]
@@ -2303,7 +2305,7 @@ dependencies = [
  "once_cell",
  "socket2",
  "tracing",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -2559,7 +2561,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys 0.4.15",
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -2572,7 +2574,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys 0.12.1",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -2920,6 +2922,20 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d0d5d4b1981b8bbbb7aed204cae5726d683d5d6ac7e74ec54122ea28f315e7c8"
 
 [[package]]
+name = "snow"
+version = "0.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "599b506ccc4aff8cf7844bc42cf783009a434c1e26c964432560fb6d6ad02d82"
+dependencies = [
+ "chacha20poly1305",
+ "curve25519-dalek",
+ "getrandom 0.3.4",
+ "rustc_version",
+ "sha2",
+ "subtle",
+]
+
+[[package]]
 name = "socket-pktinfo"
 version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3070,10 +3086,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.3.4",
+ "getrandom 0.4.3",
  "once_cell",
  "rustix 1.1.5",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -3986,6 +4002,7 @@ dependencies = [
  "zd1-linkd",
  "zd1-memsh",
  "zd1-net",
+ "zd1-netd",
  "zd1-persparam",
  "zd1-selftest",
  "zd1-settings",
@@ -4014,6 +4031,7 @@ dependencies = [
  "zd1-audio",
  "zd1-compat",
  "zd1-sys",
+ "zd1-text",
  "zd1-warp0",
 ]
 
@@ -4052,7 +4070,9 @@ dependencies = [
  "futures-lite",
  "libc",
  "serde_json",
+ "tungstenite",
  "zd1-host",
+ "zd1-release",
 ]
 
 [[package]]
@@ -4097,6 +4117,7 @@ name = "zd1-host"
 version = "0.1.0"
 dependencies = [
  "crc32fast",
+ "getrandom 0.3.4",
  "js-sys",
  "miniz_oxide 0.8.9",
  "nusb",
@@ -4104,9 +4125,13 @@ dependencies = [
  "serde_json",
  "sha1",
  "sha2",
+ "snow",
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "zd1-hostlink",
+ "zd1-release",
+ "zd1-spi",
+ "zd1-text",
 ]
 
 [[package]]
@@ -4114,6 +4139,7 @@ name = "zd1-hostlink"
 version = "0.1.0"
 dependencies = [
  "zd1-spi",
+ "zd1-text",
 ]
 
 [[package]]
@@ -4150,10 +4176,12 @@ dependencies = [
  "zd1-mdns",
  "zd1-net",
  "zd1-persparam",
+ "zd1-release",
  "zd1-settings",
  "zd1-slot",
  "zd1-svc",
  "zd1-sys",
+ "zd1-text",
  "zd1-update",
 ]
 
@@ -4183,6 +4211,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "zd1-netd"
+version = "0.1.0"
+dependencies = [
+ "libc",
+ "sha2",
+ "snow",
+ "tungstenite",
+ "zd1-hostlink",
+ "zd1-release",
+ "zd1-settings",
+ "zd1-slot",
+ "zd1-sys",
+ "zd1-text",
+]
+
+[[package]]
 name = "zd1-persparam"
 version = "0.1.0"
 dependencies = [
@@ -4195,6 +4239,16 @@ version = "0.1.0"
 dependencies = [
  "zd1-hostlink",
  "zd1-spi",
+]
+
+[[package]]
+name = "zd1-release"
+version = "0.1.0"
+dependencies = [
+ "ed25519-dalek",
+ "sha2",
+ "zd1-spi",
+ "zd1-text",
 ]
 
 [[package]]
@@ -4212,6 +4266,7 @@ dependencies = [
  "zd1-persparam",
  "zd1-svc",
  "zd1-sys",
+ "zd1-text",
 ]
 
 [[package]]
@@ -4258,6 +4313,7 @@ dependencies = [
  "tracing",
  "zd1-audio",
  "zd1-compat",
+ "zd1-text",
  "zd1-warp0",
 ]
 
@@ -4270,7 +4326,12 @@ name = "zd1-sys"
 version = "0.1.0"
 dependencies = [
  "libc",
+ "zd1-text",
 ]
+
+[[package]]
+name = "zd1-text"
+version = "0.1.0"
 
 [[package]]
 name = "zd1-update"
@@ -4310,6 +4371,7 @@ dependencies = [
  "log",
  "wasm-bindgen",
  "wasm-bindgen-futures",
+ "web-sys",
  "zd1-host",
 ]
 

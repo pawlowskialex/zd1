@@ -17,6 +17,7 @@ typedef struct {
     uint8_t amp_idle_min; /* a source silent this long: the amp off (SETTINGS_AMP_IDLE_*; page 2) */
     uint8_t vol_cap;      /* the highest step the USB host and the module may set (page 2) */
     uint16_t fw_seen;     /* a hash of the firmware version that last started (page 2; hostif_first_start) */
+    uint32_t image_seen;  /* the module's boot image its stub last named (page 3; modboot.c): 0 none recorded */
 } settings_t;
 
 #define SETTINGS_GATE_OPEN      0x01 /* the host link's gate open for good (hostif.c): a unit tools drive unattended */

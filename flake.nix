@@ -47,7 +47,7 @@
       );
       # The module's image and every part of it are built on Linux, also when a Mac asks for them (through a Linux
       # builder): the bytes depend on the build machine (a Mac's C compiler builds the codecs and the compat layer
-      # differently), and one platform gives one image for one source, whichever machine builds it, so the rescue's
+      # differently), and one platform gives one image for one source, whichever machine builds it, so the boot image's
       # content ID (module/os/assemble.py) means its code changed. Builds on either are reproducible: two of the same
       # source are byte-identical. (`nix develop .#cross` stays native: a Mac builds the module there with its own.)
       linuxOf = {
@@ -59,13 +59,11 @@
         "module-os-parts"
         "boot"
         "busybox"
-        "busybox-rescue"
         "alsa-lib"
         "alsa-utils"
         "wpa_supplicant"
         "warp0-fw"
         "apps"
-        "apps-core"
         "apps-debug"
         "debug-tools"
       ];

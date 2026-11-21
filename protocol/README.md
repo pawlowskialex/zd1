@@ -1,12 +1,17 @@
-# protocol: the MCU's two links, one definition each
+# protocol: the MCU's two links, one definition each; and what both sides share
 
 Two `no_std` crates, one per link. Everything that speaks a link is built from its crate: Rust uses the crate
 directly; the MCU's C (AVR32: no Rust there) is generated from it by `gen/`, with test vectors that hold the C to it.
+The host link also travels over the network (`docs/protocol/net.md`: its `net` module has that link's constants, the
+key file both ends keep, and the records). Beside them, two crates every side's Rust shares, so that nothing is
+written twice: `release/` (`zd1-release`: the files a release is made of: the signed system update, the MCU's app as
+a B&W `.dmb`, the firmware's identification block, the Lightning model's `.fw`, a slot's stamp) and `text/`
+(`zd1-text`, no dependencies: hex, a key's short name, a UTC date, a string cut to a field's bytes).
 
 | Crate | Link | Rust that uses it | Generated (`gen/`) |
 |---|---|---|---|
 | `spi/` (`zd1-spi`) | the MCU <-> the network module, SPI registers | `module/link` (on it `module/boot`, `zd1-linkd`) | `mcu/src/zd1link_gen.h` + its test, `docs/protocol/registers.md` |
-| `host/` (`zd1-hostlink`) | a computer <-> the MCU over USB (the host link) | `host/core` (the `zd1` command line, the web page) | `mcu/src/zd1host_gen.h` + its test, `docs/protocol/host.md`, `host/spec.lock` |
+| `host/` (`zd1-hostlink`) | a computer <-> the MCU over USB, or over the network through our OS (the host link) | `host/core` (the `zd1` command line, the web page); our OS's `zd1-netd`, `zd1-linkd`, `zd1-settings` | `mcu/src/zd1host_gen.h` + its test, `docs/protocol/host.md`, `host/spec.lock` |
 
 The DFU bootloader's protocol (B&W's, on the same USB port) is not ours to define: `host/core/src/dfu.rs` speaks it,
 checked frame by frame against the decompiled updater.
@@ -17,6 +22,7 @@ checked frame by frame against the decompiled updater.
 | `spec.rs` | the registers (number, F/V kind, who reads / writes / notifies, payload, evidence) as a `registers!` table; DRC codes and their acks (`codes!`); the protocol's named values in groups (`consts!`: the wire's bytes, status, volume, the play XML's pattern and icons, receivers, boot slots, the native protocol). Checked against the stock MCU firmware's own kind table |
 | `framing.rs` | the wire format: every byte stuffed (headers too), idle 0xFF, the module's request parser and reply encoders, the MCU's request encoders and reply parser |
 | `codec.rs` | payloads: volume (attenuation <-> the MCU's 72 steps <-> %), play-state XML and its matcher, the configuration channel, network status |
+| `xmodem.rs` | XModem over 0x2C / 0x2D: CRC-16/XMODEM, a block built and checked (128 bytes to the MCU's bootloader, 1024 to BL2); its bytes are the spec's `xmodem` group |
 
 The MCU's side is C: `mcu/src/zd1link_gen.h` has the values (generated from the three tables); `mcu/src/zd1link.h`
 is the code on them, written by hand since the MCU can't run the Rust (stuffing, the volume conversion, net status,
@@ -51,7 +57,7 @@ cc -I mcu/src -o /tmp/h mcu/test/zd1host_gen_test.c && /tmp/h   # the host link'
 | Output | |
 |---|---|
 | `mcu/src/zd1link_gen.h` | `ZD1_REG_*`, `zd1_reg_kind()`, `ZD1_DRC_*` + `zd1_drc_ack()`, every `consts!` group as `ZD1_<GROUP>_<NAME>`: under `mcu/src/zd1link.h` |
-| `mcu/test/zd1link_gen_test.c` | the MCU's C (`zd1link.h` on `zd1link_gen.h`) against vectors computed by the Rust implementation (every byte stuffed, whole messages, every volume value both ways, kinds, acks, play icons) |
+| `mcu/test/zd1link_gen_test.c` | the MCU's C (`zd1link.h` on `zd1link_gen.h`) against vectors computed by the Rust implementation (every byte stuffed, whole messages, every volume value both ways, kinds, acks, play icons, XModem's CRC and blocks) |
 | `docs/protocol/registers.md` | the register and DRC reference |
 | `mcu/src/zd1host_gen.h` | the host link's messages as C structs, a table-driven codec (header-only, `static inline`), the constants: used by `mcu/src/hostif.c` |
 | `mcu/test/zd1host_gen_test.c` | the C codec against vectors from the codec: every message three ways (once if it has no fields), refused when short, long or over a maximum |
@@ -83,5 +89,6 @@ The host link only grows (`docs/protocol/host.md`, Compatibility): new requests 
 of a message, nothing reused or retyped. Add it to `host/src/lib.rs`, regenerate: `host/spec.lock` records every
 message and field there has been, and `gen` refuses a change that breaks the rules (a real break: bump `VERSION`,
 run `gen -- --break`; the tools refuse firmware with another version). Mark a request `gated` if it changes the
-speaker or reads its RAM. Then the handler in `mcu/src/hostif.c`, and what uses it in `host/core` or `host/cli`; in
+speaker or reads its RAM, `net` if a paired client may send it over the network (`docs/protocol/net.md`), `[module]`
+if our OS answers it itself. Then the handler in `mcu/src/hostif.c`, and what uses it in `host/core` or `host/cli`; in
 the emulator `zemu run --mcu --host 'zd1 ...'` (the gate is open there).

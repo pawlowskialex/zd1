@@ -8,7 +8,7 @@
 #   cargo web                               the web page's WebAssembly (host/web); wasm-bindgen makes its JS glue
 #                                           (nix/web.nix). web-sys keeps WebUSB behind a cfg the top crate opts into.
 [target.wasm32-unknown-unknown]
-rustflags = ["--cfg=web_sys_unstable_apis"]
+rustflags = ["--cfg=web_sys_unstable_apis", "--cfg=getrandom_backend=\"wasm_js\""]
 
 [alias]
 module = [

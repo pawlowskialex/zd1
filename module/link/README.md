@@ -6,7 +6,8 @@ bootloader talk to a module that runs our code instead of KnOS (`docs/protocol/s
 top of the spec: reg 0x11 status (0x2100 = ready, or what the caller sets: the boot stub's 0x2000), reg 0x0C pending
 (the status until read, then the queued notifications, oldest first), every other read the last value set or
 written, writes handed out as events, HCR 0x28 = 0x21 = reboot into BL2 (mailbox + watchdog), the request line
-(DM870 GPIO 6) high while anything is pending.
+(DM870 GPIO 6) high while anything is pending. Muted (`set_muted`): requests taken and writes kept, nothing answered,
+the request line low (the boot stub until our MCU knocks).
 
 - `src/lib.rs`: `Link`, the protocol state machine (requests, notifications, values, the request line).
 - The registers it uses (SPI slave, GPIO, the timestamp, the BL2 mailbox, the watchdog) come from `module/dm870` over

@@ -8,6 +8,10 @@
 //! (keep the MCU's backup, host/core's `backup`: awaited before anything is written; a rejection stops the flash).
 //!
 //! A speaker that is in its bootloader (DFU) instead: `Bootloader.connect(events)`, the same `events`.
+//!
+//! Over the network (docs/protocol/net.md): `Speaker.connectNet(address, identity, known, events)`, this browser's key
+//! from `newIdentity` and the speaker's from before (`speakerKey`), both kept by the page; the same `Speaker` then,
+//! with what goes over USB only refused (the boot image, the MCU's firmware, the console).
 
 use js_sys::{Array, Object, Reflect, Uint8Array};
 use std::cell::{Cell, RefCell};
@@ -16,9 +20,14 @@ use wasm_bindgen::prelude::*;
 use zd1_host::backup::Backup;
 use zd1_host::codec::{self, Msg, Typed, Val};
 use zd1_host::image::{self, Kind, McuImage};
+use zd1_host::net::{Identity, NetLink};
+use zd1_host::spec::net as net_spec;
 use zd1_host::spec::{self, Ty};
 use zd1_host::usb::{Bus, Iface, NusbBus, NusbDev, UsbError};
 use zd1_host::{Error, Events, Mcu, dfu, flash, install, msg, settings, speaker, update};
+
+mod net;
+use net::WebSock;
 
 #[wasm_bindgen]
 extern "C" {
@@ -141,6 +150,19 @@ fn set(o: &Object, k: &str, v: impl Into<JsValue>) {
     let _ = Reflect::set(o, &k.into(), &v.into());
 }
 
+/// How a system went into a slot: { outcome: "running" | "fellBack", slot, now } (`now`: the slot the module runs).
+fn outcome(o: &update::Outcome) -> Object {
+    let (outcome, slot, now) = match *o {
+        update::Outcome::FellBack { slot, now } => ("fellBack", slot, now),
+        update::Outcome::Running(s) | update::Outcome::Installed(s) => ("running", s, s),
+    };
+    let r = Object::new();
+    set(&r, "outcome", outcome);
+    set(&r, "slot", slot.to_string());
+    set(&r, "now", now.to_string());
+    r
+}
+
 /// A message as a JavaScript object: its fields, and `msg` its name. Enums as their values (the page has the names:
 /// `spec()`).
 fn to_js(m: &Msg) -> JsValue {
@@ -240,8 +262,10 @@ pub fn spec() -> JsValue {
 
 /// What a file is (host/core's `image::identify`): { kind: "mcu", version, built, start, end } (Intel HEX or the app
 /// region's .bin), { kind: "backup", version, when } (an MCU backup: installs as MCU firmware), { kind: "system",
-/// version, stamp, size } (a gzip'd cpio of a slot's root) or { kind: "bcd", build, ours, version } (the module's boot image: ours
-/// or the stock one; version: ours's identity, `zd1.boot=`).
+/// version, stamp, size } (a gzip'd cpio of a slot's root), { kind: "signed", version, built, stamp, size } (one signed
+/// for the network update), { kind: "fw", ours, boot, version, built, size } (a B&W .fw: the Lightning model's first
+/// install through its BL2) or { kind: "bcd", build, ours, version } (the module's boot image: ours or the stock one;
+/// version: ours's identity, `zd1.boot=`).
 #[wasm_bindgen(js_name = imageInfo)]
 pub fn image_info(name: &str, data: &[u8]) -> Result<JsValue, JsValue> {
     let o = Object::new();
@@ -250,6 +274,23 @@ pub fn image_info(name: &str, data: &[u8]) -> Result<JsValue, JsValue> {
             set(&o, "kind", "system");
             set(&o, "version", version);
             set(&o, "stamp", stamp);
+            set(&o, "size", data.len() as f64);
+        }
+        Kind::Signed { version, built, stamp } => {
+            set(&o, "kind", "signed");
+            set(&o, "version", version);
+            set(&o, "built", built);
+            set(&o, "stamp", stamp);
+            set(&o, "size", data.len() as f64);
+        }
+        Kind::Fw { bcd_ours, boot, mcu } => {
+            set(&o, "kind", "fw");
+            set(&o, "ours", bcd_ours && mcu.is_some());
+            set(&o, "boot", boot);
+            if let Some(i) = mcu {
+                set(&o, "version", i.version);
+                set(&o, "built", i.built);
+            }
             set(&o, "size", data.len() as f64);
         }
         Kind::Bcd { build, ours, boot } => {
@@ -313,13 +354,63 @@ pub fn gate_sentence(info: JsValue) -> Result<String, JsValue> {
     Ok(speaker::gate(&typed_from_js(&info)?))
 }
 
-/// Our MCU firmware, over WebUSB.
+/// The speaker over one of its links: WebUSB, or the network (our module OS, docs/protocol/net.md).
+enum Conn {
+    Usb(Mcu<NusbDev>),
+    Net(Mcu<NetLink<WebSock>>),
+}
+
+/// `$body` with `$m` the speaker's `Mcu`, whichever its link.
+macro_rules! on {
+    ($c:expr, $m:ident => $body:expr) => {
+        match $c {
+            Conn::Usb($m) => $body,
+            Conn::Net($m) => $body,
+        }
+    };
+}
+
+/// Where a network connection goes, to open it again (after an update the speaker restarts).
+#[derive(Clone)]
+struct NetTo {
+    addr: String,
+    me: Identity,
+    speaker: [u8; 32],
+}
+
+impl NetTo {
+    async fn open(&self, ev: Rc<dyn Events>) -> zd1_host::Result<Mcu<NetLink<WebSock>>> {
+        let link = NetLink::connect(WebSock::open(&self.addr).await?, &self.me, Some(self.speaker), CLIENT).await?;
+        Mcu::new(link, ev, false).await
+    }
+}
+
+/// What this page calls itself when it pairs (the speaker's `Controllers` record).
+const CLIENT: &str = "the web page";
+
+/// Our MCU firmware, over WebUSB or the network.
 #[wasm_bindgen]
 pub struct Speaker {
-    m: Rc<RefCell<Option<Mcu<NusbDev>>>>,
+    m: Rc<RefCell<Option<Conn>>>,
     closed: Cell<bool>,
     ev: Rc<dyn Events>,
     js: JsEvents,
+    /// over the network: where, to connect again (the address may change: `reachAgain`)
+    net: RefCell<Option<NetTo>>,
+}
+
+/// A setting or action that, changed over the network, can cut the page off the speaker: kept once the page connects
+/// again (`Speaker.reachAgain`), else the speaker goes back (docs/protocol/net.md).
+#[wasm_bindgen]
+pub fn provisional(key: &str) -> bool {
+    net_spec::provisional(key)
+}
+
+/// A new key for this browser to pair with speakers over the network: the text to keep (the page keeps it in its
+/// storage; `Speaker.connectNet` takes it).
+#[wasm_bindgen(js_name = newIdentity)]
+pub fn new_identity() -> Result<String, JsValue> {
+    zd1_host::net::new_identity().map(|i| i.to_text()).map_err(js_err)
 }
 
 #[wasm_bindgen]
@@ -328,16 +419,51 @@ impl Speaker {
     pub async fn connect(events: JsEvents) -> Result<Option<Speaker>, JsValue> {
         let ev: Rc<dyn Events> = Rc::new(Ev(events.clone().unchecked_into()));
         match Mcu::open(&NusbBus, ev.clone(), true).await.map_err(js_err)? {
-            Some(m) => {
-                Ok(Some(Speaker { m: Rc::new(RefCell::new(Some(m))), closed: Cell::new(false), ev, js: events }))
-            }
+            Some(m) => Ok(Some(Speaker::with(Conn::Usb(m), ev, events, None))),
             None => Ok(None),
         }
     }
 
-    /// The firmware's HELLO: { fw, built, board, proto, uptime_ms, requests }.
+    /// The speaker on the network at `addr` (an address, NAME.local; HOST:PORT), this browser being `identity`
+    /// (`newIdentity`'s text). `known`: the speaker's key met at this address before (hex; another one there is an
+    /// error: not the speaker this browser paired with), else the page keeps `speakerKey` now. The first request that
+    /// needs it asks for the pairing (events.prompt: ON/OFF held 5 s on the speaker).
+    #[wasm_bindgen(js_name = connectNet)]
+    pub async fn connect_net(
+        addr: String,
+        identity: String,
+        known: Option<String>,
+        events: JsEvents,
+    ) -> Result<Speaker, JsValue> {
+        let ev: Rc<dyn Events> = Rc::new(Ev(events.clone().unchecked_into()));
+        let me =
+            Identity::from_text(&identity).ok_or_else(|| js_err(Error::Failed("not a key (newIdentity)".into())))?;
+        let known = known
+            .as_deref()
+            .map(|k| zd1_host::text::unhex_n::<32>(k).ok_or_else(|| js_err(Error::Failed("not a speaker key".into()))))
+            .transpose()?;
+        let sock = WebSock::open(&addr).await.map_err(js_err)?;
+        let link = NetLink::connect(sock, &me, known, CLIENT).await.map_err(js_err)?;
+        let to = NetTo { addr, me, speaker: link.speaker };
+        let m = Mcu::new(link, ev.clone(), false).await.map_err(js_err)?;
+        Ok(Speaker::with(Conn::Net(m), ev, events, Some(to)))
+    }
+
+    /// Over the network: the speaker's key (hex), to remember with its address; undefined over USB.
+    #[wasm_bindgen(js_name = speakerKey)]
+    pub fn speaker_key(&self) -> Option<String> {
+        self.net.borrow().as_ref().map(|n| zd1_host::hex(&n.speaker))
+    }
+
+    /// "usb" or "net".
+    pub fn link(&self) -> String {
+        if self.net.borrow().is_some() { "net" } else { "usb" }.into()
+    }
+
+    /// The firmware's HELLO: { fw, built, board, proto, uptime_ms, requests } (over the network, the requests that
+    /// go there).
     pub fn hello(&self) -> Result<JsValue, JsValue> {
-        let h = self.m.borrow().as_ref().map(|m| codec::encode_msg(&m.hello));
+        let h = self.m.borrow().as_ref().map(|c| on!(c, m => codec::encode_msg(&m.hello)));
         let h = h.ok_or_else(|| js_err(Error::Device("busy".into())))?.map_err(|e| js_err(e.into()))?;
         Ok(to_js(&codec::decode(&h).map_err(|e| js_err(e.into()))?))
     }
@@ -345,29 +471,28 @@ impl Speaker {
     /// One request by its name with its fields (docs/protocol/host.md); the reply as an object.
     pub async fn call(&self, name: String, fields: JsValue) -> Result<JsValue, JsValue> {
         let req = from_js(&name, &fields)?;
-        let mut m = self.take().await?;
-        let r = m.call_msg(&name, &req, true).await;
-        self.put(m);
+        let mut c = self.take().await?;
+        let r = on!(&mut c, m => m.call_msg(&name, &req, true).await);
+        self.put(c);
         r.map(|r| to_js(&r)).map_err(js_err)
     }
 
     /// Play a choice (host/core's `speaker::PLAY`: usb, aux, wifi, airplay, spotify, snapcast, standby, ...).
     pub async fn play(&self, choice: String) -> Result<(), JsValue> {
         let q = speaker::select(&choice).ok_or_else(|| js_err(Error::Failed(format!("no choice {choice}"))))?;
-        let mut m = self.take().await?;
-        let r = m.call(&q).await;
-        self.put(m);
+        let mut c = self.take().await?;
+        let r = on!(&mut c, m => m.call(&q).await);
+        self.put(c);
         r.map(drop).map_err(js_err)
     }
 
     /// One POLL: the MCU's log to events.text, the module's console (open) to events.console. The records read.
     pub async fn poll(&self) -> Result<u32, JsValue> {
-        let mut m = self.take().await?;
-        let r = m.poll().await;
-        let c = m.console_take();
-        self.put(m);
-        if !c.is_empty() {
-            self.js.console(Uint8Array::from(c.as_slice()));
+        let mut c = self.take().await?;
+        let (r, con) = on!(&mut c, m => (m.poll().await, m.console_take()));
+        self.put(c);
+        if !con.is_empty() {
+            self.js.console(Uint8Array::from(con.as_slice()));
         }
         r.map(|n| n as u32).map_err(js_err)
     }
@@ -376,40 +501,42 @@ impl Speaker {
     /// ConsoleReply { open, room, lost }.
     #[wasm_bindgen(js_name = consoleOpen)]
     pub async fn console_open(&self, open: bool) -> Result<JsValue, JsValue> {
-        let mut m = self.take().await?;
-        let r = m.console_open(open).await.and_then(|r| codec::encode_msg(&r).map_err(Into::into));
-        self.put(m);
+        let mut c = self.take().await?;
+        let r = on!(&mut c, m => m.console_open(open).await);
+        self.put(c);
+        let r = r.and_then(|r| codec::encode_msg(&r).map_err(Into::into));
         Ok(to_js(&codec::decode(&r.map_err(js_err)?).map_err(|e| js_err(e.into()))?))
     }
 
     /// Bytes to the module's console (open), as typed.
     #[wasm_bindgen(js_name = consoleWrite)]
     pub async fn console_write(&self, data: Vec<u8>) -> Result<(), JsValue> {
-        let mut m = self.take().await?;
-        let r = m.console_write(&data).await;
-        self.put(m);
+        let mut c = self.take().await?;
+        let r = on!(&mut c, m => m.console_write(&data).await);
+        self.put(c);
         r.map_err(js_err)
     }
 
     /// The State record (the module OS's settings and status) as an object: its fields, `msg` "State".
     pub async fn state(&self) -> Result<JsValue, JsValue> {
-        let mut m = self.take().await?;
-        let r = settings::state_msg(&mut m).await;
-        self.put(m);
+        let mut c = self.take().await?;
+        let r = on!(&mut c, m => settings::state_msg(m).await);
+        self.put(c);
         r.map(|m| to_js(&m)).map_err(js_err)
     }
 
     /// A list record of the module OS by its name (`Record`): `Scan` (the networks around: { ssid, signal (-dBm),
     /// security }, the strongest first; each read starts a new scan, so a fresh radio's first answer is empty),
     /// `Networks` (the known ones, preferred first: { ssid, security }), `Servers` (snapservers over mDNS: { name,
-    /// host, port }; each read looks again), `Pairings` (AirPlay's: { id, admin }). Its entries as objects; a record
-    /// the module can't make fails with why (no radio, no address).
+    /// host, port }; each read looks again), `Pairings` (AirPlay's: { id, admin }), `Controllers` (the clients paired
+    /// over the network: { id, name, since }). Its entries as objects; a record the module can't make fails with why
+    /// (no radio, no address).
     pub async fn list(&self, record: String) -> Result<JsValue, JsValue> {
         let r =
             codec::enum_value("Record", &record).ok_or_else(|| js_err(Error::Failed(format!("no record {record}"))))?;
-        let mut m = self.take().await?;
-        let b = settings::record(&mut m, spec::Record::from(r)).await;
-        self.put(m);
+        let mut c = self.take().await?;
+        let b = on!(&mut c, m => settings::record(m, spec::Record::from(r)).await);
+        self.put(c);
         let l = codec::decode_list(&b.map_err(js_err)?).map_err(|e| js_err(Error::Codec(e)))?;
         let a = Array::new();
         for e in &l {
@@ -421,56 +548,109 @@ impl Speaker {
     /// The settings that differ from their defaults, as KEY=VALUE lines (no secrets): a file to import later.
     #[wasm_bindgen(js_name = exportSettings)]
     pub async fn export_settings(&self) -> Result<String, JsValue> {
-        let mut m = self.take().await?;
-        let r = settings::export(&mut m).await;
-        self.put(m);
+        let mut c = self.take().await?;
+        let r = on!(&mut c, m => settings::export(m).await);
+        self.put(c);
         r.map_err(js_err)
     }
 
     /// Settings from an export's lines, each written: how many; the ones refused in the error.
     #[wasm_bindgen(js_name = importSettings)]
     pub async fn import_settings(&self, text: String) -> Result<u32, JsValue> {
-        let mut m = self.take().await?;
-        let r = settings::import(&mut m, &text).await;
-        self.put(m);
+        let mut c = self.take().await?;
+        let r = on!(&mut c, m => settings::import(m, &text).await);
+        self.put(c);
         r.map(|n| n as u32).map_err(js_err)
     }
 
-    /// Change a setting ("" = its default): the value the module has now.
+    /// Change a setting ("" = its default): the value the module has now. Over the network a change that can cut the
+    /// page off (`spec.provisional`) is kept once the page connects again: `reachAgain` after the last of them.
     #[wasm_bindgen(js_name = setSetting)]
     pub async fn set_setting(&self, key: String, value: String) -> Result<String, JsValue> {
-        let mut m = self.take().await?;
-        let r = settings::set(&mut m, &key, &value).await;
-        self.put(m);
+        let mut c = self.take().await?;
+        let r = on!(&mut c, m => settings::set(m, &key, &value).await);
+        self.put(c);
         r.map_err(js_err)
     }
 
     /// Join a Wi-Fi network: WPA2 with a passphrase (turned into the key here), or open (none).
     #[wasm_bindgen(js_name = joinWifi)]
     pub async fn join_wifi(&self, ssid: String, passphrase: Option<String>) -> Result<(), JsValue> {
-        let mut m = self.take().await?;
+        let mut c = self.take().await?;
         let how = passphrase.as_deref().map_or(settings::Wifi::Open, settings::Wifi::Wpa2);
-        let r = settings::join(&mut m, &ssid, how).await;
-        self.put(m);
+        let r = on!(&mut c, m => settings::join(m, &ssid, how).await);
+        self.put(c);
         r.map_err(js_err)
     }
 
     #[wasm_bindgen(js_name = wifiOff)]
     pub async fn wifi_off(&self) -> Result<(), JsValue> {
-        let mut m = self.take().await?;
-        let r = settings::wifi_off(&mut m).await;
-        self.put(m);
+        let mut c = self.take().await?;
+        let r = on!(&mut c, m => settings::wifi_off(m).await);
+        self.put(c);
         r.map_err(js_err)
+    }
+
+    /// Over the network, after a change that can cut the page off (`provisional`): a new session, at this address or
+    /// `also` (the address a change set), once the change has taken effect; the speaker keeps the change once it has
+    /// one, else it goes back by itself (docs/protocol/net.md). The address it answered at (the connection is there
+    /// now); an error when it didn't within the time.
+    #[wasm_bindgen(js_name = reachAgain)]
+    pub async fn reach_again(&self, also: Option<String>) -> Result<String, JsValue> {
+        let Some(to) = self.net.borrow().clone() else { return Ok(String::new()) };
+        let mut at = vec![to.addr.clone()];
+        at.extend(also.filter(|a| *a != to.addr));
+        drop(self.take().await?); // the session from before: it doesn't count
+        let ev = self.ev.clone();
+        let connect = async |a: &str| NetTo { addr: a.into(), ..to.clone() }.open(ev.clone()).await;
+        match zd1_host::net::reach_again(&at, &*self.ev, connect).await {
+            Ok((a, m)) => {
+                self.put(Conn::Net(m));
+                *self.net.borrow_mut() = Some(NetTo { addr: a.clone(), ..to });
+                Ok(a)
+            }
+            Err(e) => {
+                self.closed.set(true);
+                Err(js_err(e))
+            }
+        }
     }
 
     /// The module's system into the slot that doesn't run, then started once (`start`): { outcome, slot, now }, the
     /// outcome "installed" (not started), "running" (the good slot now) or "fellBack" (the new slot didn't get ready:
-    /// the module is on `now`); slots as "a", "b".
+    /// the module is on `now`); slots as "a", "b". Over the network the image must be signed (the release's
+    /// `system-VERSION.signed`) and is always started; the page's connection goes with the restart and comes back by
+    /// itself.
     #[wasm_bindgen(js_name = updateSystem)]
     pub async fn update_system(&self, image: Vec<u8>, start: bool) -> Result<JsValue, JsValue> {
-        let mut m = self.take().await?;
-        let r = update::system(&mut m, &image, &update::Options { start, ..Default::default() }).await;
-        self.put(m);
+        let c = self.take().await?;
+        let to = self.net.borrow().clone();
+        let r = match (c, &to) {
+            (Conn::Usb(mut m), _) => {
+                // over USB the image itself (the MCU's path takes any): a signed one without its header
+                let image = image::signed_system(&image).map_or(&image[..], |(_, at)| &image[at..]);
+                let r = update::system(&mut m, image, &update::Options { start, ..Default::default() }).await;
+                self.put(Conn::Usb(m));
+                r
+            }
+            (Conn::Net(m), Some(to)) => {
+                let ev = self.ev.clone();
+                match update::system_over_network(m, &image, async || to.open(ev.clone()).await).await {
+                    Ok((o, m)) => {
+                        self.put(Conn::Net(m));
+                        Ok(o)
+                    }
+                    Err(e) => {
+                        self.closed.set(true);
+                        Err(e)
+                    }
+                }
+            }
+            (c, None) => {
+                self.put(c);
+                Err(Error::Failed("no network address".into()))
+            }
+        };
         let o = Object::new();
         let (outcome, slot, now) = match r.map_err(js_err)? {
             update::Outcome::Installed(s) => ("installed", s, None),
@@ -484,38 +664,50 @@ impl Speaker {
     }
 
     /// The module's boot image (our .bcd: stub, kernel, rescue) through the bootloader's relay, then our firmware
-    /// started again and the module up on its good slot (`install::boot_image`). This connection ends: connect again
-    /// afterwards. { os }: what the module runs.
+    /// started again, which has the new boot image's rescue install itself into a slot (`install::boot_image`). This
+    /// connection ends: connect again afterwards. { os, outcome, slot, now } ([`outcome`]). USB only.
     #[wasm_bindgen(js_name = updateBoot)]
     pub async fn update_boot(&self, bcd: Vec<u8>) -> Result<JsValue, JsValue> {
-        let m = self.take().await?; // it asks for DFU and leaves USB: this connection ends
+        let m = self.usb().await?; // it asks for DFU and leaves USB: this connection ends
         self.closed.set(true);
-        let i = install::boot_image(&NusbBus, Some(m), &bcd, self.ev.clone()).await.map_err(js_err)?;
-        let o = Object::new();
-        set(&o, "os", i.mod_os);
+        let d = install::boot_image(&NusbBus, Some(m), &bcd, self.ev.clone()).await.map_err(js_err)?;
+        let o = outcome(&d.outcome);
+        set(&o, "os", d.info.mod_os);
         Ok(o.into())
     }
 
+    /// The boot image's system into a slot, asked for (`install::system_from_rescue`, a rescue with no system in a
+    /// slot): the rescue started once installs itself into the slot that isn't the good one, which then starts once.
+    /// { outcome, slot, now } ([`outcome`]). USB only.
+    #[wasm_bindgen(js_name = installFromRescue)]
+    pub async fn install_from_rescue(&self) -> Result<JsValue, JsValue> {
+        let mut m = self.usb().await?;
+        let r = install::system_from_rescue(&mut m).await;
+        self.put(Conn::Usb(m));
+        Ok(outcome(&r.map_err(js_err)?).into())
+    }
+
     /// The module's boot image (our .bcd) through BL2's XModem, for a module in BL2 with no image to start (a boot
-    /// image update that stopped: `install::boot_image_in_bl2`); then the module up on its good slot. The connection
-    /// stays. { os }: what the module runs.
+    /// image update that stopped: `install::boot_image_in_bl2`); then its system from the rescue, as after the relay.
+    /// The connection stays. { os, outcome, slot, now } ([`outcome`]). USB only.
     #[wasm_bindgen(js_name = updateBootInBl2)]
     pub async fn update_boot_in_bl2(&self, bcd: Vec<u8>) -> Result<JsValue, JsValue> {
-        let mut m = self.take().await?;
+        let mut m = self.usb().await?;
         let r = install::boot_image_in_bl2(&mut m, &bcd).await;
-        self.put(m);
-        let o = Object::new();
-        set(&o, "os", r.map_err(js_err)?.mod_os);
+        self.put(Conn::Usb(m));
+        let d = r.map_err(js_err)?;
+        let o = outcome(&d.outcome);
+        set(&o, "os", d.info.mod_os);
         Ok(o.into())
     }
 
     /// Our MCU firmware onto the speaker: into DFU (the page needs the bootloader granted: wantsDevice), a backup
     /// (events.backup: kept before anything is written), flash, verify, start, check. This connection ends: connect
-    /// again afterwards. { fw, built, rcause, stages, matches }.
+    /// again afterwards. { fw, built, rcause, stages, matches }. USB only (over the network the MCU follows its OS).
     #[wasm_bindgen(js_name = flashMcu)]
     pub async fn flash_mcu(&self, name: String, image: Vec<u8>) -> Result<JsValue, JsValue> {
         let img = McuImage::parse(&name, &image).map_err(js_err)?;
-        let m = self.take().await?; // it asks for DFU and leaves USB: this connection ends
+        let m = self.usb().await?; // it asks for DFU and leaves USB: this connection ends
         self.closed.set(true);
         flash_js(Some(m), &img, &self.ev, &self.js).await
     }
@@ -525,17 +717,18 @@ impl Speaker {
 impl Speaker {
     /// The whole install from here (`Bootloader.install`, which gets into the bootloader by itself): for a speaker
     /// whose install stopped with the module on the stock software. This connection ends: connect again afterwards.
+    /// USB only.
     pub async fn install(
         &self,
         bcd: Option<Vec<u8>>,
         mcu_name: String,
         mcu: Vec<u8>,
-        system: Vec<u8>,
+        system: Option<Vec<u8>>,
     ) -> Result<JsValue, JsValue> {
-        let m = self.take().await?;
+        let m = self.usb().await?;
         self.closed.set(true);
         drop(m); // the install opens it again, to ask for the bootloader
-        install_js(bcd, &mcu_name, &mcu, &system, &self.ev, &self.js).await
+        install_js(bcd, &mcu_name, &mcu, system.as_deref(), &self.ev, &self.js).await
     }
 }
 
@@ -544,7 +737,7 @@ async fn install_js(
     bcd: Option<Vec<u8>>,
     mcu_name: &str,
     mcu: &[u8],
-    system: &[u8],
+    system: Option<&[u8]>,
     ev: &Rc<dyn Events>,
     js: &JsEvents,
 ) -> Result<JsValue, JsValue> {
@@ -580,21 +773,36 @@ fn report_js(r: flash::Report) -> JsValue {
 }
 
 impl Speaker {
-    /// The MCU for one operation (another one running: wait for it; the page polls the log meanwhile).
-    async fn take(&self) -> Result<Mcu<NusbDev>, JsValue> {
+    fn with(c: Conn, ev: Rc<dyn Events>, js: JsEvents, net: Option<NetTo>) -> Speaker {
+        Speaker { m: Rc::new(RefCell::new(Some(c))), closed: Cell::new(false), ev, js, net: RefCell::new(net) }
+    }
+
+    /// The connection for one operation (another one running: wait for it; the page polls the log meanwhile).
+    async fn take(&self) -> Result<Conn, JsValue> {
         loop {
             if self.closed.get() {
                 return Err(js_err(Error::Usb("this connection has ended (connect again)", UsbError::Gone)));
             }
-            if let Some(m) = self.m.borrow_mut().take() {
-                return Ok(m);
+            if let Some(c) = self.m.borrow_mut().take() {
+                return Ok(c);
             }
             zd1_host::sleep(10).await;
         }
     }
 
-    fn put(&self, m: Mcu<NusbDev>) {
-        *self.m.borrow_mut() = Some(m);
+    /// The connection for an operation only USB has (DFU, the relay).
+    async fn usb(&self) -> Result<Mcu<NusbDev>, JsValue> {
+        match self.take().await? {
+            Conn::Usb(m) => Ok(m),
+            c => {
+                self.put(c);
+                Err(js_err(Error::Failed("over USB only: connect the speaker with a cable for this".into())))
+            }
+        }
+    }
+
+    fn put(&self, c: Conn) {
+        *self.m.borrow_mut() = Some(c);
     }
 }
 
@@ -649,15 +857,16 @@ impl Bootloader {
 
     /// Our firmware on both boards (host/core's `install`, docs/web.md): the module's boot image through the relay
     /// (`bcd`; undefined: it is there already), the MCU firmware (a backup first: events.backup), the module's first
-    /// boot, the system into slot A. Phases on events.phase. { fw, slot, os }; connect again afterwards.
+    /// boot, then the system: the boot image's own (its rescue installs itself), else `system` into a slot. Phases on
+    /// events.phase. { fw, slot, os }; connect again afterwards.
     pub async fn install(
         &self,
         bcd: Option<Vec<u8>>,
         mcu_name: String,
         mcu: Vec<u8>,
-        system: Vec<u8>,
+        system: Option<Vec<u8>>,
     ) -> Result<JsValue, JsValue> {
-        install_js(bcd, &mcu_name, &mcu, &system, &self.ev, &self.js).await
+        install_js(bcd, &mcu_name, &mcu, system.as_deref(), &self.ev, &self.js).await
     }
 
     /// The stock firmware back on both boards (host/core's `rollback`): the stock `.bcd` through the relay, then the

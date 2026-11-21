@@ -155,7 +155,8 @@ Hard power-off (0x8000dcdc, used for standby and watchdog resets): no handshake.
 
 ### 2.5 Module-requested MCU update (reg 0x11 = 0x27)
 
-See section 3.1. The MCU sets ISP_FORCE and reboots into its DFU bootloader.
+See section 3.1. The MCU sets ISP_FORCE and reboots into its bootloader (on the ZD1L, B&W's Net HBL: no USB, it takes
+the app from BL2 over SPI: `docs/mcu/bootloader-hbl.md`).
 
 ---
 
@@ -175,7 +176,7 @@ See section 3.1. The MCU sets ISP_FORCE and reboots into its DFU bootloader.
 | 0x24 | – | Polled: stored, not ready. | RE |
 | 0x25 | ev 0x10000002 → notify 7 | Observer #1 default case: clears the "AirPlay playing" flag; no other action. | RE |
 | 0x26 | ev 0x10000008 → notify 0x29 | Ignored by both observers. | RE |
-| **0x27** | ev 0x10000004 → notify 8 | **Only on board variant 2** (ADC2 ID ≥ 0x200): set GP fuse bit 31 (**ISP_FORCE**) via 0x8001be0c/0x8001bd94, set GPLP flag 0x1000000, amp mute (PB16 low), hard-off the module, wait 200 ms, **watchdog reset → MCU enters the USB-DFU bootloader**. Variant 1: no action. The bootloader then waits for a USB host: it never reads the GPLP flag (the app clears it at boot, unread), it doesn't touch USART1, and its SPI relay code doesn't call the flash-write routines (`docs/mcu/bootloader-dfu.md`). | RE |
+| **0x27** | ev 0x10000004 → notify 8 | **Only on board variant 2** (ADC2 ID ≥ 0x200): set GP fuse bit 31 (**ISP_FORCE**) via 0x8001be0c/0x8001bd94, set GPLP flag 0x1000000, amp mute (PB16 low), hard-off the module, wait 200 ms, **watchdog reset → the MCU's bootloader**. Variant 1: no action. Variant 2 is the ZD1L: its bootloader (B&W's Net HBL, no USB) powers the module, asks for BL2 (HCR 0x2120), waits for DCR 0x2423 and takes the app over SPI XModem (`docs/mcu/bootloader-hbl.md`). The ZD1's DFU bootloader, which never sees this, would wait for a USB host (`docs/mcu/bootloader-dfu.md`). | RE |
 
 ### 3.2 0x32 NetStatus (F, two ASCII characters; MCU reads and is notified)
 
@@ -278,7 +279,7 @@ Module side (handler 0x602f7310; status on 0x29: `20 20` OK, `21 21` fail) [RE]:
 | Command | Arg | Module action |
 |---|---|---|
 | 0x20 | – | notify observers |
-| **0x21** | – | **reboot into BL2** ("start bootloaderL2 to update application"): BL2 mailbox + watchdog reset (`docs/module/boot-chain.md`). Our MCU firmware's `zd1 module bl2` and the MCU bootloader's relay use it. |
+| **0x21** | – | **reboot into BL2** ("start bootloaderL2 to update application"): BL2 mailbox + watchdog reset (`docs/module/boot-chain.md`). Our MCU firmware's `zd1 module bl2` and the MCU bootloader's relay use it; the ZD1L's HBL and our preloader send 0x2120 for the MCU's own app (our OS with one staged answers as BL2). |
 | 0x22 | 0x26 / 0x27 | check online / a USB stick for firmware |
 | 0x23 | 0x20-0x25 | flash firmware already transferred into RAM |
 | 0x24 | 0x20 / 0x21 | system restart / settings-flag action |
@@ -302,7 +303,7 @@ No other HCR codes are sent. The MCU application never sends 0x21 / 0x22 / 0x23 
 
 Only the dead NFU task consumes these events, so in practice **HCR status is ignored** except for logging [RE].
 
-**DCR Ctrl (notify 0x2A)**, handler 0x8000b5e0: **only 0x2423 is recognised** (event 0x12000000, consumed only by the dead NFU task). The MCU never writes 0x2A or 0x2B [RE]. So no DCR request from the module produces an action; for example `24 22` "USB stick" is ignored.
+**DCR Ctrl (notify 0x2A)**, handler 0x8000b5e0: **only 0x2423 is recognised** (event 0x12000000, consumed only by the dead NFU task; 0x2423 is BL2's "host firmware ready", the ZD1L HBL's and our preloader's cue to receive the app). The MCU never writes 0x2A or 0x2B [RE]. So no DCR request from the module produces an action; for example `24 22` "USB stick" is ignored.
 
 **DRC Command (W 0x48, F `[code, 00]`)**:
 - Plain sender 0x8000bc64; with retry 0x8000bb90.
@@ -429,7 +430,7 @@ Never touched by the MCU: 0x00, 0x10, 0x13, 0x05–0x08, 0x2A (write), 0x2B, 0x2
 
 - Report `21 00` only when the module stays up. On 0x2100 the MCU starts the setup task once (section 2.3); if the
   module then goes silent (a boot loader handing over to a kernel), the task never finishes and the Wi-Fi source
-  stays in sub-state 0x14 (LED breathing red) even after the module comes back. Report `20 00` until then (our boot stub does).
+  stays in sub-state 0x14 (LED breathing red) even after the module comes back. Report `20 00` until then (our boot stub does, to our MCU after its knock; to a stock MCU it stays silent until Linux's `zd1-linkd`).
 
 **What the stock MCU does with a replacement module that passes these checks** [EMU, with an earlier build of our OS
 that served the stock host's registers; RAM watches 0x7AFC
@@ -450,7 +451,7 @@ network state, 0x7B00 Wi-Fi status, 0x7D18 Wi-Fi source LED pattern / +4 sub-sta
 ## 5. Summary
 
 The MCU uses a small subset of the module's register map:
-- **0x11** status: 0x21 = ready, 0x23 = ready but flagged, 0x27 = "reboot MCU into DFU".
+- **0x11** status: 0x21 = ready, 0x23 = ready but flagged, 0x27 = "reboot the MCU into its bootloader" (variant 2: the ZD1L's HBL).
 - **0x32** connection status (two ASCII bytes → connected / not connected → purple LED solid or blinking).
 - **0x47** XML play status (pl / pa / em; `pl` triggers auto-switch to AirPlay).
 - **0x40 / 0xE4** volume as a 0–240 attenuation scale (0xFF = mute) mapped linearly onto the 72 DSP steps.
@@ -473,7 +474,7 @@ Two behaviours matter for a replacement module:
 |---|---|
 | 0x75 TelnetShellPort (8 B, ASCII decimal) / 0x77 TCPIPSpiPort (8 B) / **0x76 UARTPortsSelect** (F) | module shell routing (handler `RemoteRegUartPortSelect`, write `FUN_6024a810`): 0x76 b0 = **5** → shell = TELNET on port[0x75] (iPod UART0, tunnel on port[0x77] or off); **4** → stock layout (shell UART1, tunnel REMOTE_REGISTERS on port[0x77]); 0 → shell UART1, iPod off. Applies live, no reboot; give the app a few seconds after "ready" first. Our firmware: `zd1 reg write` (0x75 = the port, 0x76 = 5; 0x77 = "50001", 0x76 = 4: `docs/module/knos.md`). The stock MCU patch (`stock-patch/`) re-asserts mode 5 every ~30 s. 0x41 TelnetCmd is a dead end (no handler). [HW] |
 | 0x78 TCPIPToSpi | the SPI→TCP tunnel data register (live `reg print`) [HW]; MCU writes to it land in the module's default write handler [RE] |
-| 0x25, 0xC0-0xC6, 0xD2-0xD5 | between our MCU firmware and our OS: its identification on VersionImage ("zd1-os VERSION KIND", the boot stub's "zd1-boot"), picks, the debug services, the receiver chosen on the speaker, the MCU's version, the boot slot, the updater, the receivers and their state; the native dialect's speaker snapshot, keys, volume requests and protocol version (`docs/protocol/registers.md`, generated from `protocol/spi`; `sequences.md`, Our OS). Our OS answers only our MCU firmware: none of the stock MCU's checks ("9112", the network-settings backup, the Cne defaults) |
+| 0x25, 0xC0-0xC6, 0xD2-0xD9 | between our MCU firmware and our OS: its identification on VersionImage ("zd1-os VERSION KIND", KIND release, debug or rescue; the boot stub's "zd1-boot ID", ID its image's `zd1.image`), the State record (0xD6), the MCU's app from the module (0xD7), a slot to try once (0xD8), the host link from the network (0xD9), picks, the debug services, the receiver chosen on the speaker, the MCU's version, the boot slot, the updater, the receivers and their state; the native dialect's speaker snapshot, keys, volume requests and protocol version (`docs/protocol/registers.md`, generated from `protocol/spi`; `sequences.md`, Our OS). Our OS answers our MCU firmware, and an MCU bootloader as BL2 when it has an app staged: none of the stock MCU's checks ("9112", the network-settings backup, the Cne defaults) |
 | any id via the module shell `reg add <id> <name> <size>` | adds a RAM-only register served to the MCU on reads; `reg write <id> int16 <n>` sets it; gone after a module reboot. A patched stock MCU app once polled such a register every ~2 s through the stock read task, using its shared read slot (RAM 0x3ed4+0x10) only while idle [HW] |
 
 Module shell view of the same file: `reg print [id]` (ids in decimal), `reg rd`/`wr`. Avoid printing 95-102 (WEP keys,
@@ -483,5 +484,6 @@ cipher, **WPA passphrase**, SSID).
 1. DRC 0xE1/0xE2/0x9E exact meaning and the unused codes 0xB2/0x13/0xFA (module `RemoteRegDRCCommand::passResult`).
 2. The `03 01 x {00,03}` ↔ `03 01 01 {02,04}` exchange on 0x40 (and the unreachable `03 01 01 01`).
 3. Module meanings of 0x11 = 0x20, 0x22, 0x24-0x26, and 0x6A result codes '1'-'6'.
-4. Why 0x11 = 0x27 (self-DFU request) is honoured only on board variant 2.
+4. Whether the ZD1L's bootloader reads GPLP 0x1000000 (it runs on ISP_FORCE and takes the app from BL2:
+   `docs/mcu/bootloader-hbl.md`).
 5. Site-survey (0x68) request value; 0xDC special case in the read task (0x8000c424).

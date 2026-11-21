@@ -138,8 +138,8 @@ def knos_mac(op, mm, a, b, opf=0x2C):
 
 
 def nokia_program():
-    """Nokia's 54-instruction Sol program from wslsepp_warp (blobs/module/nokia-hd1/wslsepp_warp.bin, or $WSLSEPP)."""
-    path = os.environ.get("WSLSEPP", os.path.join(REPO, "blobs", "module", "nokia-hd1", "wslsepp_warp.bin"))
+    """Nokia's 54-instruction Sol program from wslsepp_warp (blobs/nokia-hd1/wslsepp_warp.bin, or $WSLSEPP)."""
+    path = os.environ.get("WSLSEPP", os.path.join(REPO, "blobs", "nokia-hd1", "wslsepp_warp.bin"))
     b = open(path, "rb").read()
     return list(struct.unpack_from("<108I", b, 0x5EC8)), list(struct.unpack_from("<108I", b, 0x6078))
 

@@ -1,13 +1,13 @@
 // The connection and the jobs: what the flows tell the page (`events`), connecting to the speaker or its
 // bootloader, one operation at a time, the job strip for long flows.
-import { Bootloader, Speaker } from "../pkg/zd1_web.js";
+import { Bootloader, newIdentity, Speaker } from "../pkg/zd1_web.js";
 import { keepBackup } from "./backups.js";
 import { consoleText } from "./console.js";
 import { hero, heroProgress } from "./hero.js";
 import { app } from "./shared.js";
 import { drawDfu } from "./software.js";
 import { refresh } from "./speaker.js";
-import { $, failed, hex4, notice } from "./ui.js";
+import { $, ask, failed, hex4, notice } from "./ui.js";
 
 // ---- what the flows tell the page -------------------------------------------------------------------------------
 
@@ -22,6 +22,12 @@ export const events = {
     appendLog(s);
   },
   prompt() {
+    $("press-what").textContent =
+      app.sp?.link() === "net"
+        ? "Its light flashes purple: a press there pairs this browser with the speaker, for good (Advanced lists the " +
+          "browsers and computers paired). The press does nothing else."
+        : "Its light flashes purple: a press there allows this change (and the next ones for 10 minutes). The press " +
+          "does nothing else.";
     if (!$("press").open) $("press").showModal(); // asked again while it waits (a person away: no deadline)
   },
   step(s) {
@@ -111,9 +117,69 @@ export async function connect(ask) {
   } else show("welcome");
 }
 
-/// "welcome", "app" (our firmware) or "dfu" (the bootloader). The release rows go with the view.
+/// The speaker over the network at `addr` (docs/protocol/net.md): this browser's key (made once), the speaker's key
+/// from the first time at this address (another one there: not the speaker this browser paired with).
+export async function connectNet(addr) {
+  addr = addr.trim();
+  if (!addr) return;
+  let me = localStorage.getItem("zd1.identity");
+  if (!me) {
+    me = newIdentity();
+    localStorage.setItem("zd1.identity", me);
+  }
+  const known = JSON.parse(localStorage.getItem("zd1.speakers") ?? "{}");
+  try {
+    app.sp = await Speaker.connectNet(addr, me, known[addr], events);
+  } catch (e) {
+    if (known[addr] && /another key/.test(e?.message ?? "")) {
+      const again = await ask(
+        "Another speaker at this address",
+        `The speaker answering at ${addr} isn't the one this browser paired with there (its key changed: another ` +
+          "speaker, or this one's data was erased). Forget the old one and pair with this one? That takes a press of " +
+          "ON/OFF on it.",
+        "Pair with it",
+      );
+      if (again) {
+        delete known[addr];
+        localStorage.setItem("zd1.speakers", JSON.stringify(known));
+        return connectNet(addr);
+      }
+    }
+    failed(e);
+    return;
+  }
+  if (!known[addr]) {
+    known[addr] = app.sp.speakerKey();
+    localStorage.setItem("zd1.speakers", JSON.stringify(known));
+  }
+  localStorage.setItem("zd1.address", addr);
+  app.bl = null;
+  show("app");
+  await refresh(true);
+}
+
+/// Over the network, after changes that can cut the page off (`provisional`): connect again once they have taken
+/// effect, at this address or `also` (one a change set); the speaker keeps them then, else it goes back by itself.
+export async function reachAgain(also) {
+  if (app.sp?.link() !== "net") return;
+  notice("The speaker applies the change: this page connects again to keep it…");
+  try {
+    const at = await app.sp.reachAgain(also);
+    localStorage.setItem("zd1.address", at);
+    notice(`The speaker answers at ${at}: the change is kept.`);
+  } catch (e) {
+    app.sp = null;
+    show("welcome");
+    failed(e);
+  }
+}
+
+/// "welcome" (with Install and Help), "app" (our firmware) or "dfu" (the bootloader). The release rows go with the
+/// view.
 export function show(what) {
-  $("welcome").hidden = what !== "welcome";
+  document.body.classList.toggle("net", what === "app" && app.sp?.link() === "net");
+  for (const id of ["welcome", "install", "help"]) $(id).hidden = what !== "welcome";
+  $("nav-links").hidden = what !== "app";
   $("app").hidden = what !== "app";
   $("dfu").hidden = what !== "dfu";
   $("disconnect").hidden = what === "welcome";

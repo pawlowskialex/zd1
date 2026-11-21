@@ -23,32 +23,11 @@ pub struct McuImage {
     pub mem: BTreeMap<u32, u8>,
 }
 
-/// What mcu/stamp.py put in an image: the commit (`-dirty` with uncommitted changes) and its date.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Ident {
-    pub version: String,
-    pub built: String,
-}
-
-const MAGIC: &[u8] = b"ZD1-FW-IDENT-01\0";
-
+/// What mcu/stamp.py put in an image: its version (the app's content, `-dirty` with uncommitted changes) and the
+/// commit's date (`zd1-release`).
+pub use zd1_release::Ident;
 /// The identification in `data` (one block exactly, else None).
-pub fn ident(data: &[u8]) -> Option<Ident> {
-    let i = find(data, MAGIC)?;
-    if find(&data[i + 1..], MAGIC).is_some() {
-        return None;
-    }
-    let p = i + MAGIC.len();
-    let field = |a: usize, n: usize| {
-        let b = data.get(a..a + n)?;
-        Some(String::from_utf8_lossy(b.split(|c| *c == 0).next().unwrap_or(b)).into_owned())
-    };
-    Some(Ident { version: field(p, 41)?, built: field(p + 41, 25)? })
-}
-
-fn find(h: &[u8], n: &[u8]) -> Option<usize> {
-    h.windows(n.len()).position(|w| w == n)
-}
+pub use zd1_release::ident::find as ident;
 
 impl McuImage {
     /// Intel HEX text, a backup (its app region), or else a raw image of the app region (at 0x80004000).
@@ -149,6 +128,12 @@ pub enum Kind {
     Backup(Backup),
     /// The module's system: its version and the stamp its slot gets.
     System { version: String, stamp: String },
+    /// The module's system signed for the network (`sign_system`): what its header says, and the key's that signed it
+    /// is the speaker's to check.
+    Signed { version: String, built: String, stamp: String },
+    /// A B&W over-the-air `.fw` (the Zeppelin Air with Lightning's first install, through its BL2's web updater;
+    /// docs/mcu/stock-firmware.md): the module's `.bcd` (ours: its identity) and the MCU's app (ours: its version).
+    Fw { bcd_ours: bool, boot: String, mcu: Option<Ident> },
     /// The module's boot image (a BridgeCo `.bcd`): its build string (ours keeps the stock container's), whether it
     /// boots our OS (its stage 2 is our boot stub, module/os/mkpayload.py) or the stock app, and ours's identity
     /// (`zd1.boot=` on its kernel command line, as the State record's `boot` reports it; empty: none).
@@ -159,6 +144,18 @@ pub enum Kind {
 pub fn identify(name: &str, data: &[u8]) -> Result<Kind> {
     if data.starts_with(&[0x1F, 0x8B]) {
         return Ok(Kind::System { version: system_version(data)?, stamp: system_stamp(data)? });
+    }
+    if data.starts_with(zd1_release::MAGIC.as_bytes()) {
+        let (h, _) = zd1_release::Header::parse(data).map_err(Error::Failed)?;
+        return Ok(Kind::Signed { stamp: h.stamp(), version: h.version, built: h.built });
+    }
+    if let Some((bcd, mcu)) = zd1_release::fw::parts(data) {
+        let ours = bcd_ours(bcd);
+        return Ok(Kind::Fw {
+            bcd_ours: ours,
+            boot: if ours { bcd_boot(bcd) } else { String::new() },
+            mcu: ident(mcu),
+        });
     }
     if data.starts_with(b"bCoD") {
         let build = data.get(8..0x18).map_or(String::new(), |b| String::from_utf8_lossy(b).trim().to_string());
@@ -246,18 +243,42 @@ pub fn cpio_file<'a>(cpio: &'a [u8], path: &str) -> Option<&'a [u8]> {
 
 /// A system image's version: VERSION_ID of its usr/lib/os-release ("unknown" without one).
 pub fn system_version(image: &[u8]) -> Result<String> {
+    Ok(system_release(image)?.0)
+}
+
+/// A system image's version and build date: VERSION_ID and BUILD_DATE of its usr/lib/os-release ("unknown" and ""
+/// without them).
+pub fn system_release(image: &[u8]) -> Result<(String, String)> {
     let cpio = gunzip(image)?;
-    let v = cpio_file(&cpio, "usr/lib/os-release").and_then(|r| {
-        String::from_utf8_lossy(r)
-            .lines()
-            .find_map(|l| l.strip_prefix("VERSION_ID=").map(|v| v.trim_matches('"').to_string()))
-    });
-    Ok(v.unwrap_or_else(|| "unknown".into()))
+    let text =
+        cpio_file(&cpio, "usr/lib/os-release").map(|r| String::from_utf8_lossy(r).into_owned()).unwrap_or_default();
+    let get = |k: &str| {
+        text.lines()
+            .find_map(|l| l.strip_prefix(k).and_then(|v| v.strip_prefix('=')).map(|v| v.trim_matches('"').to_string()))
+    };
+    Ok((get("VERSION_ID").unwrap_or_else(|| "unknown".into()), get("BUILD_DATE").unwrap_or_default()))
+}
+
+/// A system image signed for the network (`protocol/release`, docs/protocol/net.md): its header, made from the
+/// image's version and build date and signed with `seed` (a signing key), then the image.
+pub fn sign_system(image: &[u8], seed: &[u8; 32]) -> Result<Vec<u8>> {
+    if image.starts_with(zd1_release::MAGIC.as_bytes()) {
+        return Err(Error::Failed("signed already".into()));
+    }
+    let (version, built) = system_release(image)?;
+    let mut out = zd1_release::sign(image, &version, &built, seed).map_err(Error::Failed)?;
+    out.extend_from_slice(image);
+    Ok(out)
+}
+
+/// A signed system update's header and where its image starts (None: not one).
+pub fn signed_system(update: &[u8]) -> Option<(zd1_release::Header, usize)> {
+    update.starts_with(zd1_release::MAGIC.as_bytes()).then(|| zd1_release::Header::parse(update).ok()).flatten()
 }
 
 /// The stamp a slot gets (what `zd1-ctl status` shows): "VERSION SHA256[:12] LENGTH".
 pub fn system_stamp(image: &[u8]) -> Result<String> {
-    Ok(format!("{} {} {}", system_version(image)?, &crate::hex(&crate::sha256(image))[..12], image.len()))
+    Ok(zd1_release::stamp(&system_version(image)?, &crate::sha256(image), image.len() as u64))
 }
 
 #[cfg(test)]
@@ -266,7 +287,7 @@ mod tests {
 
     #[test]
     fn hex_and_ident() {
-        let mut blk = MAGIC.to_vec();
+        let mut blk = zd1_release::ident::MAGIC.to_vec();
         blk.extend(b"abc1234\0".iter().chain(std::iter::repeat_n(&0, 33)));
         blk.extend(b"2026-10-30 12:00\0".iter().chain(std::iter::repeat_n(&0, 8)));
         let img = McuImage::from_bin(0x8000_4000, &[vec![0xAA; 100], blk.clone()].concat());

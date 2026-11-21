@@ -10,7 +10,7 @@
 use std::fs::{self, OpenOptions};
 use std::io::{self, Read, Write};
 use std::os::unix::ffi::OsStrExt;
-use std::os::unix::fs::{OpenOptionsExt, PermissionsExt, symlink};
+use std::os::unix::fs::{FileTypeExt, MetadataExt, OpenOptionsExt, PermissionsExt, symlink};
 use std::os::unix::io::AsRawFd;
 use std::path::Path;
 use zd1_sys::{cstr, mknod, mtd as ioctl};
@@ -128,6 +128,23 @@ fn lock(exclusive: bool) -> Option<fs::File> {
     Some(f)
 }
 
+/// One system update at a time, whichever way it comes (zd1-update from the MCU, zd1-netd from the network): held
+/// while it runs, Err when another one holds it.
+pub fn update_lock() -> Result<fs::File, String> {
+    let _ = fs::create_dir_all("/run/zd1");
+    let f = OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .write(true)
+        .mode(0o600)
+        .open("/run/zd1/update.lock")
+        .map_err(|e| format!("/run/zd1/update.lock: {e}"))?;
+    if unsafe { libc::flock(f.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } != 0 {
+        return Err("another update runs".into());
+    }
+    Ok(f)
+}
+
 fn holds_system(root: &str) -> Option<String> {
     let init = fs::metadata(format!("{root}/sbin/init")).ok()?;
     if init.permissions().mode() & 0o111 == 0 {
@@ -180,6 +197,15 @@ fn stamp_from_slot(s: Slot) -> Option<String> {
 }
 
 // ---- erasing: flash_eraseall -j (busybox miscutils/flash_eraseall.c) ----
+
+/// Slot `s` emptied: its record says no system first (as `install`'s erase does), so that what was there isn't read as
+/// still there (`stamp`, and init's self-install from it), then the partition erased (`erase`).
+pub fn erase_slot(s: Slot) -> Result<u32, String> {
+    let n = mtd(s.partition()).ok_or(format!("no partition {}", s.partition()))?;
+    let _lock = lock(true);
+    let _ = zd1_sys::write_private(&record(s), "\n");
+    erase(n)
+}
 
 /// Erase MTD partition `n` for JFFS2: every good block erased, a cleanmarker in its first page's spare area. Bad blocks
 /// are skipped (JFFS2 skips them too). The number of bad blocks.
@@ -314,6 +340,72 @@ pub fn install<R: Read>(
     image: &mut R,
     check: &mut dyn FnMut(&mut R) -> Result<(), String>,
 ) -> Result<String, String> {
+    install_with(s, id, &mut |at| {
+        let mut gz = gunzip::Gunzip::new(&mut *image);
+        let bytes = unpack(&mut gz, at)?;
+        io::copy(&mut gz, &mut io::sink()).map_err(|e| format!("the image: {e}"))?; // to its end: the CRC
+        drop(gz);
+        check(image)?;
+        Ok(bytes)
+    })
+}
+
+/// Install the system that runs, from RAM (the whole system as the boot initramfs: the Lightning model's image, whose
+/// rescue is the full system; docs/module/storage.md), into slot `s`, stamped `id`: its root copied file by file,
+/// staying on its own file system (/proc, /sys, /dev, /run, /data and the slot's own mount are others), with the two
+/// device nodes a slot's root has. So a speaker whose slots are empty fills one from what it runs, without an image.
+pub fn install_running(s: Slot, id: &str) -> Result<String, String> {
+    if boot().running.is_some() {
+        return Err("this system runs from a slot, not from RAM: nothing to copy".into());
+    }
+    install_with(s, id, &mut |at| {
+        let dev = fs::metadata("/").map_err(|e| format!("/: {e}"))?.dev();
+        let bytes = copy_tree(Path::new("/"), Path::new(at), dev)?;
+        fs::create_dir_all(format!("{at}/dev")).map_err(|e| format!("{at}/dev: {e}"))?;
+        for (name, major, minor) in [("console", 5, 1), ("null", 1, 3)] {
+            let p = format!("{at}/dev/{name}");
+            if fs::symlink_metadata(&p).is_err() {
+                mknod(&p, libc::S_IFCHR, if name == "null" { 0o666 } else { 0o600 }, major, minor)
+                    .map_err(|e| format!("{p}: {e}"))?;
+            }
+        }
+        Ok(bytes)
+    })
+}
+
+/// `src` into `dst` (both directories), staying on file system `dev` (another one's mount point is copied empty):
+/// directories, files, symbolic links and device nodes, with their modes. The bytes of the files copied.
+fn copy_tree(src: &Path, dst: &Path, dev: u64) -> Result<u64, String> {
+    let mut bytes = 0;
+    for e in fs::read_dir(src).map_err(|e| format!("{}: {e}", src.display()))? {
+        let e = e.map_err(|e| format!("{}: {e}", src.display()))?;
+        let (from, to) = (e.path(), dst.join(e.file_name()));
+        let m = fs::symlink_metadata(&from).map_err(|e| format!("{}: {e}", from.display()))?;
+        let t = m.file_type();
+        if t.is_dir() {
+            fs::create_dir_all(&to).map_err(|e| format!("{}: {e}", to.display()))?;
+            fs::set_permissions(&to, fs::Permissions::from_mode(m.mode() & 0o7777))
+                .map_err(|e| format!("{}: {e}", to.display()))?;
+            if m.dev() == dev {
+                bytes += copy_tree(&from, &to, dev)?;
+            } // else another file system is mounted here (/proc, /run, /data, ...): its mount point stays, empty
+        } else if t.is_symlink() {
+            let target = fs::read_link(&from).map_err(|e| format!("{}: {e}", from.display()))?;
+            symlink(&target, &to).map_err(|e| format!("{}: {e}", to.display()))?;
+        } else if t.is_file() {
+            bytes += fs::copy(&from, &to).map_err(|e| format!("{}: {e}", from.display()))?;
+        } else if t.is_char_device() || t.is_block_device() {
+            let kind = if t.is_char_device() { libc::S_IFCHR } else { libc::S_IFBLK };
+            let (major, minor) = (libc::major(m.rdev() as libc::dev_t), libc::minor(m.rdev() as libc::dev_t));
+            mknod(&to.to_string_lossy(), kind, (m.mode() & 0o7777) as libc::mode_t, major, minor)
+                .map_err(|e| format!("{}: {e}", to.display()))?;
+        }
+    }
+    Ok(bytes)
+}
+
+/// The steps every install shares: the slot checked, erased and mounted, `fill`ed, checked to hold a system, stamped.
+fn install_with(s: Slot, id: &str, fill: &mut dyn FnMut(&str) -> Result<u64, String>) -> Result<String, String> {
     let b = boot();
     if b.running == Some(s) {
         return Err(format!("slot {} is running", s.name()));
@@ -336,11 +428,7 @@ pub fn install<R: Read>(
     let bad = erase(n)?;
     mount(&format!("/dev/mtdblock{n}"), &at, false)?;
     let r = (|| -> Result<u64, String> {
-        let mut gz = gunzip::Gunzip::new(&mut *image);
-        let bytes = unpack(&mut gz, &at)?;
-        io::copy(&mut gz, &mut io::sink()).map_err(|e| format!("the image: {e}"))?; // to its end: the CRC
-        drop(gz);
-        check(image)?;
+        let bytes = fill(&at)?;
         if holds_system_but_stamp(&at).is_none() {
             return Err("the image has no executable /sbin/init".into());
         }

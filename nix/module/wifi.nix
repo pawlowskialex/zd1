@@ -33,7 +33,7 @@ stdenv.mkDerivation {
   name = "zd1-wifi-modules";
   src = src [
     "module/wifi"
-    "blobs/module/nokia-hd1/kernel.bin"
+    "blobs/nokia-hd1/kernel.bin"
   ];
   nativeBuildInputs = [
     python3
@@ -45,7 +45,7 @@ stdenv.mkDerivation {
     runHook preBuild
     cp -r ${linux} linux
     chmod -R u+w linux
-    python3 -I module/wifi/kernel.py linux blobs/module/nokia-hd1/kernel.bin
+    python3 -I module/wifi/kernel.py linux blobs/nokia-hd1/kernel.bin
     tc=(ARCH=arm CROSS_COMPILE=arm-none- "CC=${cc}" LD=ld.lld AR=llvm-ar NM=llvm-nm OBJCOPY=llvm-objcopy HOSTCC=cc)
     (yes "" || true) | make -C linux "''${tc[@]}" oldconfig > /dev/null
     make -C linux "''${tc[@]}" modules_prepare

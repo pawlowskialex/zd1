@@ -48,7 +48,7 @@ ENTRY(_start)
 
 MEMORY
 {
-  FLASH (rxai!w) : ORIGIN = 0x80004000, LENGTH = 0x0003BE00 /* to 0x8003FE00: page 511 is the boot log */
+  FLASH (rxai!w) : ORIGIN = 0x80004000, LENGTH = 0x8003FE00 - 0x80004000 /* page 511 is the boot log */
   INTRAM (wxa!ri) : ORIGIN = 0x00000004, LENGTH = 0x0000FFFC
   USERPAGE : ORIGIN = 0x80800000, LENGTH = 0x00000200
 }

@@ -10,6 +10,7 @@
 #include "wifi.h"
 #include "hostif.h"
 #include "modboot.h"
+#include "mcufw.h"
 #include "modcon.h"
 #include "update.h"
 #include "util.h"
@@ -76,29 +77,7 @@ const char *dm870_ip(void) { return mod_ip; }
 const char *dm870_name(void) { return mod_name; }
 uint8_t dm870_debug(void) { return debug_mode; }
 
-/* ---- SPI0, NPCS2 = PA09, mode 3, ~3 MHz ---- */
-static void spi0_init(void) {
-    static const gpio_map_t pins = {
-        {AVR32_SPI0_NPCS_2_0_PIN, AVR32_SPI0_NPCS_2_0_FUNCTION}, /* PA09 */
-        {AVR32_SPI0_MISO_0_0_PIN, AVR32_SPI0_MISO_0_0_FUNCTION}, /* PA11 */
-        {AVR32_SPI0_MOSI_0_0_PIN, AVR32_SPI0_MOSI_0_0_FUNCTION}, /* PA12 */
-        {AVR32_SPI0_SCK_0_0_PIN, AVR32_SPI0_SCK_0_0_FUNCTION},   /* PA13 */
-    };
-    const spi_options_t opt = {.reg = 2,
-                               .baudrate = 3000000,
-                               .bits = 8,
-                               .spck_delay = 0,
-                               .trans_delay = 0,
-                               .stay_act = 1,
-                               .spi_mode = 3,
-                               .modfdis = 1};
-    gpio_enable_module(pins, sizeof pins / sizeof pins[0]);
-    spi_initMaster(&AVR32_SPI0, &opt);
-    spi_selectionMode(&AVR32_SPI0, 0, 0, 0); /* fixed peripheral select */
-    spi_setupChipReg(&AVR32_SPI0, &opt, sysclk_get_pba_hz());
-    spi_enable(&AVR32_SPI0);
-    spi_unselectChip(&AVR32_SPI0, 2); /* every request toggles NPCS2 itself (SPI_PROTOCOL 1.3) */
-}
+/* ---- SPI0 (board_module_spi) ---- */
 static uint8_t spi0_xfer(uint8_t b) { /* ASF spi_write/spi_read are timeout-bounded */
     uint16_t d = 0xFF;
     if (spi_write(&AVR32_SPI0, b) == SPI_OK)
@@ -118,21 +97,14 @@ static void forget_module(void) {
     if (query != QUERY_NONE)
         query_end(0);
 }
-/* Stock detach / safe power-down (mirrors FUN_8000dcdc): reset first, settle, then cut power.
- * Returns the SPI pins to inputs. Always leaves the module OFF; a running update fails. */
+/* Stock detach (board_module_off), the console's UART first. Always leaves the module OFF; a running update fails. */
 void dm870_detach(void) {
     update_abort("the module was powered off");
     bu = BU_IDLE;
     hold = false;
     modboot_cancel();
-    gpio_set_pin_low(PIN_MOD_RST);
-    delay_ms(20);
     modcon_power(false);
-    gpio_set_pin_low(PIN_MOD_PWR);
-    gpio_configure_pin(AVR32_PIN_PA09, GPIO_DIR_INPUT);
-    gpio_configure_pin(AVR32_PIN_PA11, GPIO_DIR_INPUT);
-    gpio_configure_pin(AVR32_PIN_PA12, GPIO_DIR_INPUT);
-    gpio_configure_pin(AVR32_PIN_PA13, GPIO_DIR_INPUT);
+    board_module_off();
     mod_up = false;
     forget_module();
 }
@@ -192,15 +164,16 @@ void dm870_reg_write(uint8_t reg, uint8_t b0, uint8_t b1) {
  * Update BEGIN, 70 bytes]. After the header it waits a tick (zd1-linkd then polls without sleeping until the request
  * is complete), then sends the data 32 bytes at a time: to our OS 15 ms apart, since zd1-linkd is a process
  * that others preempt for a scheduler slice (up to ~20 ms) while the services start, and at 1 ms apart a request
- * still arrived short after boot [HW 2026-11-02: an Update BEGIN half received, zd1-linkd 0b28a16]; to BL2 and the
- * bootloader's relay (bare metal, polling) 1 ms apart. Short writes (the stock app's) go as they always did.
+ * still arrived short after boot [HW 2026-11-02: an Update BEGIN half received, zd1-linkd 0b28a16]. BL2, bare metal
+ * polling its slave, takes a write whole: 1 KB XModem frames unpaced, 0 retries [HW 2026-10-26, 9.5 KB/s]; paced it
+ * spent 53 ms on each [HW 2026-11-19, 6.9 KB/s]. Short writes (the stock app's) go as they always did.
  * To our OS the write is acknowledged: the module echoes every write (02 reg 00 00), read like a reply; without the
  * echo the bytes were lost (the FIFO overran while zd1-linkd was busy: right after its boot, with the services
  * starting, the Update BEGIN arrived short and the half-received request wedged the slave's parser until the
  * link was restarted [HW 2026-10-31]) and the write goes again, up to three times, once the module has dropped the
  * half it got (100 ms of silence): at most ~1.6 s in all (a 170-byte setting). BL2 and the bootloader's relay get no such check. */
 static bool write_v_once(uint8_t reg, const uint8_t *d, uint16_t n) {
-    bool pace = n > 48;
+    bool pace = ours && n > 48;
     mod_cs(true);
     spi0_xfer(ZD1_WIRE_WRITE_V);
     mod_put(reg);
@@ -210,7 +183,7 @@ static bool write_v_once(uint8_t reg, const uint8_t *d, uint16_t n) {
         delay_ms(15);
     for (uint16_t i = 0; i < n; i++) {
         if (pace && i && !(i % 32))
-            delay_ms(ours ? 15 : 1);
+            delay_ms(15);
         mod_put(d[i]);
     }
     mod_cs(false);
@@ -293,8 +266,22 @@ bool dm870_reg_read_v(uint8_t reg, uint8_t *buf, uint16_t max, uint16_t *len) {
     return ok;
 }
 
-/* Status booting from our boot stub (reg 0x25 "zd1-boot"): it waits for which system slot to start (reg 0xC4, 0
- * until answered; modboot.c). Answered once per boot of the stub; true if answered now. */
+/* Status booting from our boot stub (reg 0x25 "zd1-boot ID", ID its image's: 12 hex digits, the first 8 kept): it
+ * waits for which system slot to start (reg 0xC4, 0 until answered; modboot.c). Answered once per boot of the stub;
+ * true if answered now. */
+static uint32_t stub_image(uint16_t n) {
+    uint32_t id = 0;
+    unsigned p = sizeof ZD1_BOOT_IDENT - 1, k = 0;
+    if (n <= p || nbuf[p] != ' ')
+        return 0;
+    for (p++; p < n && k < 8; p++, k++) {
+        uint8_t c = nbuf[p], d = c >= '0' && c <= '9' ? c - '0' : c >= 'a' && c <= 'f' ? c - 'a' + 10 : 0xFF;
+        if (d == 0xFF)
+            break;
+        id = id << 4 | d;
+    }
+    return k == 8 ? (id ? id : 1) : 0;
+}
 static uint32_t bu_t, bu_deadline;
 static bool stub_check(uint16_t st) {
     uint16_t n = 0, v = 0xFFFF;
@@ -303,9 +290,10 @@ static bool stub_check(uint16_t st) {
     if (!dm870_reg_read_v(ZD1_REG_VERSION_IMAGE, nbuf, sizeof nbuf, &n) || n < sizeof ZD1_BOOT_IDENT - 1 ||
         memcmp(nbuf, ZD1_BOOT_IDENT, sizeof ZD1_BOOT_IDENT - 1))
         return false;
+    uint32_t image = stub_image(n);
     if (!dm870_reg_read(ZD1_REG_BOOT, &v) || v != 0)
         return false;
-    uint16_t a = modboot_answer();
+    uint16_t a = modboot_answer(image);
     dm870_reg_write(ZD1_REG_BOOT, (uint8_t)(a >> 8), (uint8_t)a);
     bu_deadline = tick_ms() + modboot_deadline_ms();
     return true;
@@ -321,8 +309,10 @@ static void on_ready(void) {
     ours = dm870_reg_read_v(ZD1_REG_VERSION_IMAGE, nbuf, sizeof nbuf, &n) && n >= 7 && !memcmp(nbuf, "zd1-os ", 7);
     mod_proto = ours && dm870_reg_read(ZD1_REG_LINK_PROTO, &proto) ? (uint8_t)proto : 0;
     native = ours && mod_proto == ZD1_NATIVE_PROTO;
-    if (last_status == ZD1_STATUS_READY)
+    if (last_status == ZD1_STATUS_READY) {
         modboot_ready();
+        mcufw_module_ready();
+    }
     if (!ours) {
         os_version[0] = 0;
         if (last_status == ZD1_STATUS_READY)
@@ -395,6 +385,9 @@ static void decode(uint8_t reg, const uint8_t *b, uint16_t n) {
     case ZD1_REG_INTENT:
         log_puts("a receiver picked");
         break;
+    case ZD1_REG_MCU_FW:
+        log_puts("our OS has an app for the MCU");
+        break;
     default:
         log_puts(ours ? "(unknown)" : "(the stock software's: ignored)");
         break;
@@ -421,6 +414,9 @@ static void xm_keep(const uint8_t *b, uint16_t n) {
         xm_rx[xm_n++] = b[i];
     }
 }
+
+/* a slot our OS asked to start once (reg 0xD8; 0: none): the module restarts after the drain */
+static uint8_t try_slot;
 
 /* Up to 32 notifications, none started after DRAIN_MS (the rest stays pending: the next call) */
 #define DRAIN_MS 100
@@ -465,6 +461,19 @@ static unsigned drain(void) {
             on_ready();
             if (dm870_native())
                 wifi_module_ready();
+            count++;
+            continue;
+        }
+        if (reg == ZD1_REG_HOST) { /* a request from the network (docs/protocol/net.md) */
+            if (dm870_native())
+                hostif_net_request(nbuf, kept);
+            count++;
+            continue;
+        }
+        if (reg == ZD1_REG_TRY) { /* our OS installed a system into a slot itself: started once, after the drain */
+            if (dm870_native() && n >= 1 && (nbuf[0] == ZD1_BOOT_SLOT_A || nbuf[0] == ZD1_BOOT_SLOT_B))
+                try_slot = nbuf[0];
+            log_puts("[notify] our OS asks for a slot on trial\n");
             count++;
             continue;
         }
@@ -522,18 +531,17 @@ void dm870_start(void) {
         bu = BU_READY;
         return;
     }
-    sysclk_enable_pba_module(SYSCLK_SPI0);
     gpio_set_pin_high(PIN_MOD_PWR);
     modcon_power(true);
     bu = BU_PWR;
-    bu_t = tick_ms() + 1200;
+    bu_t = tick_ms() + MOD_SUPPLY_MS;
     log_puts("[mod] powering up\n");
 }
 static void power_cycle(bool hold_only) {
     dm870_detach();
     hold = hold_only;
     bu = BU_OFF;
-    bu_t = tick_ms() + 500;
+    bu_t = tick_ms() + MOD_OFF_MS;
 }
 static void bringup_poll(void) {
     uint32_t now = tick_ms();
@@ -562,11 +570,10 @@ static void bringup_poll(void) {
             return;
         }
         gpio_configure_pin(PIN_MOD_REQ, GPIO_DIR_INPUT);
-        gpio_set_pin_high(PIN_MOD_RST);
-        spi0_init();
+        board_module_spi();
         mod_up = true;
         bu = BU_RST;
-        bu_t = now + 1200; /* 200 ms + stock's T3 1000 ms */
+        bu_t = now + MOD_RESET_MS;
         bu_deadline = now + 180000;
         return;
     case BU_RST:
@@ -591,8 +598,14 @@ static void bringup_poll(void) {
             bu = BU_IDLE;
             return;
         }
-        if (!tick_after(now, bu_t) || !gpio_get_pin_value(PIN_MOD_REQ))
+        if (!tick_after(now, bu_t))
             return;
+        if (!gpio_get_pin_value(PIN_MOD_REQ)) {
+            /* our boot stub answers nothing until we knock (B&W's bootloaders never do: storage.md, the boot) */
+            dm870_reg_write(ZD1_REG_BOOT, ZD1_BOOT_KNOCK >> 8, ZD1_BOOT_KNOCK & 0xFF);
+            bu_t = now + 200;
+            return;
+        }
         if (!dm870_reg_read(ZD1_REG_STATUS, &st)) {
             bu_t = now + 300;
             return;
@@ -631,6 +644,12 @@ void dm870_poll(void) {
         return;
     drain();
     next = tick_ms() + 50;
+    if (try_slot) { /* as the host link's Boot TRY with restart */
+        uint8_t slot = try_slot;
+        try_slot = 0;
+        if (modboot_set(ZD1H_BOOT_OP_TRY, slot))
+            dm870_op(ZD1H_MOD_OP_RESTART, 0);
+    }
 }
 
 uint8_t dm870_state(void) {

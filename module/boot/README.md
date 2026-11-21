@@ -4,7 +4,7 @@ Two `armv5te-none-eabi` binaries on the MCU link (`module/link`), each with its 
 
 | Binary | Linked at | What |
 |---|---|---|
-| `linuxboot` | 0x61F00000 (`linuxboot.ld`) | the boot stub in front of the Linux kernel: link up (status booting, "zd1-boot" on 0x25); with the payload's slots flag, the MCU's answer on reg 0xC4 picks a system slot as the root (`root=` on the command line, no initramfs) or the rescue initramfs (`docs/module/storage.md`, The boot); then initramfs + kernel into place, ATAGs, jump. Image layout: `module/os/mkpayload.py` |
+| `linuxboot` | 0x61F00000 (`linuxboot.ld`) | the boot stub in front of the Linux kernel: link up, muted until our MCU knocks (3 s; no knock: the rescue without a word), then status booting and "zd1-boot ID" on 0x25 (ID: its image's `zd1.image=`); with the payload's slots flag, the MCU's answer on reg 0xC4 picks a system slot as the root (`root=` on the command line, no initramfs), the rescue initramfs, or the rescue to install itself (`zd1.install`) (`docs/module/storage.md`, The boot); then initramfs + kernel into place, ATAGs, jump. Image layout: `module/os/mkpayload.py` |
 | `mini` | 0x60008000 (`mini.ld`) | a minimal module image (console + link, HCR 0x21 into BL2, prints its `ZD1_TAG`): a small known image for trying an install path (`zemu run IMAGE.bcd` after `tools/zeppelin/fw/mkbcd.py`) |
 
 `src/lib.rs` has what both share: the entry point (`entry!`), the board (registers at their physical addresses), the

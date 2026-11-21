@@ -14,8 +14,8 @@ stdenvNoCC.mkDerivation {
     "tools/zeppelin/fw/bcd.py"
     "tools/zeppelin/fw/ihex.py"
     "tools/zeppelin/recover"
-    "blobs/mcu"
-    "blobs/module"
+    "blobs/zd1/mcu"
+    "blobs/zd1/module"
   ];
   nativeBuildInputs = [ python3 ];
   buildPhase = "python3 -I tools/zeppelin/recover/mkunit.py --mac ${unitMac} --out $out";

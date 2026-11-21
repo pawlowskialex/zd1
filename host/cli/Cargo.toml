@@ -15,3 +15,6 @@ clap = { version = "4", features = ["derive", "string"] }
 futures-lite = "2"
 serde_json = "1"
 libc = "0.2"
+# --net: the WebSocket to the speaker (docs/protocol/net.md)
+tungstenite = "0.28"
+zd1-release.workspace = true

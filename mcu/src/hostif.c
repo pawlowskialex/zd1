@@ -36,6 +36,7 @@
 #include "udi_hid_cc.h"
 #include "util.h"
 #include "pipe.h"
+#include "mcufw.h"
 
 static volatile bool polled;       /* a POLL since the main loop last looked */
 static volatile bool hello_closed; /* a HELLO closed the module's console (for the log) */
@@ -52,6 +53,11 @@ static volatile uint16_t rep_len, rep_seq;
 static volatile uint32_t rep_after; /* the log position the reply goes out after */
 static volatile bool rep_ready, rep_taken;
 static uint8_t poll_buf[ZD1H_POLL_MAX];
+/* a request from the network (hostif_net_request): run from the main loop like a USB one, replied on SPI reg 0xD9 */
+static uint8_t net_req[ZD1H_MSG_MAX];
+static uint16_t net_len, net_seq;
+static bool net_full;
+static bool cur_net; /* the request in hand came from the network */
 static uint8_t hello_buf[ZD1H_MSG_MAX];
 
 static void hello_fill(zd1h_hello_reply_t *h) {
@@ -70,7 +76,8 @@ static void hello_fill(zd1h_hello_reply_t *h) {
 static bool unlocked;                /* by a press, until unlock_until */
 static uint32_t unlock_until;
 static volatile bool confirm_wait, confirmed; /* an Unlock waits for the press (the main loop: inputs -> hostif_key) */
-static bool module_wait;                      /* a Module request waits for its op (dm870_op_result) */
+static bool confirm_allow;   /* ... and it is an Allow: the hold allows an app from the module (mcufw_allow) */
+static bool module_wait;     /* a Module request waits for its op (dm870_op_result) */
 static bool query_wait;      /* a GetSetting / SetSetting / Record waits for the module's answer (dm870_query_result) */
 static bool swallow_release; /* the press was ours: its release (short / hold) is too */
 static uint32_t confirm_until;
@@ -104,7 +111,8 @@ void hostif_first_start(void) {
 }
 
 bool hostif_key(uint8_t key) {
-    if (confirm_wait && key == KEY_ONOFF) {
+    /* the USB gate's Unlock takes a press; a Pair or an Allow takes ON/OFF held 5 s (hostif_poll) */
+    if (confirm_wait && !cur_net && !confirm_allow && key == KEY_ONOFF) {
         confirmed = true;
         swallow_release = true;
         return true;
@@ -200,6 +208,18 @@ UDC_DESC_STORAGE udi_api_t udi_api_hostif = {hostif_enable, pipe_disable, hostif
 
 /* ---- the main loop's side ---- */
 static void reply(const zd1h_msg_t *m, const void *s) {
+    if (cur_net) { /* to the network: u16 seq + the reply, on 0xD9 */
+        static uint8_t out[2 + ZD1H_MSG_MAX];
+        int k = zd1h_encode(m, s, out + 2, sizeof out - 2);
+        if (k < 0) {
+            zd1h_error_t e = {ZD1H_ERR_ARG, "reply too long"};
+            k = zd1h_encode(&ZD1H_ERROR, &e, out + 2, sizeof out - 2);
+        }
+        out[0] = (uint8_t)net_seq;
+        out[1] = (uint8_t)(net_seq >> 8);
+        dm870_reg_write_v(ZD1_REG_HOST, out, (uint16_t)(k + 2));
+        return;
+    }
     int n = zd1h_encode(m, s, rep, sizeof rep);
     if (n < 0) {
         zd1h_error_t e = {ZD1H_ERR_ARG, "reply too long"};
@@ -368,17 +388,32 @@ static bool gate_pass(void) {
     return true;
 }
 
+/* From the network it is our OS's `Pair`: it always waits for the confirmation (ON/OFF held 5 s: an ON/OFF press
+ * someone makes to switch the speaker on or off must not pair whoever asked meanwhile), and opens nothing on USB (the
+ * gate is USB's) */
 static void req_unlock(void) {
     uint16_t secs;
-    if (hostif_gate(&secs) != ZD1H_GATE_LOCKED) {
+    if (!cur_net && hostif_gate(&secs) != ZD1H_GATE_LOCKED) {
         ok();
         return;
     }
-    confirmed = false;
+    confirmed = confirm_allow = false;
     confirm_until = uptime + CONFIRM_MS;
     confirm_wait = true; /* hostif_poll finishes it */
     led_flash(FLASH_PURPLE, CONFIRM_MS);
-    log_puts("[gate] press ON/OFF on the speaker within 30 s to allow the computer to change it\n");
+    log_puts(cur_net ? "[net] hold ON/OFF on the speaker for 5 s within 30 s to pair a client on the network\n"
+                     : "[gate] press ON/OFF on the speaker within 30 s to allow the computer to change it\n");
+}
+
+/* A person allows our OS's system update from the network and the MCU firmware it brings (our OS asks at its start):
+ * ON/OFF held 5 s, whoever asks; held, mcufw takes one app from the module (mcufw.h) */
+static void req_allow(void) {
+    confirmed = false;
+    confirm_until = uptime + CONFIRM_MS;
+    confirm_wait = confirm_allow = true; /* hostif_poll finishes it */
+    led_flash(FLASH_AMBER, CONFIRM_MS);
+    log_puts("[mcufw] hold ON/OFF on the speaker for 5 s within 30 s to allow a system update (and the MCU firmware "
+             "it brings)\n");
 }
 
 static void req_lock(void) {
@@ -611,7 +646,7 @@ static void req_boot(bool set) {
         if (q.boot.restart)
             dm870_op(ZD1H_MOD_OP_RESTART, 0);
     }
-    modboot_state(&r.boot.good, &r.boot.next, &r.boot.last, &r.boot.trial, &r.boot.failed);
+    modboot_state(&r.boot.good, &r.boot.next, &r.boot.last, &r.boot.trial, &r.boot.failed, &r.boot.installing);
     reply(&ZD1H_BOOT_REPLY, &r.boot);
 }
 
@@ -684,12 +719,23 @@ static bool decoded(const zd1h_msg_t *m, const uint8_t *b, uint16_t n) {
 /* one request: past the gate, decoded, run */
 static void run(const uint8_t *b, uint16_t n) {
     uint8_t id = b[0];
-    if (zd1h_gated(id) && !gate_pass())
+    if (cur_net) {
+        /* a paired client: past the gate (its pairing was a press), the network's requests only; Unlock is our OS's
+         * Pair, Allow its update's */
+        if (!zd1h_net(id) && id != ZD1H_ID_UNLOCK && id != ZD1H_ID_ALLOW) {
+            error(ZD1H_ERR_UNKNOWN, "not over the network (docs/protocol/net.md)");
+            return;
+        }
+    } else if (zd1h_gated(id) && !gate_pass())
         return;
     switch (id) {
     case ZD1H_ID_UNLOCK:
         if (decoded(&ZD1H_UNLOCK, b, n))
             req_unlock();
+        return;
+    case ZD1H_ID_ALLOW:
+        if (decoded(&ZD1H_ALLOW, b, n))
+            req_allow();
         return;
     case ZD1H_ID_LOCK:
         if (decoded(&ZD1H_LOCK, b, n))
@@ -725,6 +771,11 @@ static void run(const uint8_t *b, uint16_t n) {
     case ZD1H_ID_REBOOT:
         if (!decoded(id == ZD1H_ID_DFU ? &ZD1H_DFU : &ZD1H_REBOOT, b, n))
             return;
+        if (id == ZD1H_ID_DFU && mcufw_hbl_present()) {
+            /* the ZD1L's bootloader has no USB: DFU would end in it, with nothing on USB (docs/mcu/bootloader-hbl.md) */
+            error(ZD1H_ERR_ARG, "ZD1L: no USB DFU here; its MCU firmware comes from the module");
+            return;
+        }
         ok();
         wait_taken();
         if (id == ZD1H_ID_DFU)
@@ -858,6 +909,8 @@ static void run(const uint8_t *b, uint16_t n) {
     }
 }
 
+static void request_done(void);
+
 void hostif_poll(uint32_t now) {
     uptime = now;
     pipe_poll();
@@ -875,23 +928,38 @@ void hostif_poll(uint32_t now) {
         modcon_host_open(false); /* nobody reads it */
         log_puts("[con] the module's console: closed (the host stopped polling)\n");
     }
+    if (inputs_confirm_take()) { /* the confirmation: a network Pair or an Allow waiting */
+        if (confirm_wait && (cur_net || confirm_allow))
+            confirmed = true;
+        else
+            log_puts("[key] ON/OFF held 5 s: nothing waits for a confirmation\n");
+    }
     if (confirm_wait) { /* an Unlock: the press, or its time runs out (the request stays in) */
         static const zd1h_ok_t ok;
         if (confirmed) {
             confirm_wait = false;
-            unlocked = true;
-            unlock_until = now + GATE_MS;
             led_flash(FLASH_GREEN, 500);
-            log_puts("[gate] unlocked on the speaker\n");
+            if (confirm_allow)
+                mcufw_allow();
+            else if (cur_net)
+                log_puts("[net] confirmed: our OS pairs the client\n");
+            else {
+                unlocked = true;
+                unlock_until = now + GATE_MS;
+                log_puts("[gate] unlocked on the speaker\n");
+            }
             reply(&ZD1H_OK, &ok);
         } else if (tick_after(now, confirm_until)) {
             confirm_wait = false;
             led_flash(FLASH_RED, 500);
-            log_puts("[gate] not confirmed: still locked\n");
-            error(ZD1H_ERR_DENIED, "nobody pressed ON/OFF on the speaker within 30 s");
+            log_puts(confirm_allow ? "[mcufw] not allowed\n"
+                     : cur_net     ? "[net] not confirmed: not paired\n"
+                                   : "[gate] not confirmed: still locked\n");
+            error(ZD1H_ERR_DENIED, cur_net || confirm_allow ? "nobody held ON/OFF on the speaker for 5 s within 30 s"
+                                                            : "nobody pressed ON/OFF on the speaker within 30 s");
         } else
             return;
-        req_full = false;
+        request_done();
         return;
     }
     if (module_wait) { /* a Module request: answered when its op ends */
@@ -901,7 +969,7 @@ void hostif_poll(uint32_t now) {
         zd1h_module_reply_t m = {.ok = ok, .state = dm870_state(), .status = dm870_last_status()};
         module_wait = false;
         reply(&ZD1H_MODULE_REPLY, &m);
-        req_full = false;
+        request_done();
         return;
     }
     if (query_wait) { /* a setting or a record: answered when the module does */
@@ -910,13 +978,38 @@ void hostif_poll(uint32_t now) {
             return;
         query_wait = false;
         query_reply(ok);
-        req_full = false;
+        request_done();
         return;
     }
-    if (!req_full)
+    /* the next request: USB's, else the network's (each waits while the other's runs) */
+    if (req_full) {
+        cur_net = false;
+        cur_seq = req_seq;
+        run(req, req_len);
+    } else if (net_full) {
+        cur_net = true;
+        run(net_req, net_len);
+    } else
         return;
-    cur_seq = req_seq;
-    run(req, req_len);
     if (!confirm_wait && !module_wait && !query_wait)
+        request_done();
+}
+
+/* the request in hand has its reply: its source may send the next */
+static void request_done(void) {
+    if (cur_net)
+        net_full = false;
+    else
         req_full = false;
+}
+
+void hostif_net_request(const uint8_t *b, uint16_t n) {
+    if (n < 3 || n > 2 + sizeof net_req || net_full) {
+        log_puts("[net] a request dropped (malformed, or one already in hand)\n");
+        return;
+    }
+    net_seq = (uint16_t)(b[0] | b[1] << 8);
+    net_len = (uint16_t)(n - 2);
+    memcpy(net_req, b + 2, net_len);
+    net_full = true;
 }

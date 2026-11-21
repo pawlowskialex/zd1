@@ -19,12 +19,14 @@ what an API on the module will serve.
   `pin`, `bitrate`). Each interface has the same address settings, `eth.*` and `wifi.*`: `mode` (off, dhcp, static),
   `address` (ADDRESS/PREFIX), `gateway`, `dns`. Then the name, the three receivers and their options: `airplay.pin`
   (4 digits: senders pair with it and are remembered; empty: pairing per connection), `snapcast.server` (empty: found
-  over mDNS), `snapcast.latency` (ms), `spotify.bitrate` (96, 160, 320).
+  over mDNS), `snapcast.latency` (ms), `spotify.bitrate` (96, 160, 320). And `net` (on, off): the network link
+  (`docs/protocol/net.md`), written over USB only.
 - **An action** is a write with no state of its own, a field of the spec's `Actions` message, written like a setting
   and read back empty (or `!` and why it was refused): `wifi.add` (`wpa2 KEY SSID` or `open SSID`: the network added,
   or its key changed, and put first), `wifi.forget SSID`, `wifi.first SSID` (preferred), `airplay.forget` (any value:
-  the paired senders forgotten, the accessory's identity kept), `reset settings` (every setting to its default; the
-  networks and pairings stay) and `reset all` (those too). `zd1-linkd` logs a `wifi.add` as `wpa2 (key) SSID`.
+  the paired senders forgotten, the accessory's identity kept), `net.forget` (a client paired over the network, by
+  its id, or `all`), `reset settings` (every setting to its default; the networks and pairings stay) and `reset all`
+  (those too, the network's pairings with them). `zd1-linkd` logs a `wifi.add` as `wpa2 (key) SSID`.
 - **The known networks** are a list, the preferred first, in `/data/zd1/networks` (a line each: the WPA2 key or `-`,
   the SSID in hex); the supplicant's configuration has them all with their priority by order, and it joins the
   preferred one it sees.
@@ -45,9 +47,9 @@ what an API on the module will serve.
   after those scans too: without a network IDLE wins, and the host's sentence says "No network known yet" whatever
   the state [HW 2026-11-03: the first boot after the install said "not in range"]); OFF is no supplicant at all. `zd1
   wifi` prints it in a line ("Home (WPA2): connected to 02:00:00:00:00:0a at -57 dBm, 192.0.2.177").
-- **The slots' stamps** (`stamp_a`, `stamp_b`: what each system slot holds, empty for none) are read by `zd1-linkd`
-  in a thread after it starts and after an update (the slot that doesn't run: what `zd1-slot install` recorded in
-  `/data/zd1/stamp.SLOT`), so the page offers "back to slot X" only for a slot with a system.
+- **The slots' stamps** (`stamp_a`, `stamp_b`: what each system slot holds, empty for none) are re-read every 5 s by
+  a thread of `zd1-linkd` from the records `zd1-slot` keeps (`/data/zd1/stamp.SLOT`: an update, the rescue's
+  self-install and `zd1-slot erase` change them), so the page offers "back to slot X" only for a slot with a system.
 - **Other records** (`Record`) are made when asked: the MCU asks through the configuration channel (`zd1/@N`, N the
   record's number) and hands them out in pieces; an unknown number comes back as `!no record N`, one the module
   can't make as `!` and why. A list record is entries one after another, each a u16 length and a message
@@ -61,9 +63,15 @@ what an API on the module will serve.
   networks, a `Snapserver` each (its name, address, port); `zd1-linkd` answers from its last look and starts another in
   a thread (`zd1-mdns`, 1.5 s on each interface with an address), so the first read may be empty; without an address,
   `!no network`. **`Pairings`** (4): the controllers paired with AirPlay, a `Pairing` each (its identifier, admin),
-  from `zd1-airplay`'s store.
+  from `zd1-airplay`'s store. **`Controllers`** (5): the clients paired over the network, a `Controller` each (its
+  key's first 8 hex digits, its name, when; `zd1 paired`).
 
-From a computer on the speaker's USB port, through our MCU firmware (`zd1 settings --help`):
+Over the network (`docs/protocol/net.md`) a paired client reads and writes the same settings and records, answered by
+our OS itself (`zd1-linkd`, as for the MCU's configuration channel); a network setting changed that way is provisional
+until the client reaches the speaker again.
+
+From a computer on the speaker's USB port, through our MCU firmware, or over the network (`zd1 --net HOST ...`;
+`zd1 settings --help`):
 ```
 zd1 state                             the whole record, every field
 zd1 settings                          the settings and their values (one read of the record)
@@ -81,10 +89,9 @@ zd1 servers                           the snapservers found
 zd1 settings --export > FILE          the settings that differ from the defaults (no secrets); --import FILE
 zd1 reset [--all] --yes               back to the defaults
 ```
-On the module: `zd1-settings get|set|list|keys|networks|pairings`. Only these two ways exist: the USB port (the host link's
-`SetSetting`, then the configuration channel, SPI reg 0x45, names `zd1/KEY`) or a shell on the module. Nothing on the
-network changes a setting yet (a module API with its own authentication is planned: `docs/backlog.md`), and over USB a
-change needs the gate open: a press of ON/OFF on the speaker (`zd1 settings` asks for it). The values are kept in
+On the module: `zd1-settings get|set|list|keys|networks|pairings`. Three ways: the USB port (the host link's
+`SetSetting`, then the configuration channel, SPI reg 0x45, names `zd1/KEY`), the network link for a paired client
+(above; `net` itself is set over USB only), or a shell on the module. Over USB a change needs the gate open: a press of ON/OFF on the speaker (`zd1 settings` asks for it). The values are kept in
 `/data/zd1/settings` on the data partition (`storage.md`), one `KEY=VALUE` line each.
 
 ## How a change takes effect
@@ -134,4 +141,10 @@ root-only file under `/var/run`). It is never logged or read back: a secret is s
 ## Other state on the data partition
 - `/data/zd1/airplay`: the AirPlay accessory's identity (its Ed25519 seed, so senders see the same speaker across
   restarts) and up to 16 paired controllers (`zd1-airplay`'s store).
+- `/data/zd1/net`: the speaker's own key for the network link (`key`, X25519, made at the first start: clients
+  remember it) and the clients paired with it (`controllers`, up to 16: `KEY SINCE NAME` a line); `/data/zd1/keys`:
+  keys a developer trusts for signed system updates (`*.pub`, put there over USB).
+- `/data/zd1/stamp.a`, `stamp.b`: what each system slot holds (`zd1-slot`'s records: `storage.md`).
+- `/data/zd1/mcu`: the MCU's app staged for its bootloader (`pending.dmb`) and how often this system's was asked for
+  (`follow`).
 - Spotify Connect keeps nothing: after a reboot the speaker is picked again in the app (`backlog.md`).

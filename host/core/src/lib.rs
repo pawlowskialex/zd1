@@ -26,13 +26,16 @@ pub mod flash;
 pub mod image;
 pub mod install;
 pub mod lab;
+pub mod link;
 pub mod mcu;
+pub mod net;
 pub mod settings;
 pub mod speaker;
 pub mod update;
 pub mod usb;
 pub mod xmodem;
 
+pub use link::Link;
 pub use mcu::Mcu;
 pub use zd1_hostlink as spec;
 pub use zd1_hostlink::codec::{self, Msg, Val};
@@ -191,22 +194,12 @@ pub fn utc_now() -> String {
     let secs = (js_sys::Date::now() / 1000.0) as i64;
     #[cfg(not(target_arch = "wasm32"))]
     let secs = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs() as i64);
-    // days to the civil date (Howard Hinnant's days_from_civil, inverted)
-    let (days, s) = (secs.div_euclid(86400), secs.rem_euclid(86400));
-    let z = days + 719_468;
-    let (era, doe) = (z.div_euclid(146_097), z.rem_euclid(146_097));
-    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146_096) / 365;
-    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-    let mp = (5 * doy + 2) / 153;
-    let (d, m) = (doy - (153 * mp + 2) / 5 + 1, if mp < 10 { mp + 3 } else { mp - 9 });
-    let y = yoe + era * 400 + (m <= 2) as i64;
-    format!("{y:04}-{m:02}-{d:02}T{:02}:{:02}:{:02}Z", s / 3600, s / 60 % 60, s % 60)
+    text::Utc::from_unix(secs).iso()
 }
 
-/// Hex, lower case.
-pub fn hex(b: &[u8]) -> String {
-    b.iter().map(|x| format!("{x:02x}")).collect()
-}
+pub use text::hex;
+/// Hex, keys, dates, cut strings: the text both sides write (`zd1-text`).
+pub use zd1_text as text;
 
 /// SHA-256.
 pub fn sha256(b: &[u8]) -> [u8; 32] {

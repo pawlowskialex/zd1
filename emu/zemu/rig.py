@@ -497,8 +497,8 @@ class Session:
         self.env["ZD1DFU_EMU"] = "127.0.0.1:%d" % port
 
     def real_bl1(self):
-        """The re-runnable real BL1, blobs/module/bl1.run (blobs/README.md, re/netmodule/bl1/README.md)."""
-        return os.path.join(REPO, "blobs", "module", "bl1.run")
+        """The re-runnable real BL1, blobs/zd1/module/bl1.run (blobs/README.md, re/netmodule/bl1/README.md)."""
+        return os.path.join(REPO, "blobs", "zd1", "module", "bl1.run")
 
     def close(self):
         r = self.r
@@ -581,6 +581,24 @@ class Session:
     def sleep(self, secs):
         self.begin()
         self.run_for(secs)
+
+    def press(self, secs, hold_ms=200):
+        """ON/OFF on the speaker, pressed `secs` (virtual) from now and held `hold_ms`: a person at the speaker while a
+        later step waits for the press (pairing over the network, docs/protocol/net.md). Returns at once."""
+        if not self.mcu:
+            raise StepFailed("--press: the main board isn't in this run (--mcu)")
+        t = int((self.r.vtime() + secs) * 1000)
+        self.r.on("zd1")
+        self.r.cmd('board Pins "%d:PA08=0,%d:PA08=1"' % (t, t + hold_ms))
+
+    def confirm(self, secs, hold_ms=5500):
+        """ON/OFF held on the speaker from `secs` (virtual) from now: the confirmation a later step
+        waits for (pairing over the network, an MCU update from the module; mcu/src/inputs.h). Returns at once."""
+        if not self.mcu:
+            raise StepFailed("--confirm: the main board isn't in this run (--mcu)")
+        t = int((self.r.vtime() + secs) * 1000)
+        self.r.on("zd1")
+        self.r.cmd('board Pins "%d:PA08=0,%d:PA08=1"' % (t, t + hold_ms))
 
     def send(self, text, cr=True):
         """Type into the module console (a shell, KnOS, the BL1/BL2 menus); `\\xNN` escapes reach the guest raw."""

@@ -1,6 +1,5 @@
-# The module's Rust programs (os.toml [apps]) as the multicall, bin/zd1: everything (the system's), core = true: what
-# the rescue runs (--no-default-features, docs/module/storage.md), or debug = true: the system's debug build (the debug
-# tools too, os.toml [image.debug]). `cargo module -p zd1` (.cargo/config.toml) on the
+# The module's Rust programs (os.toml [apps]) as the multicall, bin/zd1: the system's, or debug = true: its debug build
+# (the debug tools too, os.toml [image.debug]). `cargo module -p zd1` (.cargo/config.toml) on the
 # workspace; crane builds the dependencies once (buildDepsOnly); the cross setup (target, linker, CC for the cc crate)
 # follows from the stdenv.
 {
@@ -13,7 +12,6 @@
   warp0-fw,
   workspace,
   os,
-  core ? false,
   debug ? false,
 }:
 let
@@ -54,16 +52,9 @@ in
 craneLib.buildPackage (
   common
   // {
-    pname =
-      if core then
-        "zd1-core"
-      else if debug then
-        "zd1-apps-debug"
-      else
-        "zd1-apps";
+    pname = if debug then "zd1-apps-debug" else "zd1-apps";
     cargoArtifacts = deps;
-    cargoExtraArgs =
-      common.cargoExtraArgs + lib.optionalString core " --no-default-features" + lib.optionalString debug " --features debug";
+    cargoExtraArgs = common.cargoExtraArgs + lib.optionalString debug " --features debug";
     # clippy on the same build (nix flake check), with every feature: `cargo module` as clippy
     passthru.clippy = craneLib.cargoClippy (
       common

@@ -31,5 +31,11 @@ void inputs_poll(uint32_t now); /* sample every 5 ms; 4 equal samples = stable *
 const inputs_t *inputs(void);
 key_event_t inputs_key(void);          /* next key event (press, or auto-repeat for volume), KEY_NONE if none */
 void inputs_inject_key(key_event_t k); /* from IR / the host link (Key) */
+/* The confirmation (a person at the speaker approving what the network or the module asked: a pairing, an MCU update):
+ * ON/OFF held CONFIRM_HOLD_MS. Its 2 s hold still means standby (not held back while something waits: someone holding
+ * ON/OFF to switch off lets go when the speaker does, and holding on past that is deliberate). Not a key event:
+ * nothing injected (IR, the host link's Key) can make one, only the key's pin. True once per hold. */
+#define CONFIRM_HOLD_MS 5000
+bool inputs_confirm_take(void);
 
 #endif

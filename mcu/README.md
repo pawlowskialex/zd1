@@ -1,9 +1,11 @@
 # Our MCU firmware
 
 Replacement firmware for the Zeppelin Air main board (AT32UC3A1256), built on Atmel's ASF. It does what the stock
-firmware does for USB, AUX and AirPlay through the stock module, plus a host link for tools (typed requests over USB,
-the network module's console among them). It links at 0x80004000, so the B&W DFU bootloader stays in
-place and any build can be undone (`docs/mcu/bootloader-dfu.md`).
+firmware does for USB, AUX and AirPlay, through the network module running our OS, plus a host link for tools (typed requests over USB,
+the network module's console among them). The app links at 0x80008000 on both models: behind the ZD1L's B&W
+bootloader, and on the ZD1 behind our preloader (`preloader/`, at 0x80004000, where B&W's DFU bootloader starts the
+app), which stays in place with B&W's DFU bootloader below it, so any build can be undone
+(`docs/mcu/bootloader-dfu.md`). Both bootloaders take a new app from the module (`docs/mcu/bootloader-hbl.md`).
 
 ## Status (on the unit)
 
@@ -15,6 +17,9 @@ place and any build can be undone (`docs/mcu/bootloader-dfu.md`).
 | sources: USB, AUX analog, the module running our OS; ON/OFF cycling, standby, volume keys, settings | works |
 | USB audio (UAC1 48/44.1/32 kHz, adaptive with CS2000 trim) + HID media keys | works (0 under/overruns) |
 | the behaviour on top of stock's (below, Behaviour): the amp asleep on a silent boot, woken by sound, off after 5 min of silence; picks (AirPlay, the computer's output, AUX); settling; the LED's looks; stock's USB strings | works (2026-10-26/27; the LED's looks, the idle time and the volume cap set by `prefs`, the computer's volume over the whole cap, no false pick when the Mac wakes: 2026-11-02). Not seen yet: a USB stream taking the speaker after 3 s, the ramp, the heat cap acting (no USB audio in the emulator); the standby supply hold: emulator only |
+| the preloader; the app from the module (the MCU follows its OS) under `Allow`, ending 60 s after the module's next ready | works (2026-11-19/20, `docs/mcu/bootloader-hbl.md`) |
+| a new boot image's system installed by the MCU's own record (EEPROM 0x90) | works (2026-11-21, `docs/module/storage.md`) |
+| WinUSB on Windows (Microsoft OS 2.0 descriptors) | the descriptors read back on macOS; Windows not tried |
 | module link: our OS's native registers (`docs/protocol/sequences.md`; the stock app is detected and reported, not driven); the system slot the module boots; `zd1 update` to the module; HCR 0x21 into BL2, BL2's XModem (`zd1 xmodem`); the stock app's shell on telnet | works |
 | IR remote | decoder runs in the emulator; never tried with the remote |
 | AUX optical | untested (needs a mini-TOSLINK cable) |
@@ -24,7 +29,8 @@ Open work: `docs/backlog.md`. Checks that need a person: `units/<unit>/hw-checks
 
 ## Build, flash, talk to it
 ```
-nix build .#mcu -o mcu/result        # -> mcu/result/zd1.{elf,hex,bin,map}, ~15 s when changed
+nix build .#mcu -o mcu/result        # -> zd1.{hex,bin} (the region from 0x80004000: preloader, record, app), zd1.dmb
+                                     #    (what the module serves), zd1app.bin (bwfw.py --pack), *.elf/.map; ~15 s
 mcu/flash.sh                         # that, then DFU (the host link's Dfu, or already in DFU) -> a DFU backup into
                                      #   units/<unit>/mcu/dfu-backups/ -> flash + verify + start
                                      #   -> the new firmware's version (must be the image's) and boot-stage log
@@ -45,15 +51,16 @@ registers, peek/poke, the module OS's debug services); `zd1 settings` the module
     transfer is aborted; ASF's waits forever, and a stuck bus (the DSP unpowered) hangs the MCU.
   - `asf/avr32/drivers/usbb/usbb_device.c` (`udd_ep_abort`): on an OUT endpoint the busy banks are handed back;
     ASF's KILLBK loop only works for IN banks and never ends on an OUT endpoint holding a packet (the pipe's abort).
-- The firmware identifies itself: `src/version.c` holds a block the nix build stamps with the commit (`-dirty` with
-  uncommitted changes) and its date after linking (`mcu/stamp.py`; on the host, so a new commit doesn't need the Linux
-  builder). `zd1 image FILE` reads it from an image or a DFU backup; the firmware reports it in `HelloReply`,
+- The firmware identifies itself: `src/version.c` holds a block the nix build stamps after linking with its version,
+  12 hex digits of the app's SHA-256 (`-dirty` with uncommitted changes: the same in every release until MCU code
+  changes), and the commit's date (`mcu/stamp.py`; on the host, so a new commit doesn't need the Linux builder). `zd1 image FILE` reads it from an image or a DFU backup; the firmware reports it in `HelloReply`,
   `zd1 info`, and tells our module OS (SPI reg 0xC3).
 - The emulator runs `nix build .#mcu-emu` (`ZD1_EMU`: the log mirrored on USART0, the run's `mcu_log.txt`); the host
   link works there through the emulated USB (`zemu run --mcu --host 'zd1 info'`, or `--keep`
   and `ZD1DFU_EMU=127.0.0.1:4620`), with the gate opened in the run's copy of the EEPROM. `zd1 dfu boot-log` reads the cold-boot stage log over DFU.
-- Only flash with the unit owner's OK, with a DFU backup first. Recovery from anything: hold ON/OFF at power-up → DFU →
-  `zd1 dfu`.
+- Only flash with the unit owner's OK, with a DFU backup first. Recovery from anything on a ZD1: hold ON/OFF at
+  power-up → DFU → `zd1 dfu`. A ZD1L has no USB bootloader: its BL2's web updater from key-hold, with
+  `blobs/zd1l/zd1lv20435.fw` (`docs/mcu/stock-firmware.md`).
 
 ## The host link
 Typed requests and the firmware's log over USB, defined in `protocol/host/src/lib.rs` (reference:
@@ -67,7 +74,8 @@ bass, a key as if pressed), `Amp` (the interlock), `Peek`/`Poke` (bytes or 32-bi
 (power, bring-up, into BL2 over SPI or through BL1's serial menu, held powered for JTAG), `ModRead`/`ModWrite`, `GetSetting`/`SetSetting` (the module OS's
 settings), `Debug`, `Unlock`/`Lock` (the gate), `Prefs`, `BootState`/`Boot` (the module's
 system slot), `Update`/`UpdateStatus`/`Pipe`/`PipeData` (the module's update, the bulk pipe), `XmFrame` (BL2's
-XModem), `Console` (the module's console for this host: its bytes in POLL's CONSOLE records instead of lines in the
+XModem), `Allow` (a person at the speaker allows an MCU app from the module: ON/OFF held 5 s; `src/mcufw.c`),
+`ModRecord` (the module's State record), `Pair` and `SystemUpdate` (over the network only: `docs/protocol/net.md`), `Console` (the module's console for this host: its bytes in POLL's CONSOLE records instead of lines in the
 log; closed when the host stops polling for 2 s or a new host says HELLO) and `ConsoleWrite` (the host's bytes into the
 1 KB send ring, as many as fit; `zd1 console`, `src/modcon.c`). Everything the firmware prints goes into a 4 KB log the host reads (oldest text
 dropped when nobody reads; a reading host gets up to 50 ms to make room). The protocol only grows (old and new
@@ -77,7 +85,8 @@ firmware and tools meet: `docs/protocol/host.md`, Compatibility); `HelloReply` l
 requests that change the speaker (flashing, settings, the debug services, memory, the module's power, the source
 and volume) need a press of ON/OFF on the speaker: `Unlock` waits 30 s for it (the LED flashes purple, the press does
 nothing else), then they run until 10 minutes after the last one. A new firmware's first start (its version isn't the
-one the EEPROM's second page recorded: it was just flashed) is unlocked the same way, so an install goes on without a
+one the EEPROM's second page recorded: it was just flashed, or taken from the module under a person's `Allow`) is
+unlocked the same way, so an install goes on without a
 press: whoever could flash it could change anything already (`hostif_first_start`). `zd1` asks for the press by itself. Reads
 (`Hello`, `Info`, `Diag`, `GetSetting`, `ModRead`) are free. For a unit tools drive unattended, the gate can be opened
 for good (`zd1 gate open`, itself behind a press; kept in the EEPROM flags byte; `gate lock` closes it).
@@ -97,12 +106,13 @@ The host link's side of `zd1 --help`, each a typed request or a few; `zd1 COMMAN
 | `info`, `diag`, `hello`, `log [-f]` | the state at a glance; internals (protections, audio path, USB audio, the module's link, the last IR frame); the version (answered from the interrupt); the log |
 | `play usb\|aux\|wifi\|ipod\|airplay\|spotify\|snapcast\|standby`, `standby`, `volume [STEP] [--bass N]`, `key onoff\|hold\|standby\|volup\|voldn\|play\|next\|prev` | the source manager, as the keys and the remote drive it (USB and AUX only while plugged in, a receiver with a sender connected; `ipod` refused: no dock support) |
 | `amp allow\|auto\|deny` | the amp interlock: allowed until the MCU restarts / allowed from every boot (the default: the amp comes on by itself when there is sound) / locked, at boot too (EEPROM flag `SETTINGS_AMP_LOCKED`, until `amp auto`) |
-| `prefs [--auto-switch on\|off] [--amp-idle MIN] [--volume-cap N]` | a USB stream taking the speaker by itself; how long a silent source keeps the amp on (1 to 30 min); the highest volume on every source (1 to 71, 40 unless set); all in the EEPROM |
+| `prefs [--auto-switch on\|off] [--amp-idle MIN] [--volume-cap N]` | a USB stream taking the speaker by itself; how long a silent source keeps the amp on (1 to 30 min); the highest volume on every source (1 to 71, 71 unless set); all in the EEPROM |
 | `gate [unlock\|lock\|open]` | the host link's gate |
 | `module off\|start\|power\|restart\|bl2\|hold\|esc [-t S]` | the network module: `start` = the non-blocking bring-up done at every boot (off again after 180 s without READY; a system slot not ready in 90 s is power-cycled onto the next choice); `power` waits ≤ S (120); `bl2` HCR 0x21 into BL2; `hold` power-cycled, the reset released, nothing watching (JTAG); `esc` into BL2 through BL1's serial menu, whatever the image (USART1: PA06 → the module's RXD1, PA05 ← TXD1) |
 | `console [run CMD...\|log]` | the module's console: a terminal (Ctrl-] leaves), shell commands to their end (output and exit status), or what it says |
 | `state`, `settings`, `name`, `wifi`, `ip`, `receiver`, `pairings`, `servers`, `reset` | the module OS's State record and settings (kept by the MCU from the module's pushes, SPI reg 0xD6; `docs/module/settings.md`) |
-| `update IMAGE`, `slot [try a\|b\|rescue \| good a\|b \| clear] [--restart]` | the module's system into the other slot over the bulk pipe (`docs/module/updater.md`); which system slot the module's boot stub starts (`docs/module/storage.md`, The boot) |
+| `update IMAGE`, `slot [try a\|b\|rescue \| good a\|b \| clear \| install] [--restart]` | the module's system into the other slot over the bulk pipe; a `.bcd`: the boot image through the bootloader's relay, then the MCU has its system install itself (`docs/module/updater.md`); which system slot the module's boot stub starts, `install`: the rescue copies itself into a slot and starts it (`docs/module/storage.md`, The boot) |
+| `allow` | ON/OFF held 5 s within 30 s (amber blink): the MCU takes the app our OS staged, once, until 60 s after the module's next ready (10 min at most) |
 | `xmodem IMAGE.bcd [--in-bl2]` | a module image through BL2's XModem over SPI (`Module BL2` first); BL2 erases the app partition first |
 | `reg read\|write F [--v]` | module registers over SPI (the stock app's shell on TCP: three register writes, `docs/module/knos.md`) |
 | `debug on\|off\|default` | our module OS's debug services (RAM only: told to the module at every ready) |
@@ -111,20 +121,25 @@ The host link's side of `zd1 --help`, each a typed request or a few; `zd1 COMMAN
 | `bulk-test [MB]` | the bulk pipe into DISCARD: throughput and CRC-32 (930 KB/s; ~810 KB/s while USB audio streams) |
 
 The rest drives the DFU bootloader (`zd1 dfu ...`, `docs/mcu/bootloader-dfu.md`) or both: `flash`, `install`,
-`rollback`, `image`.
+`rollback`. `image` names files by their content's version. Over the network: `--net HOST`, `paired`, `sign`, `keygen`
+(`docs/protocol/net.md`).
 
 ## Source layout
 
 | Path | What |
 |---|---|
 | `src/main.c` | boot order (pins on the RC clock, then OSC0, then PLL0 = what works on a cold boot) and the main loop |
-| `src/zd1_board.*` | pin map, safe GPIO, clocks (48 MHz from one PLL for CPU and USB), stage log in flash page 511 |
+| `src/zd1_board.*` | pin map, safe GPIO, clocks (48 MHz from one PLL for CPU and USB), stage log in flash page 511; the board's start and the module's power, shared with the preloader |
+| `preloader/` | the ZD1's preloader at 0x80004000: the app, or a new one from the module (`docs/mcu/bootloader-hbl.md`) |
+| `src/mcufw.*` | the app from the module: `Allow`, into the preloader or the ZD1L's bootloader, the preloader's report |
+| `src/msos.*` | Microsoft OS 2.0 descriptors: WinUSB for the host link's interface on Windows (vendor request 0x20) |
+| `stamp.py`, `flash.sh` | the version (the app's content) and the images the tools take; build + `zd1 flash` |
 | `src/hostif.*`, `src/pipe.*`, `src/udi_hostif.h`, `src/zd1host_gen.h`, `src/version.c` | the host link (requests and replies), its bulk pipe, its USB interface, the protocol (generated), the firmware's identification (stamped by the build) |
 | `src/log.*`, `src/util.h`, `src/selfdfu.*` | the log (a ring the host link reads), the bounded string copy, DFU entry and reboot, the watchdog |
 | `src/i2c.*`, `src/dsp.*`, `src/dsp_data.*`, `src/codec.*`, `src/cs2000.*`, `src/amp.*`, `src/audio.*` | audio chain; `dsp_data.c` is generated from the stock download (`tools/gen_dsp_data.py`) |
-| `src/source.*`, `src/inputs.*`, `src/led.*`, `src/ir.*`, `src/protect.*`, `src/settings.*`, `src/tick.*` | behaviour: sources, keys, LED, IR, protections, EEPROM settings at 0x80 (two pages, each with its magic and CRC: 0x80 volume, bass, source, flags; 0x88 the amp's idle time and the volume cap) |
+| `src/source.*`, `src/inputs.*`, `src/led.*` (`src/led_pwm.*`: its PWM, the preloader's too), `src/ir.*`, `src/protect.*`, `src/settings.*`, `src/tick.*` | behaviour: sources, keys, LED, IR, protections, EEPROM settings at 0x80 (three pages, each with its magic and CRC: 0x80 volume, bass, source, flags; 0x88 the amp's idle time and the volume cap; 0x90 the module's boot image last seen, whose change has its rescue install itself) |
 | `src/udi_audio.*`, `src/udi_hid_cc.*`, `src/usbaudio.*` | USB audio class (ASF has none), HID consumer control, the streaming engine |
-| `src/dm870.*`, `src/modboot.*`, `src/update.*`, `src/wifi.*`, `src/modcon.*` | module link (stock protocol and timing; our OS's version, settings, debug mode), which system slot the module's boot stub starts (the good one and a try in the EEPROM, the fall-back when a boot doesn't get ready: `docs/module/storage.md`), the module's update (the bulk pipe to its console UART as it grants it: `docs/module/updater.md`), the AirPlay glue, the module console on USART1 (its bytes to the host that opened it, `Console`; lines into the log otherwise) |
+| `src/dm870.*`, `src/modboot.*`, `src/update.*`, `src/wifi.*`, `src/modcon.*` | module link (stock protocol and timing; our OS's version, settings, debug mode), which system slot the module's boot stub starts (the good one and a try in the EEPROM, the fall-back when a boot doesn't get ready, a boot image not recorded yet installed from its rescue: `docs/module/storage.md`), the module's update (the bulk pipe to its console UART as it grants it: `docs/module/updater.md`), the AirPlay glue, the module console on USART1 (its bytes to the host that opened it, `Console`; lines into the log otherwise) |
 | `src/zd1link_gen.h` | generated from `protocol/spi` (registers, kinds, DRC codes, the spec's values): don't edit |
 | `src/zd1link.h` | the SPI protocol's code on those values (stuffing, the volume conversion, net status, the play-icon matcher), held to the Rust by `test/zd1link_gen_test.c` |
 | `config/` | ASF `conf_*.h` (`conf_usb.h` = the composite layout) |
@@ -170,7 +185,10 @@ All in `src/source.c` unless said otherwise; the times are constants there.
   receiver resumes its sender and pauses the others (SPI 0xC2, `zd1-linkd`); a sender that can't be resumed from here
   (AirPlay without a remote) stays paused until it plays. Held 2 s: standby. After a protection trip a press
   acknowledges it (standby); until then nothing brings a source back (a stream, a plug, the host link). While a tool
-  asks for the gate it confirms that and does nothing else. The host link does the same: `zd1 play
+  asks for the gate it confirms that and does nothing else. **Held 5 s** (past standby): the confirmation of what
+  the network asked and only a person at the speaker may allow, a pairing or a system update over the network, which
+  allows the MCU firmware it brings (`Allow`, also `zd1 allow` over USB; `inputs_confirm_take`: the key's pin, nothing the host link or the remote injects; a
+  shorter press or hold works as always meanwhile). The host link does the same: `zd1 play
   airplay|spotify|snapcast`.
 - **Newest wins.** Whatever starts playing takes the speaker: a receiver through its play state (the module decides
   among its own, `module/os/README.md`; the speaker follows its `pl`), AUX by being plugged in, and a USB stream that
@@ -213,7 +231,8 @@ used (`re/mcu/extracted/led_patterns.txt` has them).
 | playing / ready (silent, paused) / amp asleep | steady / breathing (4 s) for the first 30 s of silence, then dim (the amp itself sleeps after its idle time, 5 min unless set) / dim |
 | ON/OFF choosing a source | the candidate's colour, a fast pulse |
 | volume | the brightness shows the level for a second; red blinks at the ends |
-| the gate | a fast purple blink while it waits for the press, green / red after |
+| the gate, a pairing over the network | a fast purple blink while it waits for the press (pairing: ON/OFF held 5 s), green / red after |
+| `Allow`: a system update over the network, `zd1 allow` | a fast amber blink while it waits for ON/OFF held 5 s (30 s), green / red after |
 | changes | 450 ms crossfades |
 
 Colours and levels are in perceptual units (0..255, the PWM gets the square): even fades and breathing on a 400-step
@@ -226,7 +245,11 @@ that must be told apart (19.7; `mcu/tools/led_palette.py` with the measured mode
   PCM16 stereo, iso adaptive OUT EP 0x06) + HID consumer (IF2: play/pause, next, previous) + vendor (IF3: the host link
   on EP0, the module's console among it, the pipe on bulk OUT EP 0x05, two banks: no faster than one, ~910 KB/s, the
   MCU's handling of its 512-byte buffers is the limit), 03EB:2FE0, stock's strings ("Bowers &
-  Wilkins", "Zeppelin Air") and serial "ZD1"; no serial port. The endpoint RAM is under 1 KB (`config/conf_usb.h`):
+  Wilkins", "Zeppelin Air") and serial "ZD1"; no serial port. For Windows, Microsoft OS 2.0 descriptors (`src/msos.c`:
+  bcdUSB 2.10 for the BOS, vendor request 0x20 for the set) give IF3 WinUSB as its compatible ID and the interface
+  GUID {A360CB65-12F3-41A0-ACCE-E3AD90285403}, so Windows binds WinUSB to it by itself; bcdDevice 2.03 marks them (Windows
+  keeps a device's per VID:PID:bcdDevice) [HW 2026-11-20: macOS reads the BOS and the 178-byte set from the unit,
+  audio, HID and the host link as before; Windows itself not tried]. The endpoint RAM is under 1 KB (`config/conf_usb.h`):
   audio 512, the pipe 128, HID and the status interrupt 8 each; EP3 and EP4 are free. The pipe sits below audio, whose
   alternate-setting switches re-allocate every endpoint above it. The status interrupt (`src/udi_audio.c`): a status
   word from the feature unit when the volume changes on the speaker (the keys, the remote, the page, the module's

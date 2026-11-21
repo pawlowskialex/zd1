@@ -13,6 +13,9 @@ import subprocess
 import sys
 import time
 
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "tools"))
+from zeppelin import xmodem  # noqa: E402
+
 host, port = sys.argv[1].split(":")
 log, secs = sys.argv[2], float(sys.argv[3])
 end = time.time() + secs
@@ -37,15 +40,6 @@ def text():
         return ""
 
 
-def crc16(d):
-    c = 0
-    for b in d:
-        c ^= b << 8
-        for _ in range(8):
-            c = ((c << 1) ^ 0x1021 if c & 0x8000 else c << 1) & 0xFFFF
-    return c
-
-
 def getc(t):
     s.setblocking(True)
     s.settimeout(t)
@@ -61,36 +55,22 @@ def getc(t):
 
 def xsend(data):
     drain()
+
     # Emulation quirk (-M dm870 UART): KnOS's XModem receiver only takes block 1 if it is already queued when the
     # receiver starts: sent after its 'C' (the textbook order) it is dropped, the receiver re-sends 'C', then CANs.
     # So block 1 goes out right away: put 'expect:to cancel]' before the xsend step; later 'C's are ignored.
-    blocks = [data[i : i + 1024] for i in range(0, len(data), 1024)]
-    for n, blk in enumerate(blocks, 1):
-        blk = blk + b"\x1a" * (1024 - len(blk))
-        pkt = bytes([0x02, n & 0xFF, 0xFF - (n & 0xFF)]) + blk + crc16(blk).to_bytes(2, "big")
-        for _ in range(10):
-            if os.environ.get("XDEBUG"):
-                print(f"    {time.time() % 1000:8.3f} tx block {n}", flush=True)
-            s.sendall(pkt)
-            r = getc(10)
-            while r not in (b"\x06", b"\x15", b"\x18", b""):  # skips the banner's CR LF and the start 'C'(s)
-                r = getc(10)
-            if r == b"\x06":
-                break
-            if r == b"\x18" or r == b"":
-                print(f"  xsend: block {n}: {'CAN' if r else 'timeout'}")
-                return False
-            print(f"  xsend: block {n}: NAK, resending")
-        else:
-            print(f"  xsend: block {n}: 10 NAKs")
-            return False
-    for _ in range(10):
-        s.sendall(b"\x04")
-        if getc(5) == b"\x06":
-            print(f"  xsend: {len(blocks)} blocks sent")
-            return True
-    print("  xsend: EOT not ACKed")
-    return False
+    # (the banner's CR LF and the start 'C's are skipped as the answers come: zeppelin/xmodem.py)
+    def sent(n, total):
+        if os.environ.get("XDEBUG"):
+            print(f"    {time.time() % 1000:8.3f} block {n}/{total} ACKed", flush=True)
+
+    try:
+        n = xmodem.send(s.sendall, getc, data, timeout=10, progress=sent)
+    except OSError as e:
+        print(f"  xsend: {e}")
+        return False
+    print(f"  xsend: {n} blocks sent")
+    return True
 
 
 for step in filter(None, os.environ.get("STEPS", "").split("\n")):

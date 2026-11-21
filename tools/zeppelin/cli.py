@@ -26,7 +26,11 @@ TOOLS = [  # (name, script relative to the repo, summary)
     ("Network module (CR870 / KnOS)", None, None),
     ("knos", "tools/zeppelin/knos/knos.py", "[hw] commands on the KnOS shell over telnet (the client every tool uses)"),
     ("fburn", "tools/zeppelin/knos/fburn.py", "[hw] NAND over the shell: rd, wr (refuses BL1; BL2 needs a flag)"),
-    ("bl2web", "tools/zeppelin/knos/bl2web.py", "[hw] install a .bcd through BL2's web updater"),
+    (
+        "bl2web",
+        "tools/zeppelin/knos/bl2web.py",
+        "[hw] install a .bcd (a ZD1L: a .fw, both chips) through BL2's web updater",
+    ),
     ("kmsg", "tools/zeppelin/jtag/kmsg.py", "[hw] the running kernel's log over JTAG (J-Link, OpenOCD)"),
     ("kallsyms", "tools/zeppelin/jtag/kallsyms.py", "the Nokia kernel's symbols, from kernel.bin's own tables"),
     (
@@ -37,7 +41,11 @@ TOOLS = [  # (name, script relative to the repo, summary)
     ("warpblob", "tools/zeppelin/warp/warpblob.py", "Nokia's Warp1 program out of their app's ELF"),
     ("Images and formats", None, None),
     ("bcd", "tools/zeppelin/fw/bcd.py", "a .bcd module image: header and sections checked, extracted"),
-    ("mkbcd", "tools/zeppelin/fw/mkbcd.py", "a custom stage 2 wrapped into a .bcd (stock preloader, CnE, resources)"),
+    (
+        "mkbcd",
+        "tools/zeppelin/fw/mkbcd.py",
+        "a .bcd from its parts: B&W's preloader, a custom stage 2, a model's CnE and resources",
+    ),
     ("nand", "tools/zeppelin/fw/nand_parse.py", "a NAND image: its MetaInfo partitions and PersParam (MAC masked)"),
     ("ecc", "tools/zeppelin/nand/ecc.py", "the NAND's ECC checked on raw pages (data + spare)"),
     ("cne", "tools/zeppelin/fw/cne2txt.py", "the factory CnE settings as text"),

@@ -255,6 +255,12 @@ pub fn encode(name: &str, fields: &[(&str, Val)]) -> Result<Vec<u8>, Error> {
     encode_vals(m, &vals)
 }
 
+/// An `Error` reply: `code`, and `text` cut to its field's 64 bytes (at a character's boundary).
+pub fn error_reply(code: crate::Err, text: &str) -> Vec<u8> {
+    encode("Error", &[("code", Val::N(code.value() as u32)), ("text", Val::from(zd1_text::cut(text, 64)))])
+        .expect("an Error encodes")
+}
+
 /// A message, under the compatibility rules (module doc).
 pub fn decode(data: &[u8]) -> Result<Msg, Error> {
     let id = *data.first().ok_or(Error::UnknownId(None))?;

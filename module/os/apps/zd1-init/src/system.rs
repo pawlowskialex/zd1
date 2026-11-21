@@ -70,6 +70,21 @@ pub const SERVICES: &[Service] = &[
         health: None,
     },
     Service {
+        name: "net",
+        about: "the network link (zd1-netd): paired clients reach the speaker on port 80 (docs/protocol/net.md)",
+        start: |c| {
+            if c.setting("net") == "off" {
+                return Start::Off("off (the setting net)".into());
+            }
+            run(&["zd1-netd"])
+        },
+        stop: None,
+        lifetime: daemon(2000),
+        output: Output::Log,
+        settings: &["net"],
+        health: None,
+    },
+    Service {
         name: "snapcast",
         about: "the Snapcast receiver (zd1-snapcast)",
         start: snapcast,
@@ -106,6 +121,16 @@ pub const SERVICES: &[Service] = &[
         stop: None,
         lifetime: daemon(2000),
         output: Output::Log,
+        settings: &[],
+        health: None,
+    },
+    Service {
+        name: "self-install",
+        about: "the rescue copies itself into a slot: an empty one, or when asked (zd1.install), then the MCU starts it",
+        start: self_install,
+        stop: None,
+        lifetime: Lifetime::Once { wait: false, retry: None },
+        output: Output::LogAndKernel,
         settings: &[],
         health: None,
     },
@@ -153,6 +178,35 @@ fn switched_off(c: &Ctx, switch: &str, setting: &str) -> Option<String> {
 /// The kernel's entropy pool reads 0 on this board (no driver feeds it): anything that waits for /dev/random (the
 /// AirPlay pairing keys, libsodium) would wait forever. zd1-entropy credits it from CPU timing jitter, ~0.2 s
 /// (docs/streaming.md).
+/// The rescue is the release's whole system (the boot image's initramfs, docs/module/storage.md). Booted as the rescue it
+/// copies itself into a slot, then the MCU starts that slot once (ready makes it the good one): when the slot an
+/// update would take holds no system, or when asked (`zd1.install`: our MCU firmware on a boot image it hasn't
+/// recorded, or the host's `Boot INSTALL`, so that the boot image's system needs no second upload) into the
+/// slot that isn't the good one (the good one if that holds none); a slot holding this version already is started
+/// without a copy.
+fn self_install(c: &Ctx) -> Start {
+    let b = zd1_slot::boot();
+    if !c.boot.switch("zd1.rescue") || b.running.is_some() {
+        return Start::Off("not the full system booted as the rescue".into());
+    }
+    let id = zd1_sys::OsRelease::read("/etc/os-release").get("VERSION_ID").to_string();
+    if c.boot.switch("zd1.install") {
+        let good = b.target();
+        let holds = |s: zd1_slot::Slot| zd1_slot::stamp(s).is_some_and(|st| st.split(' ').next() == Some(&id));
+        let to = match [good.other(), good].into_iter().find(|&s| holds(s)) {
+            Some(s) => s,
+            None if zd1_slot::stamp(good).is_none() => good,
+            None => good.other(),
+        };
+        return run(&["zd1-slot", "install-self", to.name(), &id, "--start"]);
+    }
+    let to = b.target();
+    if zd1_slot::stamp(to).is_some() {
+        return Start::Off(format!("slot {} holds a system", to.name()));
+    }
+    run(&["zd1-slot", "install-self", to.name(), &id, "--start"])
+}
+
 fn entropy(_: &Ctx) -> Start {
     match installed("zd1-entropy") {
         Some(p) => run(&[&p]),
@@ -415,16 +469,24 @@ pub fn early(boot: &Boot, kernel: &str) {
         release.get("BUILD_DATE"),
         where_we_run(boot)
     ));
-    data(true);
+    data();
     modules();
     loopback();
 }
 
-/// The system's identification, with the image's variant (zd1.debug on the command line: the debug image, the
-/// emulator's dev boot), as /run/os-release (/etc/os-release points there: / is read-only).
+/// The system's identification, with how it started as its variant (the command line: `zd1.rescue`, the system from
+/// RAM as the rescue, which tells the MCU, `zd1-linkd`'s "zd1-os VERSION rescue", and the page that no slot holds what
+/// runs; `zd1.debug`, the debug image or the emulator's dev boot; else release), as /run/os-release (/etc/os-release
+/// points there: / is read-only).
 fn identify(boot: &Boot) -> OsRelease {
     let base = std::fs::read_to_string("/usr/lib/os-release").unwrap_or_default();
-    let variant = if boot.switch("zd1.debug") { "debug" } else { "release" };
+    let variant = if boot.switch("zd1.rescue") {
+        "rescue"
+    } else if boot.switch("zd1.debug") {
+        "debug"
+    } else {
+        "release"
+    };
     let r = OsRelease::read("/usr/lib/os-release");
     let pretty = format!("{} {} ({variant}, {})", r.get("NAME"), r.get("VERSION_ID"), r.get("BUILD_DATE"));
     let _ = std::fs::write("/run/os-release", format!("{base}VARIANT_ID={variant}\nPRETTY_NAME=\"{pretty}\"\n"));

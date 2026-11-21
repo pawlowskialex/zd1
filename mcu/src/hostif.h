@@ -15,6 +15,10 @@ uint8_t hostif_gate(uint16_t *secs_left); /* ZD1H_GATE_* */
 /* At boot, after settings_load: the first start of this firmware version (it was just flashed) opens the gate for
  * GATE_MS, so an install goes on without a press: whoever could flash it could change anything already. */
 void hostif_first_start(void);
+/* A request from the network (docs/protocol/net.md): our OS's notification on SPI reg 0xD9, u16 seq + the message, from
+ * a client it has paired. It runs after the one in hand (one at a time, from USB or from here), past the gate but only
+ * if the spec marks it net; its reply goes back on 0xD9. */
+void hostif_net_request(const uint8_t *b, uint16_t n);
 
 /* the firmware's identification (version.c; the build stamps it: mcu/stamp.py) */
 extern const char *const g_fw_version, *const g_fw_built, *const g_fw_board;

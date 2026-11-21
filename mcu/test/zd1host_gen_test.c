@@ -338,6 +338,17 @@ static void unlock_0(void){
     CHECK(zd1h_encode(&ZD1H_UNLOCK, &a, out, sizeof w - 1) < 0, "unlock_0: no room");
     { uint8_t x[sizeof w]; memcpy(x, w, sizeof w); x[0] ^= 0x80; CHECK(zd1h_decode(&ZD1H_UNLOCK, x, sizeof x, &b) < 0, "unlock_0: another id"); }
 }
+static void allow_0(void){
+    static const uint8_t w[] = {0x22};
+    zd1h_allow_t a, b; uint8_t out[ZD1H_MSG_MAX]; int n;
+    memset(&a, 0, sizeof a); memset(&b, 0xA5, sizeof b);
+    n = zd1h_encode(&ZD1H_ALLOW, &a, out, sizeof out);
+    CHECK(n == (int)sizeof w && !memcmp(out, w, n), "allow_0: encode");
+    CHECK(zd1h_decode(&ZD1H_ALLOW, w, sizeof w, &b) == 0, "allow_0: decode");
+    { uint8_t x[sizeof w + 3]; memcpy(x, w, sizeof w); x[sizeof w] = 7; x[sizeof w + 1] = 0xFF; x[sizeof w + 2] = 0; memset(&b, 0xA5, sizeof b); CHECK(zd1h_decode(&ZD1H_ALLOW, x, sizeof x, &b) == 0, "allow_0: trailing bytes"); }
+    CHECK(zd1h_encode(&ZD1H_ALLOW, &a, out, sizeof w - 1) < 0, "allow_0: no room");
+    { uint8_t x[sizeof w]; memcpy(x, w, sizeof w); x[0] ^= 0x80; CHECK(zd1h_decode(&ZD1H_ALLOW, x, sizeof x, &b) < 0, "allow_0: another id"); }
+}
 static void lock_0(void){
     static const uint8_t w[] = {0x0F,0x00};
     zd1h_lock_t a, b; uint8_t out[ZD1H_MSG_MAX]; int n;
@@ -1686,7 +1697,7 @@ static void pipe_data_2(void){
     CHECK(zd1h_decode(&ZD1H_PIPE_DATA, w, 2, &b) < 0, "pipe_data_2: data cut");
 }
 static void boot_reply_0(void){
-    static const uint8_t w[] = {0x57,0x02,0x01,0x00,0x01,0xA6};
+    static const uint8_t w[] = {0x57,0x02,0x01,0x00,0x01,0xA6,0x01};
     zd1h_boot_reply_t a, b; uint8_t out[ZD1H_MSG_MAX]; int n;
     memset(&a, 0, sizeof a); memset(&b, 0xA5, sizeof b);
     a.good = 2u;
@@ -1694,17 +1705,18 @@ static void boot_reply_0(void){
     a.last = 0u;
     a.trial = true;
     a.failed = 166u;
+    a.installing = true;
     n = zd1h_encode(&ZD1H_BOOT_REPLY, &a, out, sizeof out);
     CHECK(n == (int)sizeof w && !memcmp(out, w, n), "boot_reply_0: encode");
     CHECK(zd1h_decode(&ZD1H_BOOT_REPLY, w, sizeof w, &b) == 0, "boot_reply_0: decode");
-    CHECK(a.good == b.good && a.next == b.next && a.last == b.last && a.trial == b.trial && a.failed == b.failed, "boot_reply_0: fields");
-    { uint8_t x[sizeof w + 3]; memcpy(x, w, sizeof w); x[sizeof w] = 7; x[sizeof w + 1] = 0xFF; x[sizeof w + 2] = 0; memset(&b, 0xA5, sizeof b); CHECK(zd1h_decode(&ZD1H_BOOT_REPLY, x, sizeof x, &b) == 0 && a.good == b.good && a.next == b.next && a.last == b.last && a.trial == b.trial && a.failed == b.failed, "boot_reply_0: trailing bytes"); }
+    CHECK(a.good == b.good && a.next == b.next && a.last == b.last && a.trial == b.trial && a.failed == b.failed && a.installing == b.installing, "boot_reply_0: fields");
+    { uint8_t x[sizeof w + 3]; memcpy(x, w, sizeof w); x[sizeof w] = 7; x[sizeof w + 1] = 0xFF; x[sizeof w + 2] = 0; memset(&b, 0xA5, sizeof b); CHECK(zd1h_decode(&ZD1H_BOOT_REPLY, x, sizeof x, &b) == 0 && a.good == b.good && a.next == b.next && a.last == b.last && a.trial == b.trial && a.failed == b.failed && a.installing == b.installing, "boot_reply_0: trailing bytes"); }
     CHECK(zd1h_encode(&ZD1H_BOOT_REPLY, &a, out, sizeof w - 1) < 0, "boot_reply_0: no room");
     { uint8_t x[sizeof w]; memcpy(x, w, sizeof w); x[0] ^= 0x80; CHECK(zd1h_decode(&ZD1H_BOOT_REPLY, x, sizeof x, &b) < 0, "boot_reply_0: another id"); }
-    memset(&b, 0xA5, sizeof b); CHECK(zd1h_decode(&ZD1H_BOOT_REPLY, w, 5, &b) == 0 && !b.failed && a.good == b.good && a.next == b.next && a.last == b.last && a.trial == b.trial, "boot_reply_0: without its last field");
+    memset(&b, 0xA5, sizeof b); CHECK(zd1h_decode(&ZD1H_BOOT_REPLY, w, 6, &b) == 0 && !b.installing && a.good == b.good && a.next == b.next && a.last == b.last && a.trial == b.trial && a.failed == b.failed, "boot_reply_0: without its last field");
 }
 static void boot_reply_1(void){
-    static const uint8_t w[] = {0x57,0x03,0x02,0x01,0x01,0xFF};
+    static const uint8_t w[] = {0x57,0x03,0x02,0x01,0x01,0xFF,0x01};
     zd1h_boot_reply_t a, b; uint8_t out[ZD1H_MSG_MAX]; int n;
     memset(&a, 0, sizeof a); memset(&b, 0xA5, sizeof b);
     a.good = 3u;
@@ -1712,17 +1724,18 @@ static void boot_reply_1(void){
     a.last = 1u;
     a.trial = true;
     a.failed = 255u;
+    a.installing = true;
     n = zd1h_encode(&ZD1H_BOOT_REPLY, &a, out, sizeof out);
     CHECK(n == (int)sizeof w && !memcmp(out, w, n), "boot_reply_1: encode");
     CHECK(zd1h_decode(&ZD1H_BOOT_REPLY, w, sizeof w, &b) == 0, "boot_reply_1: decode");
-    CHECK(a.good == b.good && a.next == b.next && a.last == b.last && a.trial == b.trial && a.failed == b.failed, "boot_reply_1: fields");
-    { uint8_t x[sizeof w + 3]; memcpy(x, w, sizeof w); x[sizeof w] = 7; x[sizeof w + 1] = 0xFF; x[sizeof w + 2] = 0; memset(&b, 0xA5, sizeof b); CHECK(zd1h_decode(&ZD1H_BOOT_REPLY, x, sizeof x, &b) == 0 && a.good == b.good && a.next == b.next && a.last == b.last && a.trial == b.trial && a.failed == b.failed, "boot_reply_1: trailing bytes"); }
+    CHECK(a.good == b.good && a.next == b.next && a.last == b.last && a.trial == b.trial && a.failed == b.failed && a.installing == b.installing, "boot_reply_1: fields");
+    { uint8_t x[sizeof w + 3]; memcpy(x, w, sizeof w); x[sizeof w] = 7; x[sizeof w + 1] = 0xFF; x[sizeof w + 2] = 0; memset(&b, 0xA5, sizeof b); CHECK(zd1h_decode(&ZD1H_BOOT_REPLY, x, sizeof x, &b) == 0 && a.good == b.good && a.next == b.next && a.last == b.last && a.trial == b.trial && a.failed == b.failed && a.installing == b.installing, "boot_reply_1: trailing bytes"); }
     CHECK(zd1h_encode(&ZD1H_BOOT_REPLY, &a, out, sizeof w - 1) < 0, "boot_reply_1: no room");
     { uint8_t x[sizeof w]; memcpy(x, w, sizeof w); x[0] ^= 0x80; CHECK(zd1h_decode(&ZD1H_BOOT_REPLY, x, sizeof x, &b) < 0, "boot_reply_1: another id"); }
-    memset(&b, 0xA5, sizeof b); CHECK(zd1h_decode(&ZD1H_BOOT_REPLY, w, 5, &b) == 0 && !b.failed && a.good == b.good && a.next == b.next && a.last == b.last && a.trial == b.trial, "boot_reply_1: without its last field");
+    memset(&b, 0xA5, sizeof b); CHECK(zd1h_decode(&ZD1H_BOOT_REPLY, w, 6, &b) == 0 && !b.installing && a.good == b.good && a.next == b.next && a.last == b.last && a.trial == b.trial && a.failed == b.failed, "boot_reply_1: without its last field");
 }
 static void boot_reply_2(void){
-    static const uint8_t w[] = {0x57,0x00,0x00,0x00,0x00,0x00};
+    static const uint8_t w[] = {0x57,0x00,0x00,0x00,0x00,0x00,0x00};
     zd1h_boot_reply_t a, b; uint8_t out[ZD1H_MSG_MAX]; int n;
     memset(&a, 0, sizeof a); memset(&b, 0xA5, sizeof b);
     a.good = 0u;
@@ -1730,14 +1743,15 @@ static void boot_reply_2(void){
     a.last = 0u;
     a.trial = false;
     a.failed = 0u;
+    a.installing = false;
     n = zd1h_encode(&ZD1H_BOOT_REPLY, &a, out, sizeof out);
     CHECK(n == (int)sizeof w && !memcmp(out, w, n), "boot_reply_2: encode");
     CHECK(zd1h_decode(&ZD1H_BOOT_REPLY, w, sizeof w, &b) == 0, "boot_reply_2: decode");
-    CHECK(a.good == b.good && a.next == b.next && a.last == b.last && a.trial == b.trial && a.failed == b.failed, "boot_reply_2: fields");
-    { uint8_t x[sizeof w + 3]; memcpy(x, w, sizeof w); x[sizeof w] = 7; x[sizeof w + 1] = 0xFF; x[sizeof w + 2] = 0; memset(&b, 0xA5, sizeof b); CHECK(zd1h_decode(&ZD1H_BOOT_REPLY, x, sizeof x, &b) == 0 && a.good == b.good && a.next == b.next && a.last == b.last && a.trial == b.trial && a.failed == b.failed, "boot_reply_2: trailing bytes"); }
+    CHECK(a.good == b.good && a.next == b.next && a.last == b.last && a.trial == b.trial && a.failed == b.failed && a.installing == b.installing, "boot_reply_2: fields");
+    { uint8_t x[sizeof w + 3]; memcpy(x, w, sizeof w); x[sizeof w] = 7; x[sizeof w + 1] = 0xFF; x[sizeof w + 2] = 0; memset(&b, 0xA5, sizeof b); CHECK(zd1h_decode(&ZD1H_BOOT_REPLY, x, sizeof x, &b) == 0 && a.good == b.good && a.next == b.next && a.last == b.last && a.trial == b.trial && a.failed == b.failed && a.installing == b.installing, "boot_reply_2: trailing bytes"); }
     CHECK(zd1h_encode(&ZD1H_BOOT_REPLY, &a, out, sizeof w - 1) < 0, "boot_reply_2: no room");
     { uint8_t x[sizeof w]; memcpy(x, w, sizeof w); x[0] ^= 0x80; CHECK(zd1h_decode(&ZD1H_BOOT_REPLY, x, sizeof x, &b) < 0, "boot_reply_2: another id"); }
-    memset(&b, 0xA5, sizeof b); CHECK(zd1h_decode(&ZD1H_BOOT_REPLY, w, 5, &b) == 0 && !b.failed && a.good == b.good && a.next == b.next && a.last == b.last && a.trial == b.trial, "boot_reply_2: without its last field");
+    memset(&b, 0xA5, sizeof b); CHECK(zd1h_decode(&ZD1H_BOOT_REPLY, w, 6, &b) == 0 && !b.installing && a.good == b.good && a.next == b.next && a.last == b.last && a.trial == b.trial && a.failed == b.failed, "boot_reply_2: without its last field");
 }
 static void prefs_0(void){
     static const uint8_t w[] = {0x1C,0x65,0x00,0xB9,0xEB,0x7A};
@@ -2068,6 +2082,7 @@ int main(void){
     info_reply_1();
     info_reply_2();
     unlock_0();
+    allow_0();
     lock_0();
     lock_1();
     peek_0();

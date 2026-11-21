@@ -24,14 +24,27 @@ macro_rules! gate {
         false
     };
 }
-/// A message's `[module]` marker (a record of the module OS, relayed by the MCU, never decoded by it) and a request's
-/// `emu` (only the emulator's build has it).
+/// A message's `[module]` marker: a record of the module OS (relayed by the MCU, never decoded by it), or a request our
+/// OS answers itself (over the network).
 macro_rules! marker {
     (module) => {
         true
     };
-    (emu) => {
+}
+/// A request's markers after its timeout: `emu` (only the emulator's build has it), `net` (a paired client may make it
+/// over the network: docs/protocol/net.md). Whether `$want` is among them.
+macro_rules! has {
+    ($want:ident;) => {
+        false
+    };
+    (emu; emu $($rest:ident)*) => {
         true
+    };
+    (net; net $($rest:ident)*) => {
+        true
+    };
+    ($want:ident; $other:ident $($rest:ident)*) => {
+        has!($want; $($rest)*)
     };
 }
 /// A field's marker: `set` (a setting: the host may write it) or `mask` (which of the fields after it the request
@@ -136,7 +149,7 @@ macro_rules! enums {
 
 macro_rules! messages {
     ($( $(#[doc = $doc:literal])* $id:literal $name:ident
-        $(-> $reply:ident [$gate:ident, $timeout:literal ms $(+ $wait:ident s or $wait_def:literal)? $(, $emu:ident)?])?
+        $(-> $reply:ident [$gate:ident, $timeout:literal ms $(+ $wait:ident s or $wait_def:literal)? $(, $marker:ident)*])?
         $([$module:ident])?
         { $( $(#[doc = $fdoc:literal])* $f:ident : $t:ident $([$max:literal])? $($rw:ident $($fmt:ident)? $(= $def:literal)?)? ),* $(,)? } )*) => {
         /// The messages as Rust types: requests (each with its reply: `codec::Request`) and replies.
@@ -184,7 +197,8 @@ macro_rules! messages {
             module: or!($(marker!($module))?; false),
             timeout_ms: or!($($timeout)?; 0),
             wait: or!($($(Some((stringify!($wait), $wait_def)))?)?; None),
-            emu: or!($($(marker!($emu))?)?; false),
+            emu: or!($(has!(emu; $($marker)*))?; false),
+            net: or!($(has!(net; $($marker)*))?; false),
             doc: concat!($($doc),*).trim_ascii_start(),
         }, )* ];
     };

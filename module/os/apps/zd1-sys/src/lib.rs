@@ -151,19 +151,14 @@ pub fn crc32(b: &[u8]) -> u32 {
     !crc32_update(!0, b)
 }
 
-/// Lower-case hex.
-pub fn hex(b: &[u8]) -> String {
-    b.iter().map(|x| format!("{x:02x}")).collect()
-}
+pub use zd1_text::{hex, unhex};
 
-/// Hex (either case) back to bytes; None for an odd length or a non-hex digit.
-pub fn unhex(s: &str) -> Option<Vec<u8>> {
-    let b = s.as_bytes();
-    if b.len() % 2 != 0 {
-        return None;
-    }
-    let d = |c: u8| (c as char).to_digit(16);
-    b.chunks(2).map(|p| Some((d(p[0])? * 16 + d(p[1])?) as u8)).collect()
+/// The wall clock, UTC, as `YYYY-MM-DD HH:MM`; None while it isn't set (before 2020: the module has no clock that
+/// runs off, NTP sets it).
+pub fn utc_now() -> Option<String> {
+    let s = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).ok()?.as_secs() as i64;
+    let t = zd1_text::Utc::from_unix(s);
+    (t.year >= 2020).then(|| t.minutes())
 }
 
 /// A MAC address.

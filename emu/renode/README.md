@@ -15,7 +15,7 @@ link is a time-domain event, not a socket), and powering the module off and on i
 | Zeppelin main board | DSP, codec, CS2000 (bit-banged), EEPROM, auth chip, keys, IR (RC6), ADC inputs, LED, the module stand-in | `zd1/ZD1Board.cs`, `platforms/zd1*.repl` |
 | CR870 module | Renode's ARM926EJ-S (tlib) + our peripherals: VIC, timers (timer 0 = the watchdog), GPIO, the auth chip and a video encoder on bit-banged I2C, AV ports, SuluDMA, NAND with spare areas and the unit's ECC, UARTs, J2 SPI slave, MACB, BL1 stand-in, power and chip reset; SRAM aliased through 0x0-0x3FFFFF, the WILD core's 128 KB SRAM (no core), the pad matrix's 16 copies, live register values (`docs/module/memory-map.md`) | `cr870/CR870.cs`, `cr870/CR870Macb.cs`, `platforms/cr870*.repl` |
 | Warp cores | the DM870's two MIPS I cores (Warp1 = the audio engine's controller): debug blocks at 0xE0014000/0xE0015000 (what Nokia's `warp_debugger.ko` and `wsl.ko` use), the cores as measured on the unit (`docs/module/warp.md` section 3: per-core memory maps and bus hangs, no divider, strict load delay, the 4 KB I-cache with stale lines, cycle costs per memory) at 160 MHz in 50 us slices, short slices while a core only polls; Sol = KnOS's reference model (programs run instantly on the start write), which differs from the hardware (section 8) | `cr870/CR870Warp.cs`, `cr870/CR870Sol.cs` |
-| J2 link | module SPI slave <-> MCU SPI0/NPCS2, request line PA20, power PA04/PA17, factory-reset strap PB01 -> GPIO 4, module UART1 <-> MCU USART1, as cross-machine events (one quantum latency); the host side mirrors the module's TX FIFO | `cr870/J2Link.cs` |
+| J2 link | module SPI slave <-> MCU SPI0/NPCS2, request line PA20, power PA04/PA17, factory-reset strap PB01 -> GPIO 4, module UART1 <-> MCU USART1, as cross-machine events (one quantum latency); the host side mirrors the module's TX FIFO, which runs ahead by what the host clocks in the round trip (`spis TxAhead`: BL2's XModem to the ZD1L's bootloader depends on it) | `cr870/J2Link.cs` |
 | Network | a user-mode network on the MACB like QEMU's `-netdev user`: 192.168.50.0/24, DHCP (.101), ARP, ping, DNS refused, TCP to the gateway NATed to the host's loopback, port forwards (`--fwd`) | `cr870/CR870UserNet.cs` |
 
 The models are C# compiled by Renode at start (`include`); zemu concatenates them into one file
@@ -52,7 +52,8 @@ Monitor knobs (`zemu run --renode "machine:command"`): `core` (module: `LogFile`
 `Stage2Image`, `BootFromNand`, `Power`, `DelayLoops`, `TimerWaitPcs`, ...), `pm` (MCU trace: `TraceFile`,
 `TraceMaxLines`, `TraceQuiet`, `TraceLoud`, `WdtResets`, `GPLP0`), `board` (`Key`, `Pins`, `IR`, `Adc`, `Watch`,
 `Poke`), `twi.dsp` (`SpdifLock`, `AudioWav`), `spi0.module` (the stand-in: `BootMs`, `PlayMs`), `usernet`
-(`Forward`, `LogFile`), `spis.testhost` (module alone: `Run "rd 0x11 rdv 0x38"`), and Renode's own (`cpu
+(`Forward`, `LogFile`), `spis` (`PollHalt`, `TxAhead`), `flashc` (`BootprotSize`: 0x8000 for the ZD1L's bootloader), `spis.testhost` (module
+alone: `Run "rd 0x11 rdv 0x38"`), and Renode's own (`cpu
 LogCpuInterrupts true`, `cpu DisassembleBlock addr len`, `machine StartGdbServer port`, `sysbus ReadDoubleWord addr`).
 
 ## Notes

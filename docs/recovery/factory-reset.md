@@ -15,16 +15,16 @@ OK.**
 
 | Part | Factory state | Rebuilt by |
 |---|---|---|
-| MCU bootloader 0x80000000-0x3FFF | `blobs/mcu/bootloader.bin` | a programmer only (BOOTPROT) |
-| MCU app | the stock app (`blobs/mcu/zd1-2.04.05.hex`) | DFU `restore` / `flash` |
+| MCU bootloader 0x80000000-0x3FFF | `blobs/zd1/mcu/bootloader.bin` | a programmer only (BOOTPROT) |
+| MCU app | the stock app (`blobs/zd1/mcu/zd1-2.04.05.hex`) | DFU `restore` / `flash` |
 | MCU user page | erased + ISP word 0x929E0870 at 0x1FC | DFU `userpage-write`; **the stock app fills the rest from the module** [EMU] |
 | EEPROM | blank | **the stock app** writes its default record |
 | GP fuses | 0x7C04FFFF | DFU sets/clears ISP_FORCE itself; the rest by programmer |
-| NAND block 0, BL1 | `blobs/module/bl1.enc` | a programmer only |
+| NAND block 0, BL1 | `blobs/zd1/module/bl1.enc` | a programmer only |
 | NAND 0x20000 PersParam | factory records + **the MAC** (`persparam.py --factory MAC`) | **BL2 rebuilds the defaults** (MAC 0) when it's blank [EMU]; then the MAC goes back (below) |
 | NAND 0x40000 factory CnE | `.bcd` section 1 | BL2 "update image & CnE" |
 | NAND 0x60000-0xA0000 user settings | erased | BL2 resets them on every update |
-| NAND 0xA0000 BL2 | `blobs/module/bl2.bin` | open (below) |
+| NAND 0xA0000 BL2 | `blobs/zd1/module/bl2.bin` | open (below) |
 | NAND 0x240000 app, 0xC40000 resources | `.bcd` sections 0 and 2 | BL2's web updater |
 
 `python3 tools/zeppelin mkunit --mac EC:66:D1:xx:xx:xx --out units/<unit>/factory` writes all of it for one unit:
@@ -35,7 +35,7 @@ it in `units/`.
 
 | Broken | Recovery | Status |
 |---|---|---|
-| MCU app | hold ON/OFF at power-up → DFU; `zd1 dfu restore <backup.tar> --yes --start` (or `zd1 dfu write blobs/mcu/zd1-2.04.05.hex --backup <backup.tar> --yes --start`) | **unit** |
+| MCU app | hold ON/OFF at power-up → DFU; `zd1 dfu restore <backup.tar> --yes --start` (or `zd1 dfu write blobs/zd1/mcu/zd1-2.04.05.hex --backup <backup.tar> --yes --start`) | **unit** |
 | MCU user page (+ EEPROM) | DFU comes up by itself (invalid ISP word); `zd1 dfu user-page <unit>/user_page.bin --yes`; power-cycle | EMU |
 | module image, anything (corrupt, erased, hangs, boot-loops) | **`zd1 module esc`** (`Module ESC`): BL1's serial menu over USART1, option 4 → BL2 → install the stock `.bcd` with `bl2web`. Needs our MCU firmware | **unit** (2026-10-23; `Module ESC` 2026-11-02) |
 | module image hangs, the image answers SPI | HCR 0x21 → BL2 (`zd1 module bl2`, or the MCU bootloader's relay) → install | **unit** (both) |
@@ -43,29 +43,30 @@ it in `units/`.
 | module app corrupt / erased | the stock preloader's checksum fails / BL1 finds no valid app → BL2 by itself → install | EMU |
 | PersParam + app | BL2 (any path above) rebuilds the PersParam defaults → install → the MAC back | EMU |
 | PersParam only, app intact | the stock app boot-loops before its SPI link is up (~49 resets in 150 s), so HCR can't reach it; `zd1 module esc` works because BL1 runs first [INF] | EMU |
-| BL2, app intact | candidate: the stock app's `fburn ebin 0 0xA0000 0x160000` + XModem of `blobs/module/bl2.bin` over the module console (`zd1 console`; over telnet the y/n confirm never sees the answer) | **open** |
+| BL2, app intact | candidate: the stock app's `fburn ebin 0 0xA0000 0x160000` + XModem of `blobs/zd1/module/bl2.bin` over the module console (`zd1 console`; over telnet the y/n confirm never sees the answer) | **open** |
 | everything but the bootloaders | DFU (by itself) → user page, MCU app (ours, for `zd1 module esc`) → BL2 → `.bcd`, the MAC back | EMU |
 | BL1 | programmer | case 2 |
 
-**Both boards back to stock in one go**: `zd1 rollback blobs/module/app_DMP.bcd blobs/mcu/zd1-2.04.05.hex --yes` (the
+**Both boards back to stock in one go**: `zd1 rollback blobs/zd1/module/app_DMP.bcd blobs/zd1/mcu/zd1-2.04.05.hex --yes` (the
 module first through the relay, then the stock MCU firmware with a backup of what is on the MCU;
 `host/core/src/install.rs`) [HW 2026-11-03]. It rewrites the app partition only: our system slots and `/data` (the
 settings, the Wi-Fi network and its key) stay on the NAND, unused by the stock app.
 
 **As from the factory** (a speaker to give away, or a test of the whole install), with our firmware on both boards
 [HW 2026-11-03, `units/<unit>/logs/`]:
-1. `zd1 slot try rescue --restart`: the rescue, which mounts nothing but `/data`.
+1. `zd1 slot try rescue --restart`: the rescue, the system from RAM: it mounts no slot.
 2. `zd1 console run 'umount /data' 'zd1-slot erase system-a' 'zd1-slot erase system-b' 'zd1-slot erase data'`: the
    three partitions erased (bad blocks left alone), as a stock NAND has them above 32 MB. A rescue older than
-   `zd1-slot erase` gets a new `os.bcd` first (`zd1 bootloader`, `zd1 dfu relay`, `zd1 dfu start`).
+   `zd1-slot erase` gets a new `os.bcd` first (`zd1 update os.bcd`).
 3. Our EEPROM block to the defaults a fresh install writes: `zd1 prefs --auto-switch on --amp-idle 5 --volume-cap 40`,
    `zd1 amp auto`, `zd1 volume 30`, `zd1 slot good a`, `zd1 slot clear`, last `zd1 gate lock`. The block itself (its
-   magic) stays: nothing on the host link erases the EEPROM.
+   magic) stays: nothing on the host link erases the EEPROM. So does the boot image our MCU firmware recorded (0x90): a
+   later install of the same `os.bcd` with our firmware tries the empty slots before the rescue fills one.
 4. `zd1 rollback ...` as above (with the gate locked, one press of ON/OFF lets it into DFU).
 
 **Installing the module image**, over USB only: the MCU bootloader's relay, what B&W's updater uses (`zd1
-dfu`, `zd1 dfu relay IMAGE.bcd --yes`, `zd1 dfu start`; ~6.5 min for the stock 9 MB, 85 s for our
-`os.bcd`, works with the app partition invalid: `docs/mcu/bootloader-dfu.md`) [HW 2026-10-26]; with our MCU app
+update IMAGE.bcd` from our firmware, or `zd1 bootloader`, `zd1 dfu relay IMAGE.bcd --yes`, `zd1 dfu start`; ~6.5 min
+for the stock 9 MB, ~5 min for our 6.6 MB `os.bcd`, works with the app partition invalid: `docs/mcu/bootloader-dfu.md`) [HW 2026-10-26]; with our MCU app
 running, `zd1 xmodem IMAGE.bcd` [HW]. Or BL2's web updater on the wired link
 (`python3 tools/zeppelin bl2web 169.254.1.1 IMAGE.bcd --yes --iface=en8`, after `zd1 module esc`) [HW]: BL2 tries DHCP
 first and answers at 169.254.1.1 only minutes later on a link without a DHCP server.

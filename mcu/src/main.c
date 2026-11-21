@@ -13,6 +13,7 @@
 #include "zd1_board.h"
 #include "log.h"
 #include "selfdfu.h"
+#include "mcufw.h"
 #include "dm870.h"
 #include "update.h"
 #include "audio.h"
@@ -61,7 +62,7 @@ int main(void) {
     gpio_configure_pin(PIN_LED_R, GPIO_DIR_OUTPUT | GPIO_INIT_LOW);
     g_rcause = AVR32_PM.rcause;
     blog(1);
-    if (!board_clock_init()) { /* blink = clock fail; still on the RC oscillator */
+    if (!board_clock_init(blog)) { /* blink = clock fail; still on the RC oscillator */
         for (;;) {
             gpio_toggle_pin(PIN_LED_R);
             cpu_delay_ms(250, AVR32_PM_RCOSC_FREQUENCY);
@@ -71,6 +72,7 @@ int main(void) {
     cpu_irq_enable();
     board_safe_gpio();
     selfdfu_capture_boot_state();
+    mcufw_report(); /* into the log: the preloader's last run, if it ran */
     board_usb_mux_device();
     blog(6);
     udc_start();

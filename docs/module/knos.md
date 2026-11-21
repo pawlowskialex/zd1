@@ -1,6 +1,6 @@
 # KnOS: the stock module firmware and its shell
 
-The stock module app (`blobs/module/app_DMP.bcd`, JukeBlox 3 "eDMP", KnOS 3.2 release 9112, built 2014-09) is
+The stock module app (`blobs/zd1/module/app_DMP.bcd`, JukeBlox 3 "eDMP", KnOS 3.2 release 9112, built 2014-09) is
 BridgeCo's RTOS plus a C++ application: an AirPlay 1 receiver ("AirTunes/103.2", MFi-authenticated, ALAC and L16),
 UPnP/DLNA, Bonjour, a GoAhead web UI, wpa_supplicant with WPS, and several dormant music services. Its debug shell
 reads memory and NAND, dumps every hardware block, and reaches the SPI register file. Reconstructed from the
@@ -60,7 +60,7 @@ uartcfg/wp. The config DB behind the SPI register map is the CnE tree (`ls`: `st
   sends CAN first to cancel any stuck transfer, waits for "Start xmodem now!", then receives. `zeppelin fburn wr`
   drives `fburn ebin`, but over telnet the shell never sees the confirmation (`docs/module/boot-chain.md`, "Writing
   NAND from the stock app"). An aborted `fburn rd`
-  leaves the sender spewing EOT into the shared shell, so always CAN-flush first. `blobs/module/bl2.bin` and the live
+  leaves the sender spewing EOT into the shared shell, so always CAN-flush first. `blobs/zd1/module/bl2.bin` and the live
   PersParam/CnE blocks were read this way.
 - `re/netmodule/inject/` runs a small Thumb payload in the app's RAM through the shell (its `README.md`).
 

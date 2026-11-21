@@ -1,6 +1,6 @@
 // The network: the Wi-Fi sentence, the known networks, a scan, joining, the addresses.
 import { wifiSentence } from "../pkg/zd1_web.js";
-import { act } from "./connection.js";
+import { act, reachAgain } from "./connection.js";
 import { drawReceivers } from "./receivers.js";
 import { app } from "./shared.js";
 import { $, ask, el, names, notice } from "./ui.js";
@@ -62,7 +62,12 @@ export function drawKnown() {
           if (k > 0) {
             const up = el("button", { className: "quiet", textContent: "Prefer" });
             up.title = "Put it first: the speaker joins it when it sees it";
-            up.onclick = () => act(() => app.sp.setSetting("wifi.first", n.ssid).then(() => joinWatch(n.ssid)));
+            up.onclick = () =>
+              act(async () => {
+                await app.sp.setSetting("wifi.first", n.ssid);
+                await reachAgain();
+                joinWatch(n.ssid);
+              });
             r.append(up);
           }
           const f = el("button", { className: "quiet", textContent: "Forget" });
@@ -74,7 +79,10 @@ export function drawKnown() {
                 "Forget",
               )
             )
-              act(() => app.sp.setSetting("wifi.forget", n.ssid));
+              act(async () => {
+                await app.sp.setSetting("wifi.forget", n.ssid);
+                await reachAgain();
+              });
           };
           r.append(f);
           return r;
@@ -219,6 +227,8 @@ export function drawAddresses() {
             `${label}: ${mode.value === "static" ? `fixed at ${a.value.trim()}` : mode.value === "dhcp" ? "automatic" : "off"}.`,
             "ok",
           );
+          // over the network: connect again (at the fixed address, if that is where the speaker went) to keep it
+          await reachAgain(mode.value === "static" ? a.value.trim().split("/")[0] : undefined);
         });
       };
       return f;

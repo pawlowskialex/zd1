@@ -1,0 +1,74 @@
+# Test builds of a pull request: what its head builds to, as artifacts of the run and linked from a comment on the PR,
+# so a change can be tried on a speaker without building it. Nix on GitHub's x86_64 runner like the releases
+# (pages.yml), with the Cachix cache: read and write for a PR from this repository, read only for one from a fork (no
+# secrets there, and no comment: the token can't write to the PR; the run's summary has the links).
+name: pr
+on:
+  pull_request:
+  workflow_dispatch:
+permissions: { contents: read, pull-requests: write }
+concurrency: { group: "pr-${{ github.event.pull_request.number || github.ref }}", cancel-in-progress: true }
+
+jobs:
+  images:
+    runs-on: ubuntu-latest
+    steps:
+      # the head, not GitHub's merge with main: the builds identify themselves as the PR's commit
+      - uses: actions/checkout@v4
+        with: { ref: "${{ github.event.pull_request.head.sha || github.sha }}" }
+      - uses: DeterminateSystems/nix-installer-action@v16
+      - uses: cachix/cachix-action@v15
+        if: ${{ vars.CACHIX_NAME != '' }}
+        with: { name: "${{ vars.CACHIX_NAME }}", authToken: "${{ secrets.CACHIX_AUTH_TOKEN }}" }
+      - name: build the images
+        id: build
+        run: |
+          set -eu
+          v="$(git rev-parse --short HEAD)"
+          echo "version=$v" >>"$GITHUB_OUTPUT"
+          mkdir -p out/zd1 out/zd1l
+          cp "$(nix build .#mcu --print-out-paths)/zd1.hex" "out/zd1/zd1-$v.hex"
+          os="$(nix build .#os-image --print-out-paths)"
+          cp "$os/system.cpio.gz" "out/zd1/system-$v.cpio.gz"
+          cp "$os/os.bcd" "out/zd1/os-$v.bcd"
+          nix run .#zd1 -- image out/zd1/* > out/zd1/manifest.json
+          cp "$(nix build .#zd1l-fw --print-out-paths)/zd1l.fw" "out/zd1l/zd1l-$v.fw"
+          sha256sum out/*/*
+      - uses: actions/upload-artifact@v4
+        id: zd1
+        with: { name: "zd1-${{ steps.build.outputs.version }}", path: out/zd1, retention-days: 30 }
+      - uses: actions/upload-artifact@v4
+        id: zd1l
+        with: { name: "zd1l-${{ steps.build.outputs.version }}", path: out/zd1l, retention-days: 30 }
+      - name: link them
+        env:
+          GH_TOKEN: "${{ github.token }}"
+          V: "${{ steps.build.outputs.version }}"
+          ZD1: "${{ steps.zd1.outputs.artifact-url }}"
+          ZD1L: "${{ steps.zd1l.outputs.artifact-url }}"
+          PR: "${{ github.event.pull_request.number }}"
+          SAME_REPO: "${{ github.event.pull_request.head.repo.full_name == github.repository }}"
+        run: |
+          set -eu
+          run="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          mark='<!-- zd1-test-builds -->'
+          cat >body.md <<EOF
+          $mark
+          **Test builds of $V** ([run]($run); kept 30 days, a download needs a GitHub login). Not a release: try them
+          on a speaker you can bring back.
+
+          - [\`zd1-$V\`]($ZD1), the Zeppelin Air: \`zd1-$V.hex\` (the MCU, \`zd1 flash\` / DFU), \`os-$V.bcd\` (the
+            module's boot image), \`system-$V.cpio.gz\` (\`zd1 update\`), \`manifest.json\`.
+          - [\`zd1l-$V\`]($ZD1L), the Zeppelin Air with Lightning: \`zd1l-$V.fw\`, both chips, for its BL2 web updater
+            from key-hold with the expert confirm (\`docs/module/boot-chain.md\`, "The ZD1L BL2"); the way back is
+            B&W's \`blobs/zd1l/zd1lv20435.fw\`.
+          EOF
+          cat body.md >>"$GITHUB_STEP_SUMMARY"
+          [ -n "$PR" ] && [ "$SAME_REPO" = true ] || exit 0
+          id="$(gh api "repos/$GITHUB_REPOSITORY/issues/$PR/comments" --paginate \
+            --jq ".[] | select(.body | startswith(\"$mark\")) | .id" | tail -n1)"
+          if [ -n "$id" ]; then
+            gh api -X PATCH "repos/$GITHUB_REPOSITORY/issues/comments/$id" -F body=@body.md >/dev/null
+          else
+            gh api -X POST "repos/$GITHUB_REPOSITORY/issues/$PR/comments" -F body=@body.md >/dev/null
+          fi

@@ -16,7 +16,7 @@ it. Whether it has any other boot source (UART, USB) with a blank NAND is unknow
 
 ## BL1 (block 0)
 - Encrypted in NAND (entropy 7.99, starts `FF FF FF E6`); identical between our unit and the archive.org unit.
-  `blobs/module/bl1.enc` as stored, `blobs/module/bl1.plain` decrypted (captured from SRAM on the unit,
+  `blobs/zd1/module/bl1.enc` as stored, `blobs/zd1/module/bl1.plain` decrypted (captured from SRAM on the unit,
   `re/netmodule/bl1/`). Build "Sep 30 2010 17:52:25". One data region is LZ/RLE-packed and unpacked at start-up;
   code runs in place.
 - Decision (main 0x40453C) [RE]:
@@ -42,16 +42,19 @@ it. Whether it has any other boot source (UART, USB) with a blank NAND is unknow
 
 | Situation | Path |
 |---|---|
-| any image, BL1 intact | **`zd1 module esc`** (`Module ESC`, the MCU driving it): BL1's serial menu over the module console, option 4 [HW 2026-10-23, 2026-11-02 (MCU d865f5e); in the emulator `zemu run os --nand --real-bl1 --mcu --at-once --allow-panic --host 'zd1 module esc'` (the factory NAND's slots are empty, so the image panics where the MCU starts slot A: the escape doesn't need it)] |
+| any image, BL1 intact | **`zd1 module esc`** (`Module ESC`, the MCU driving it): BL1's serial menu over the module console, option 4 [HW 2026-10-23, 2026-11-02 (MCU d865f5e); in the emulator `zemu run os --nand --real-bl1 --mcu --at-once --allow-panic --host 'zd1 module esc'` (the escape happens before the image runs: it needs no image that boots)] |
 | the image answers SPI | HCR 0x21 (`zd1 module bl2`; `docs/protocol/sequences.md`): the image writes the mailbox, arms timer 0 as a watchdog (0xFFFF0200 = 0x80000001 + threshold 0xFFFF0220) and resets [HW: the stock app, our boot stub, `zd1-linkd`] |
 | JTAG attached | write the mailbox words to 0xB1005000, then a reset pulse on PA17 (not a power cycle: that clears the mailbox) [HW, `jtag.md`] |
 | app corrupt or erased | BL1 starts BL2 by itself [RE, EMU] |
 | BLDb = 1 in PersParam | BL1 starts BL2 at every boot (BL2's menu "a) Set Start Mode") [RE, EMU] |
 
 ## BL2 (0xA0000), the updater
-`blobs/module/bl2.bin` (MetaInfo + boot header + stage 1 + stage 2 at 0x60008000, mostly Thumb-2; build 2010-09-27;
-the archive.org copy has bit rot, ours verifies). It reports **0x11 = 0x2300** to the MCU, brings up KnOS, Ethernet,
-the SPI link and:
+`blobs/zd1/module/bl2.bin` (MetaInfo + boot header + stage 1 + stage 2 at 0x60008000, mostly Thumb-2; build 2010-09-27;
+the archive.org copy has bit rot, ours verifies) is our ZD1 unit's BL2, and everything below is about it unless
+marked otherwise. No update carries a BL2, so it is the factory's. A second BL2 is now in hand too — the Lightning
+model's, a later and larger build (`blobs/zd1l/module/bl2.bin`, "The ZD1L BL2" below); to pull one off a ZD1L or A7
+yourself, put the telnet hook on its stock MCU and `fburn rd` the `0xA0000` partition (`stock-patch/README.md`,
+"Dumping BL2"). Our BL2 reports **0x11 = 0x2300** to the MCU, brings up KnOS, Ethernet, the SPI link and:
 - **Web updater** (GoAhead, port 80, no authentication) [HW]: `POST /goform/formPostHandler` multipart field
   `appFirmware`, then `GET /goform/formDownloadConfirmationHandler?button=Ok` (or the Expert handler with
   `hwcheckoverride` / `cnedownload`), progress `bl_flash_burn_status.asp`. Client: `python3 tools/zeppelin bl2web`.
@@ -62,19 +65,26 @@ the SPI link and:
   - The status page keeps the previous update's verdict while the next burn runs: after a failed update in the
     same BL2 session the next upload shows "100 % / failed" at once while the burn succeeds and BL2 resets the board
     [HW, EMU]. `bl2web` waits out a "failed" page for the reset.
-  - It also takes B&W's over-the-air `.fw` (`docs/mcu/stock-firmware.md`) [EMU]: it reads the `.fw`'s 32-byte header
-    as BridgeCo's encryption wrapper ("version = 2", "encryption mode = 0": not encrypted) and checks the `.bcd`
-    inside. The A7's on the test unit (0xBD): refused, "HWID(0xbd), bcd HWID(0xa7)". With PersParam's HWID patched
-    to 0xA7, every upload of it in that BL2 session failed the header CRC instead: BL2 read the wrapper one byte late
-    ("total of 367 bytes in buffer"; the first upload of the first session read 366, correctly) [EMU, not
-    understood]. What BL2 does with the MCU part after the module image is not seen.
+  - **Our 2010 BL2** doesn't know B&W's over-the-air `.fw` (`docs/mcu/stock-firmware.md`): the upload is parsed as a
+    `.bcd` from its first byte, so the `.fw`'s 32-byte wrapper puts everything out of place and the header CRC fails
+    ("The file is an invalid BCD file"). (The ZD1L's 2012 BL2 **does** take the whole `.fw` and burns both parts —
+    "The ZD1L BL2" below; this `.fw`-rejection is our build's, not a BL2-general rule.) The A7's, the Lightning
+    model's and one packed by `bwfw.py` all end there against ours, each the first
+    upload of a fresh BL2; the `.bcd` cut out of the Lightning model's gets as far as "HWID(0xbd), bcd HWID(0xbe)" [EMU
+    2026-11-08: `zemu run emu/img/os/os.bcd --mcu FLASH --fwd 18080:80 --allow-panic --until 'waiting for a system'
+    --host 'zd1 module bl2' --sleep 25 --host 'python3 -I tools/zeppelin/knos/bl2web.py 127.0.0.1:18080 FILE --yes'].
+    The "version" and "encryption mode" it logs are the upload's bytes +0x28 and +0x29 (0x60021c7e, 0x60021c94 [RE]): a
+    `.bcd`'s header version and encryption flag; a `.fw` gives ASCII from the build date (50, 48). "Total of N bytes in
+    buffer" is the size of the first network chunk.
 - TFTP server, XModem over UART1 or SPI (the MCU bootloader's relay, `zd1 xmodem` [HW]), and a serial menu on UART1 ("Bootloader Level
   2 Menu") [RE, EMU]: 1 download image + CnE, 2 image only, 3 resource pages, **4 start image**, 5 print image info,
   **6 mark image as invalid**, 7 CnE to factory default, 8 program MAC0, 9 program GUID, a set start mode, b exit to
   shell. `zd1 module esc` stops sending after BL1's menu, so it never reaches these.
 - Image check (`checkBCDAndFlashStatus`, 0x60040de4) [RE]: header CRC32, the `.bcd`'s HWID against PersParam's
-  (expert mode skips it), each section's CRC32, a version compare. **No signature.** Optional Blowfish with
-  BridgeCo's placeholder key, off. Keep the version ≥ stock. **Only the web updater runs it**: its one call (0x60040c56)
+  (expert mode skips it), each section's CRC32. **No signature.** Optional Blowfish with BridgeCo's placeholder key,
+  off. The version doesn't refuse anything: the confirm page shows it, a `.bcd` with a lower software version or model
+  id (header +0x1C, +0x18) is taken and burns (105.1, 104.1, over 105.9112), and a higher model id than the installed
+  image's only adds "user mode, configure Cne download" [EMU 2026-11-08]. **Only the web updater runs it**: its one call (0x60040c56)
   is in `WebFirmwareUpdate::closeBinData`; the SPI XModem (the relay, `zd1 xmodem`) hands the data to the
   FlashUpdateService without it, and BL2 reads PersParam's HWID nowhere else but its banner and the CnE value
   `HardwareID`. An `os.bcd` with its header's HWID set to 0xBE (CRC recomputed) went on a unit whose PersParam says
@@ -86,6 +96,66 @@ the SPI link and:
 - If PersParam is blank, BL2 rebuilds the defaults (BLDb, HWID 0xBD, HWVS, GUID 0, MAC0/MAC1 0, CnEA/U/S, BLDF)
   [RE, EMU].
 
+### The ZD1L BL2 (`blobs/zd1l/module/bl2.bin`)
+A real Lightning unit's BL2, contributed by a ZD1L owner: dumped over the stock-patch telnet hook (`fburn rd 0 0xA0000
+0x1A0000`), read-only [HW 2026-11-16]. Partition header: `partitionId 1`, date **`20121106102434`**, `imageLength`
+1,504,908, `partitionLength` **0x1A0000** (1,703,936; our ZD1's is 0x160000), `crc32 0x3BDC1766`; sha256
+`2e6eb04f…57dfe`. Analysis so far is strings-level static on the dump (stage 2 is Thumb-2; a Ghidra pass is pending).
+
+- **A later, larger build** — `Nov 6 2012`, BridgeCo "MR5" SDK (`e:\BSL_Customization\MR5\…`), GoAhead web "Web
+  Version 1.19.4.2"; ~1.5 MB image vs our 2010 build's ~0.8 MB.
+- **It takes the whole B&W `.fw` and flashes both parts** [HW]: the web updater pushes the MCU `.dmb` ("HostFirmware") to
+  the MCU over XModem-over-SPI and burns the module `.bcd` to NAND (the MCU's first [EMU], below), then resets. This is
+  how the stock-patch telnet-hook `.fw` was installed on a ZD1L. The accept handshake differs from our 2010 BL2's:
+  `POST /goform/formPostHandler` → **302 → `/1000/firmware_apply.asp`**; an **empty** apply body means
+  accepted, and the page then fires `GET /goform/formDownloadConfirmationHandler?button=++++++Ok++++++` to start the
+  burn (a non-empty body is the `_HWID`/incompatible error). `firmware_status.asp` carries `<new>`, `<host>`,
+  `<finished>`, `<success>` (module) and `<success1>` (host/MCU).
+- **The upload, step by step** [HW, a ZD1L owner, issue #1; RE and EMU 2026-11-17, `re/ghidra/setup.py bl2-zd1l`]:
+  `GET /1000/firmware_prepare.asp` (arms the upload; without it the POST may 302 to
+  `FileStatusHandlerPageUndefined`; the ~7 MB size cap and the "persistent lock" reported earlier were this), the POST
+  (302 to `/1000/firmware_apply.asp`), **`GET /1000/firmware_apply.asp`**, `GET /1000/firmware_expert.asp`, `GET
+  /goform/formExpertDownloadConfirmationHandler?button=++++++Ok++++++`, then `firmware_status.asp` until `finished`.
+  `python3 tools/zeppelin bl2web IP FILE.fw --yes` does all of it (it tells this BL2 from ours by
+  `firmware_status.asp`); against this BL2 in the emulator it burned a `.fw` without an MCU part [EMU 2026-11-17].
+  - **The apply page arms the confirm.** Its one line, `aspSetFirmwareUploadConfirmationHandler` (0x600c6910) with
+    `"button"`, the Ok value, `"firmware_status.asp"` and `"bl_index.asp"`, copies the button's name and value and the
+    two pages the confirm goes on to into RAM (0x6040a304), with no check of the image; until it runs they hold their defaults
+    (`FWUCButtonName`, ..., `FWUCHandlerPage`), so a confirm without it redirects to `/1000/FWUCHandlerPage` and burns
+    nothing, whatever the image: the same `.fw` burned after the apply page and didn't without it [EMU]. B&W's
+    `scripts/firmware.js` loads it into an iframe after the POST; an empty body (a BOM) means accepted, `_HWID` the
+    wrong hardware.
+  - **The expert confirm** (0x600d446c) takes the same button, and checkbox parameters for the CnE download and the
+    HWID override. `checkBCDAndFlashStatus` (0x6006a1d4) checks the header CRC, the HWID against PersParam (unless the
+    expert value is 0xF6) and each section's CRC; it marks the upload "user mode, configure Cne download" when the
+    unit's NAND has no factory CnE (type 4) or app (type 2) partition, or the upload's model id differs from the
+    installed app's. What the image is doesn't enter into it beyond the model id.
+- **In the emulator** [EMU 2026-11-17]: it runs from a test NAND with it at 0xA0000, PersParam's HWID 0xBE and
+  `os-zd1l.bcd` installed, entered from our OS (`zemu run IMAGE --nand --nand-image NAND --mcu FLASH --renode 'zd1:board
+  Adc "2:0x300"' --fwd 18080:80 --host 'zd1 module bl2'`, then the expert recipe above against 127.0.0.1:18080):
+  - The upload goes into a 15 MB RAM buffer (`FwUpdater::OpenData`: 15,188,608 B, wanting 14 MB of heap free).
+  - **The MCU part goes first**: after the confirm, `TransferImagetoHost` XModems the `.dmb` to the MCU, and when that
+    fails ("xmodemTransmit failed", our MCU app is no receiver: on the unit the MCU's bootloader is, after a key-hold),
+    the update ends there ("Couldnot Update Finish Returned False") with nothing written. So a `.fw` only installs
+    from key-hold, not from BL2 entered with `zd1 module bl2`. A `.fw` without an MCU part (wrapper length 0) skips it.
+  - **The resources are optional.** An empty resources section (its partition in the table, length 0) is taken
+    (`processResourceData() Success`) and written as an empty partition (MetaInfo with length 0, the data erased;
+    byte-identical to `bcd.py install`); a section left out of the table (an all-zero entry) leaves the old
+    resources in place. Both burned the app, and both NANDs booted our OS afterwards.
+  - **It writes the factory CnE**: section 1 goes to NAND 0x40000 (our 2010 BL2's model in `bcd.py install` only
+    erases the user settings), so a `.bcd` for a ZD1L carries the ZD1L's CnE.
+  - After the burn it sets status 0x2500 (`firmware_status.asp`: `finished`, `success`, `success1` YES) and waits;
+    with our MCU app nothing resets the module (1500 s). On the unit, from key-hold, the board reset itself [HW].
+- **It implements the firmware-update and file-transfer services our 2010 BL2 only stubbed** [RE static strings]:
+  `MemoryBlobFirmwareUpdateService(Impl)`, `FileTransferServiceImpl`, `AVRPlayerService(Impl)` (the SPI transport to
+  the MCU), `XModemOverSPI` / `RemoteRegXModemProtocol` (TX mode), and `HostFirmware` version handling
+  (`aspGetCurrentHostFirmwareVersion`). Our 2010 BL2 has the interfaces but no `…Impl` (its HCR handler logs "Can't
+  obtain RemoteRegCtrldFileTransferService"), which is why it can't flash the MCU part. The MCU-side protocol is in
+  `docs/protocol/sequences.md`, "MCU (host) firmware over SPI".
+- **USB in it is a host stack** (`USB Hub Manager`, `MTPDeviceClient`, `usb msd`/`usb mtp`, "Update from USB") — the
+  module SoC's host port for a USB stick, **not** an MCU DFU device. It says nothing about whether the AVR32's own
+  bootloader exposes USB DFU (that still needs the UC3 JTAG dump).
+
 ## NAND layout (HY27U1G8F2B, 128 MB, 2 KB pages + 64 B spare, 128 KB blocks)
 
 | Offset | Content |
@@ -94,7 +164,7 @@ the SPI link and:
 | 0x0020000 | **PersParam** (per unit) |
 | 0x0040000 | factory CnE (type 4, = `.bcd` section 1; data at +0x80) |
 | 0x0060000-0x009FFFF | user settings, two copies (device name, UUID, network, Wi-Fi incl. passphrase) |
-| 0x00A0000 (0x160000) | BL2 (type 1) |
+| 0x00A0000 (0x160000) | BL2 (type 1); `partitionLength` is the build's — 0x160000 on our ZD1, 0x1A0000 on the ZD1L |
 | 0x0240000 (0xA00000) | app (type 2), single slot |
 | 0x0C40000 (0x400000) | resources (type 7: web UI, UI strings) |
 | rest | erased |
@@ -151,11 +221,13 @@ App stage-2 checksum: 16-bit LE words, a = b = 0xFFFF, folded every 360 words, r
 | 0x18 / 0x1C | model id (0x69) / software version (0x2398 = build 9112) |
 | 0x20 | low 16 bits = HWID: 0xBD (also BL2's PersParam default) in B&W's Zeppelin Air, A5 and Z2 images; 0xBE in the Zeppelin Air with Lightning's (2.01.04, 2.04.35); 0xA7 in the A7's |
 | 0x28 / 0x2C | header version (2 = 0xB0-byte header) / **header CRC32** (zlib, over the header with this field zeroed) |
-| 0x30 + 0x20·i | sections {file offset, NAND address, size, CRC32, partition size}: 0 app (→ 0x240000), 1 factory CnE, 2 resources (→ 0xC40000; 0x90 + 4·i = the sizes of its containers, 8 words, 3 used) |
+| 0x30 + 0x20·i | sections {file offset, NAND address, size, CRC32, partition size}: 0 app (→ 0x240000), 1 factory CnE, 2 resources (→ 0xC40000; 0x90 + 4·i = the sizes of its containers, 8 words, 3 used; size 0 = an empty partition: both BL2s take it and write the partition empty, ours through its web updater and its XModem, as `bcd.py install` does [EMU 2026-11-17]; `os.bcd` and `os-zd1l.bcd` have no resources) |
 | 0xB0 | "DMP 3.x" |
 
-No signature. Tools: `python3 tools/zeppelin bcd` (parse, check, extract), `mkbcd` (wrap a custom stage 2 with the
-stock preloader, CnE and resources, recompute everything, pad sections to 4).
+No signature. Tools: `python3 tools/zeppelin bcd` (parse, check, extract), `mkbcd` (a `.bcd` from its parts: B&W's
+preloader `blobs/dm870/preloader.bin` behind a boot header written here, a custom stage 2, a model's CnE and resource
+containers, HWID and date; every header and checksum computed, sections padded to 4; rebuilds B&W's ZD1, ZD1L and A7
+images byte for byte from their own parts, `mkbcd --selftest`).
 
 ## PersParam (0x20000)
 0x10-byte block header, "PersParam", then records `{mark (08080808 live, 0 superseded), record length, data length, 0,

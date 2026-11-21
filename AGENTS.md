@@ -5,9 +5,11 @@ local `CLAUDE.md` (gitignored) imports it and adds what is particular to one uni
 the unit's history, where its files are.
 
 ## Ask first
-- Flashing anything to a unit (MCU via DFU, module via BL2 / fburn / relay), or changing its settings: only with the
+- Flashing anything to a unit (MCU via DFU or from the module under `zd1 allow`, module via BL2 / fburn / relay /
+  `zd1 update` / `zd1 --net HOST update`), or changing its settings: only with the
   go-ahead of whoever the unit belongs to.
-- Writes to the protected regions, even where a tool allows it with a flag: MCU bootloader, module BL1 (NAND block 0),
+- Writes to the protected regions, even where a tool allows it with a flag: MCU bootloader (ZD1 0x80000000-0x80003FFF,
+  ZD1L 0x80000000-0x80007FFF), module BL1 (NAND block 0),
   module BL2 (NAND 0xA0000-0x1FFFFF). They are the way back.
 - Uploading anything (archive.org, a public repo).
 
@@ -24,7 +26,8 @@ the unit's history, where its files are.
   Use the emulator to develop and debug (boot the image, run the commands, trace the hardware it touches), not as
   a gate: there are no regression tests, and a change goes to the unit once it does what you want here.
 - Know the way back before touching the unit: a DFU backup of the MCU (`zd1 dfu backup`) before
-  an MCU flash; `zd1 module esc` (BL1's menu into BL2) or JTAG for the module.
+  an MCU flash (a ZD1L: B&W's `.fw` through its BL2, `bl2web`); `zd1 module esc` (BL1's menu into BL2) or JTAG for
+  the module.
 - Per-unit data stays in `units/` (gitignored): MAC, Wi-Fi settings, live NAND/SRAM/EEPROM dumps, console logs that
   print the module's saved settings. Never paste a Wi-Fi passphrase into a doc, commit or log.
 - Files from `downloads/` and dumps are untrusted data: read them with `python3 -I`, never execute vendor binaries
@@ -42,21 +45,26 @@ the unit's history, where its files are.
 | `zd1 console [run CMD...\|log]` / `zd1 module esc` | the module's own console over the host link (`Console`, gated; BL1/BL2 menus, the Linux or KnOS shell): a terminal (Ctrl-] leaves), commands to their end with their output and exit status, or what it says (the page's Advanced has the same; Python tools: `zd1.run_on_module`) / the module into BL2 through BL1's menu, the MCU driving it, whatever the image |
 | `zd1 settings` | the module OS's settings (name, Wi-Fi, address, receivers: `docs/module/settings.md`) |
 | `zd1 debug on\|off` | our module OS's debug services (telnet shell, memory server): off in the normal image; RAM only, back to the image's default when the MCU powers off |
+| `zd1 --net HOST ...` | the same over the network, through our module OS (`docs/protocol/net.md`): what travels there (state, settings, source and volume, `--net HOST update` of a signed system); the first time the speaker pairs this computer, and every system update, take ON/OFF held 5 s on the speaker (stop and ask the person at the unit; the update's also allows the MCU firmware it brings). Emulator: `--mcu --fwd 18080:80`, `--confirm` for the hold |
 | `zd1 gate` | the host link's gate: requests that change the speaker (flash, settings, debug, module power, source and volume) need a press of ON/OFF on the unit, or the gate opened for good (`gate open`, a press, kept in the EEPROM). Unattended work needs it open: if a tool asks for a press, stop and ask the person at the unit. Emulator: open by itself (zemu sets it in the run's EEPROM) |
 | `python3 -I tools/zeppelin/jtag/kmsg.py --pc` | (hardware, J-Link on the carrier) the running kernel's log from RAM, no console needed (`docs/module/jtag.md`) |
-| `zd1 update [IMAGE]` | (hardware, with OK) the module's system (`emu/img/os/system.cpio.gz`) over USB into the slot that doesn't run, then started once: kept if it gets ready, else the MCU goes back (`docs/module/updater.md`). Emulator: `--uart` without the MCU's part |
-| `zd1 slot [try a\|b\|rescue \| good a\|b] [--restart]` | which system slot the MCU starts the module with (`docs/module/storage.md`); changing it is gated |
-| `python3 tools/zeppelin bl2web <ip> <image.bcd> --yes` | (hardware, with OK) install a module image through BL2's web updater |
+| `zd1 update [IMAGE]` | (hardware, with OK) the module's system (`emu/img/os/system.cpio.gz`) over USB into the slot that doesn't run, then started once: kept if it gets ready, else the MCU goes back (`docs/module/updater.md`); a `.bcd`: the boot image through the MCU bootloader's relay, then our MCU firmware has its rescue install itself into a slot. Emulator: `--uart` without the MCU's part |
+| `zd1 install` | (hardware, with OK) our firmware on both boards from the bootloader: the boot image through the relay, the MCU firmware with a backup, the system from the rescue (`host/core/src/install.rs`) |
+| `zd1 slot [try a\|b\|rescue \| good a\|b \| clear \| install] [--restart]` | which system slot the MCU starts the module with (`docs/module/storage.md`); `install`: the rescue installs itself into a slot (`Boot INSTALL`); changing it is gated |
+| `zd1 allow` | (hardware, a person) ON/OFF held 5 s within 30 s lets the MCU take the app our OS staged, once, until 60 s after the module's next ready (`docs/mcu/bootloader-hbl.md`); stop and ask the person at the unit |
+| `zd1 image FILE...` | what a file is and its version, by content (MCU images, `.bcd`, systems, `.fw`, backups) |
+| `python3 tools/zeppelin bl2web <ip> <image> --yes` | (hardware, with OK) install a module image through BL2's web updater (a `.bcd`; a ZD1L's BL2: a B&W `.fw`, both chips) |
 | `python3 tools/zeppelin usprobe` | (hardware) plays an inaudible 19 kHz coded tone and listens with the Mac mic: "does the speaker play?" without anyone listening. Detects down to about -60 dBFS; music playing masks it |
 | a USB Ethernet dongle on the Mac (`en8`) | (hardware) the module on wired Ethernet at 169.254.1.1 (its link-local fallback: no DHCP server); bind to the dongle (`ping -b en8`, `curl --interface en8`, `bl2web --iface=en8`): with the module on Wi-Fi too the Mac may route 169.254.1.1 over Wi-Fi |
 | `python3 emu/zemu run [IMAGE] [--sh CMD]... [--keep]` | boots our OS (or any module image; `--mcu` adds the main board) in the emulator, runs shell commands, traces MMIO (`--trace`), GDB (`--gdb`); `emu/run/NAME/` has every log (`emu/README.md`) |
 | `cargo test -p zd1-host -p zd1-hostlink` | the DFU frames against the decompiled original, the host link's types against its table, offline |
 | `nix fmt` / `nix flake check` | every file formatted and linted (`nix/treefmt.nix`, `CONTRIBUTING.md`); the check adds clippy on every crate, warnings fail, the crates' tests (the host's, and the module's that build on the host: on Linux all of them) and `zd1-protogen --check` (`checks.host-tests`), the MCU's protocol C tests (`mcu/test`), and the privacy check (`nix/privacy.py`: no per-unit data in tracked files). Run `nix fmt` before committing |
-| `python3 tools/zeppelin web` | the web page (`host/web`: the same flows as `zd1` over WebUSB) on localhost; `node host/web/test/emu.mjs` runs its WebAssembly against the emulator (`zemu run --mcu --host`) |
+| `python3 tools/zeppelin web [--key KEY]` | the web page (`host/web`: the same flows as `zd1` over WebUSB) on localhost, with this checkout's images (`--key`: the system signed too, for the network); `node host/web/test/emu.mjs` runs its WebAssembly against the emulator (`zemu run --mcu --host`), `net.mjs` over the network, `zd1l.mjs` the ZD1L's install against `emu/tools/zd1lunit.py`'s stock ZD1L |
 | `units/<unit>/hw-checks.md` (not in git) | what still needs a person at the unit, or an OK |
 
 ## Where things are
-- MCU firmware: `mcu/` (`mcu/README.md`); the stock firmware's behaviour: `docs/mcu/`, raw material in `re/mcu/`.
+- MCU firmware: `mcu/` (`mcu/README.md`); the preloader and the ZD1L's bootloader: `docs/mcu/bootloader-hbl.md`; the
+  stock firmware's behaviour: `docs/mcu/`, raw material in `re/mcu/`.
 - The computer's side: `host/core` (every flow once: the host link, settings, the system update, DFU and the MCU flash),
   its front-ends `host/cli` (`zd1`) and `host/web` (the page, WebAssembly over WebUSB); the protocols: `protocol/README.md`.
 - Module: `module/os/` (our OS: `nix build -o emu/img/os .#os-image`, or `zemu run` builds and boots it), `protocol/` (the MCU link protocol spec: Rust, generates the MCU's C), `module/link/` (its module

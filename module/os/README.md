@@ -8,11 +8,11 @@ run` (image `os`, the default).
 
 On the unit it boots from its system slot, joins Wi-Fi from the settings, and plays AirPlay, Snapcast and (where
 Spotify gives the keys) Spotify Connect through the speaker (`docs/status.md`). Install (`docs/module/updater.md`):
-the system with `zd1 update` (`emu/img/os/system.cpio.gz`) into the slot that doesn't run; the stub, the kernel
-and the rescue (`os.bcd`, rarely) with the relay over USB (`zd1 bootloader`, `zd1 dfu relay
-emu/img/os/os.bcd --yes`, `zd1 dfu start`). Both need our MCU firmware: it chooses the system slot
-(`docs/module/storage.md`). A speaker with empty slots boots into the rescue and waits for its first `zeppelin
-update`.
+the system with `zd1 update` (`emu/img/os/system.cpio.gz`) into the slot that doesn't run, or signed over the network
+(`zd1 --net HOST update`); the stub, the kernel and the system as the rescue (`os.bcd`, rarely) with `zd1 update
+os.bcd` (`zd1 install` on a new speaker: the MCU firmware too) through the MCU bootloader's relay, or a ZD1L's BL2.
+Both need our MCU firmware: it chooses the system slot, and a boot image it hasn't seen yet has its rescue copy itself
+into the slot that isn't the good one, which it then starts once (`docs/module/storage.md`).
 
 ```
 nix build -o emu/img/os .#os-image            # the images (first time: the toolchain, ~15 min)
@@ -30,23 +30,23 @@ link, `--nand` boots the flashable image through BL1, `--trace` / `--gdb` / `--w
 | | | |
 |---|---|---|
 | Toolchain | `nix/default.nix` (`flake.lock` pins it) | nixpkgs' LLVM cross toolchain for `armv5tel-unknown-linux-musleabi` (clang/lld 21, compiler-rt, static musl 1.2.5, `-march=armv5te`, soft float, no hardening flags; `nix/armv5-compiler-rt.nix`), native on any host; Rust from the top `rust-toolchain.toml` (a nightly + `armv5te-unknown-linux-musleabi`; std built from `rust-src` with our profile and without its backtrace symbolizer, `.cargo/config.toml`) through crane; each piece a `callPackage` derivation in `nix/module/`, together `nix build .#module-os-parts`; the images `nix/os-image.nix` (`assemble.py assemble`) |
-| Kernel | `os.toml [kernel]` | Nokia Kernel_A (`blobs/module/nokia-hd1/kernel.bin`, provenance in `blobs/README.md`; `re/netmodule/NOKIA_HD1.md`), command line |
+| Kernel | `os.toml [kernel]` | Nokia Kernel_A (`blobs/nokia-hd1/kernel.bin`, provenance in `blobs/README.md`; `re/netmodule/NOKIA_HD1.md`), command line |
 | Vendor binaries | `os.toml [vendor]` | the kernel's modules (the Wi-Fi driver, AV, sound) and the Wi-Fi firmware from Nokia's rootfs, and the insmod order |
 | Wi-Fi stack | `os.toml [wifi]`, `module/wifi` | `cfg80211` and `mac80211` from source, for Nokia's kernel and their `sulu_wlan` (`module/wifi/README.md`) |
-| busybox | `os.toml [busybox]`, `busybox.config` | pinned tarball (sha256), static, twice: the system's (`applets`, 106) and the rescue's (`rescue_applets`, 27), every other applet off (`nix/module/kconfig-merge.py --applets`); `busybox.config` = our changes on top of `defconfig` |
-| Apps | `apps/` (Cargo workspace), `os.toml [apps]` | std Rust, installed as **one executable** (`apps/zd1`, busybox style: each program a library's `main`, picked by the name it is started as, a link per program, or by `zd1 PROGRAM`), twice: the core build in the rescue (`/bin/zd1`, `--no-default-features`, nix's `apps-core`: `init`, `zd1-linkd`, `zd1-ctl`, `zd1-board`, `zd1-persparam`, `zd1-settings`, `zd1-slot`, `zd1-update`) and the full one in the system (`/usr/bin/zd1`: `os.toml`'s `core` linked from `/bin`, the rest from `/usr/bin`; relative links, so a slot mounted elsewhere resolves into itself). One copy of std (and alsa-lib) for all of them: separate binaries each carried their own (3.4 MB more). `apps/zd1-compat` (linked into all of them) supplies what the kernel lacks (below), `apps/zd1-sys` what they share (the kernel log, system calls, the MTD ioctls, CRC-32, hex, MACs). `zd1-ctl` is the running system from a shell (init's services, the slots, `zd1-linkd`'s app socket); `zd1-selftest` (the debug build) checks clocks, threads/atomics, futex waits, TCP, files, processes, randomness, /proc; `zd1-persparam` reads the unit's MAC from PersParam (NAND, read-only): eth0 = MAC0, Wi-Fi = MAC0 locally administered; `zd1-entropy` seeds the kernel's entropy pool at boot (init's first service); `zd1-slot` writes the slots; `zd1-update` takes an update from the MCU over the console UART (`docs/module/updater.md`); `zd1-settings` the settings |
-| Storage, the boot | `docs/module/storage.md`, `apps/zd1-init`, `apps/zd1-slot`, `os.toml [kernel] cmdline` | the NAND in partitions (`mtdparts`): the vendor area read-only, two **system slots** (JFFS2, each a whole root: the kernel mounts one as `/`, read-only) and the **data partition** (JFFS2 at `/data`). The MCU chooses the slot and the boot stub puts it on the command line (`root=`, `zd1.slot=`); when no slot gets ready, the stub starts the **rescue** (the app partition's initramfs: the MCU link, a shell; it waits for `zd1 update`). `zd1-slot` writes a slot (erase, unpack, stamp) |
+| busybox | `os.toml [busybox]`, `busybox.config` | pinned tarball (sha256), static: the system's applets (`applets`, 106), every other applet off (`nix/module/kconfig-merge.py --applets`); `busybox.config` = our changes on top of `defconfig` |
+| Apps | `apps/` (Cargo workspace), `os.toml [apps]` | std Rust, installed as **one executable** (`apps/zd1`, busybox style: each program a library's `main`, picked by the name it is started as, a link per program, or by `zd1 PROGRAM`), in the system (`/usr/bin/zd1`: `os.toml`'s `core` linked from `/bin`, the rest from `/usr/bin`; relative links, so a slot mounted elsewhere resolves into itself). One copy of std (and alsa-lib) for all of them: separate binaries each carried their own (3.4 MB more). `apps/zd1-compat` (linked into all of them) supplies what the kernel lacks (below), `apps/zd1-sys` what they share (the kernel log, system calls, the MTD ioctls, CRC-32, hex, MACs). `zd1-ctl` is the running system from a shell (init's services, the slots, `zd1-linkd`'s app socket); `zd1-selftest` (the debug build) checks clocks, threads/atomics, futex waits, TCP, files, processes, randomness, /proc; `zd1-persparam` reads the unit's MAC from PersParam (NAND, read-only): eth0 = MAC0, Wi-Fi = MAC0 locally administered; `zd1-entropy` seeds the kernel's entropy pool at boot (init's first service); `zd1-slot` writes the slots; `zd1-update` takes an update from the MCU over the console UART (`docs/module/updater.md`); `zd1-netd` the network link (a WebSocket and Noise session for paired clients, their host link requests to `zd1-linkd`, the signed system update: `docs/protocol/net.md`); `zd1-settings` the settings |
+| Storage, the boot | `docs/module/storage.md`, `apps/zd1-init`, `apps/zd1-slot`, `os.toml [kernel] cmdline` | the NAND in partitions (`mtdparts`): the vendor area read-only, two **system slots** (JFFS2, each a whole root: the kernel mounts one as `/`, read-only) and the **data partition** (JFFS2 at `/data`). The MCU chooses the slot and the boot stub puts it on the command line (`root=`, `zd1.slot=`); when no slot gets ready, the stub starts the **rescue**: the same system from the app partition, in RAM. The MCU also starts it to install itself (`zd1.install`) when it sees a boot image it hasn't recorded; then, or with its target slot empty, it copies itself into a slot and asks the MCU to start that slot once (`self-install`, `zd1-slot install-self --start`). `zd1-slot` writes a slot (erase, unpack, stamp) |
 | Settings | `docs/module/settings.md`, `apps/zd1-settings` | the name, the Wi-Fi network and address, which receivers run: `/data/zd1/settings`, set from the host through the MCU (`zd1 settings`) or `zd1-settings` on the module; a change restarts what uses it (init: each service lists its settings) |
 | MCU link | `module/link`, `module/boot`, `apps/zd1-linkd` | the protocol library; the bare-metal boot stub on it (status booting, the MCU's slot choice, ATAGs); `zd1-linkd`, the link under Linux (status ready, HCR 0x21 -> BL2); the module's log is its console UART, which the MCU logs (init: console level 7) |
 | ALSA | `os.toml [alsa]` | alsa-lib (static, in the apps) and its config; `aplay`, `speaker-test`, `amixer` in every system; Nokia's `snd-sulu` is the card (`hw:0,0` = AV port 2 -> the speaker's DSP) |
 | Receivers | `apps/zd1-snapcast`, `apps/zd1-airplay` (on our shairplay-rust fork), `apps/zd1-spotify` (on our librespot fork; `forks.md`), `apps/zd1-audio`, `apps/zd1-mdns` | Snapcast, AirPlay 1/2 and Spotify Connect, started at boot (sections below); `zd1-audio` = the receivers' toolkit: the playback device, the output (AirPlay, Spotify), the speaker link, the command line and log; `zd1-mdns` = one-shot mDNS lookups (snapclient) |
 | Debug services | `apps/zd1-init` (`debug`), `apps/zd1-memsh`, `os.toml [image.debug]` | a login-less shell on telnet 2323 and, in the debug system (`system-debug.cpio.gz`: zd1's `debug` build, with the self test, PersParam's raw reads and the MCU link's request trace), `zd1-memsh` on 23, which answers the stock KnOS shell's `wr`/`rd` on `/dev/mem`, so `tools/zeppelin/warp` (Warp and Sol probes) runs unchanged against our OS. A root shell and raw memory for anyone on the network: **off** in the normal image, on by default in `os-debug.bcd` (`zd1.debug`; otherwise the same image), and switched only from the speaker's USB port: `zd1 debug on\|off\|default` (the MCU keeps it in RAM and tells `zd1-linkd` at every ready, SPI reg 0xC1). The dev boot (`zemu run`) is the debug system with `zd1.debug` |
-| Identification | `/etc/os-release`, SPI reg 0x25 | `VERSION_ID` (the system: the commit, `-dirty` with uncommitted changes; the rescue: 12 hex digits of its contents' SHA-256, so it changes only when the rescue does), `VARIANT_ID` (release or debug: init writes `/etc/os-release` -> `/run` from the system's `/usr/lib/os-release` and the command line; `rescue` in the rescue), `BUILD_DATE` (the commit's; the system only); `zd1-linkd` hands "zd1-os VERSION KIND" to the MCU (`zd1 info` shows it) and keeps the MCU firmware's version in `/run/zd1/mcu-version` |
+| Identification | `/etc/os-release`, SPI reg 0x25 | `VERSION_ID` (the commit, `-dirty` with uncommitted changes), `VARIANT_ID` (release, debug, or rescue: init writes `/etc/os-release` -> `/run` from `/usr/lib/os-release` and the command line), `BUILD_DATE` (the commit's); `zd1-linkd` hands "zd1-os VERSION KIND" to the MCU (`zd1 info` shows it) and keeps the MCU firmware's version in `/run/zd1/mcu-version` |
 | The board | `module/dm870`, `apps/zd1-board` | the DM870 by name: every block, register, field and rule our code uses, in one crate (`no_std`; `/dev/mem` under Linux), used by the boot stub, the link, init and the tools. `zd1-board up` is what the Nokia kernel leaves unset (the pad matrix, the PHY's reset and clock, the clock gates; init runs it once at boot); `zd1-board show` prints the chip's state by name |
-| Init | `apps/zd1-init`, `apps/zd1-svc`, `apps/zd1-net` | PID 1, ours (`/sbin/init`, the rescue's `/init`): the early start, then the services from one table (`services.rs`), supervised: one that ends is started again, and one with a health check (`Service::health`, asked while it runs) when it fails it (the `wifi` service: a known network unjoined for 5 min, then ever later up to 40); `zd1-svc` is its socket's client, `zd1-ctl` asks it from a shell (`status`, `start`/`stop`/`restart`); `zd1-dhcp` is udhcpc's event handler |
+| Init | `apps/zd1-init`, `apps/zd1-svc`, `apps/zd1-net` | PID 1, ours (`/sbin/init`; `/init` in RAM): the early start, then the services from one table (`system.rs`'s `SERVICES`; the types in `services.rs`), supervised: one that ends is started again, and one with a health check (`Service::health`, asked while it runs) when it fails it (the `wifi` service: a known network unjoined for 5 min, then ever later up to 40); `zd1-svc` is its socket's client, `zd1-ctl` asks it from a shell (`status`, `start`/`stop`/`restart`); `zd1-dhcp` is udhcpc's event handler |
 | Overlay | `rootfs/` | config (`/etc/profile`, `hostname`, `passwd`, `mdev.conf`); copied over everything else in the system |
-| Wi-Fi | `os.toml [wpa]`, `wpa_supplicant.config`, `apps/zd1-init` (`wifi`), `apps/zd1-net` (`wpa`) | `wpa_supplicant` 2.11 and `wpa_cli`, static and stripped (509 + 124 KB; WEXT, WPA2-PSK, internal crypto). The `wifi` service runs the supplicant whenever the radio is on (`wifi.mode`): with known networks (`zd1 wifi`, `/data/zd1/networks`) it joins the preferred one it sees, with DHCP on `wlan0` or a fixed address, and a new address restarts `zd1-airplay` so it advertises there; without one it idles and scans when asked. `zd1-linkd` reads its status and asks for scans over its control socket (`zd1-net`'s `wpa`): the State record's `wifi`, `wifi_ssid`, `bssid`, `signal` (`SIGNAL_POLL`: the AP's last frame) and the `Scan` record (`docs/module/settings.md`). With the signal below -70 dBm for 10 s and another access point of the network in the last scan, it asks for a scan (`wpa::Roam`, then every 2 min while weak): the supplicant, built with roaming, moves to a stronger one. No scans otherwise: each takes the radio off the AP's channel for ~0.7 s. Init's health check of the service starts it again when a known network stays unjoined (`wpa::Stall`): the radio can stop reaching the AP after the AP goes away (`docs/status.md`, Known problems). No image carries a network |
-| Packing | `mkcpio.py`, `mkpayload.py`, `tools/zeppelin/fw/{mkbcd,bcd}.py` | deterministic rescue and system image; payload (`--slots`: the stub asks the MCU); .bcd (the stub, the kernel, the rescue) |
+| Wi-Fi | `os.toml [wpa]`, `wpa_supplicant.config`, `apps/zd1-init` (`wifi`), `apps/zd1-net` (`wpa`) | `wpa_supplicant` 2.11 and `wpa_cli`, static and stripped (509 + 124 KB; WEXT, WPA2-PSK, internal crypto). The `wifi` service runs the supplicant whenever the radio is on (`wifi.mode`): with known networks (`zd1 wifi`, `/data/zd1/networks`) it joins the preferred one it sees, with DHCP on `wlan0` or a fixed address, and a new address restarts `zd1-airplay` so it advertises there; without one it idles and scans when asked. `zd1-linkd` reads its status and asks for scans over its control socket (`zd1-net`'s `wpa`): the State record's `wifi`, `wifi_ssid`, `bssid`, `signal` and the `Scan` record (`docs/module/settings.md`). Init's health check of the service starts it again when a known network stays unjoined (`wpa::Stall`): the radio can stop reaching the AP after the AP goes away (`docs/status.md`, Known problems). No image carries a network |
+| Packing | `mkcpio.py`, `mkpayload.py`, `tools/zeppelin/fw/{mkbcd,bcd}.py` | deterministic system image; payload (`--slots`: the stub asks the MCU); .bcd (the stub, the kernel, the whole system as an initramfs; both models) |
 
 Boot: the stub (from the app partition, or straight from SDRAM in the emulator) asks the MCU which slot -> kernel
 with that slot as `/` -> **init** (`apps/zd1-init`, PID 1). Its early start: proc, sys, tmpfs on `/dev` `/run` `/tmp`
@@ -56,31 +56,31 @@ the unit's MAC and the antenna port), `lo`, then the board (`zd1-board up`, afte
 they left it). Then the services, in order (`zd1-ctl status` lists them): `entropy` (waited for), `zd1-linkd`,
 `ethernet` (the PHY, 169.254.1.1 at once, udhcpc), `wifi`, `time` (the wall clock by NTP, `ntpd -q`, retried until
 it is set: the module boots in 1970; on the unit since 2026-10-25),
-`snapcast`, `airplay`, `spotify`, `debug`, `selftest` (with `zd1.selftest` on the command line; waited for), then
+`net` (`zd1-netd`: the network link, paired clients on port 80, `docs/protocol/net.md`), `snapcast`, `airplay`,
+`spotify`, `debug`, `self-install` (the rescue: itself into a slot, then the MCU starts that slot once), `selftest` (with `zd1.selftest` on the command line; waited for), then
 `[os] up` and `console`, a shell on ttyS1 (the module's console: `zd1 console`). A daemon that ends is
 started again (sooner while it runs a while, later while it keeps ending at once); its log is `/var/log/NAME.log`
 (init writes it from the service's output), the older part in `.log.1`: a log that reaches 32 KB, and a daemon's
 when it ends (with how), becomes `.log.1`, so a service holds at most 64 KB of RAM. Init's own lines and
 `zd1-linkd`'s go to the kernel log (`/dev/kmsg`, a fixed ring; lines cut at 1000 bytes), which the MCU logs and JTAG can
 read (`docs/module/jtag.md`). `reboot` / `poweroff` (busybox's) ask init, which stops
-everything first. The rescue runs the same init with its own two services (`zd1-linkd`, `console`).
+everything first.
 
 The images (`nix build .#os-image`; `emu/img/os` links to them): `system.cpio.gz` (a slot's root: what `zd1 update`
-installs), `system-debug.cpio.gz` (the same with zd1's debug build), `rescue.cpio[.gz]` (the rescue),
-`payload_dev.bin` (emulator dev boot: the debug system as one plain initramfs at 0x61000000), `payload.bin` + `os.bcd` (flashable: the stub, the kernel, the gzip rescue), `nand_os.bin` (the
-emulator's test unit with `os.bcd` installed and empty slots: `zemu run --nand --mcu --allow-panic` goes A, B, the
-rescue; then `--host 'zd1 update --uart'`, `docs/module/updater.md`), and `os-debug.bcd` (`os.bcd` with the debug services on by default).
+installs), `system-debug.cpio.gz` (the same with zd1's debug build), `initramfs-full.cpio.gz` (the system as the
+app partition's initramfs), `payload_dev.bin` (emulator dev boot: the debug system as one plain initramfs at 0x61000000), `payload.bin` + `os.bcd` (flashable: the stub, the kernel, that initramfs), `os-zd1l.bcd` (the same for a ZD1L), `nand_os.bin` (the
+emulator's test unit with `os.bcd` installed and empty slots: `zemu run --nand --mcu` starts the rescue installing
+itself into slot A, the run's EEPROM having no boot image recorded, then slot A), and `os-debug.bcd` (`os.bcd` with the debug services on by default).
 
 ## Adding things
 - **An app**: `cargo new --vcs none --lib apps/zd1-NAME` (a member by the workspace's `module/os/apps/*`): its
   program is the library's `pub fn main()`, a program of the multicall (`apps/zd1`; to run it from RAM, copy `zd1`
   over and `zd1 NAME ARGS`). Name it in the top `Cargo.toml`'s `[workspace.dependencies]`, add it to `apps/zd1` (a
-  dependency and an entry in `PROGRAMS`, behind `full` unless the rescue needs it) and to `os.toml [apps] bins` (or
-  `core`, and `rescue`). Crates from crates.io work (nix vendors them from the top `Cargo.lock`: any cargo build keeps it current).
+  dependency and an entry in `PROGRAMS`) and to `os.toml [apps] bins` (or `core`). Crates from crates.io work (nix vendors them from the top `Cargo.lock`: any cargo build keeps it current).
 - **A C program or library**: a `callPackage` file in `nix/module/` (the scope's stdenv cross-compiles, static;
   `wpa_supplicant.nix` and `alsa-lib.nix` are the pattern), listed in `nix/default.nix` and `module-os-parts`, then
-  copied into the system tree in `assemble.py make_system` (or the rescue, `make_rescue`, if it needs it).
-- **A service**: an entry in `apps/zd1-init/src/services.rs` (the table's order is the start order): its `start`
+  copied into the system tree in `assemble.py make_system`.
+- **A service**: an entry in `SERVICES`, `apps/zd1-init/src/system.rs` (the table's order is the start order): its `start`
   (what to run now, or why not, or when to try again), how it lives (a daemon, or a one-off, waited for or not), where
   its output goes, and the settings that restart it.
 - **A setting**: a field marked `set` of the `State` record in the protocol spec (`protocol/host/src/lib.rs`), and
@@ -105,6 +105,10 @@ does it from the shell):
 | `session on\|off SOURCE` | a sender is connected (an AirPlay client, a Spotify Connect session, a snapserver) / gone: the speaker lists the receiver as a source (0xC6 [2]; an app that goes away takes its sessions with it) |
 | `volume 0-100` | volume to the MCU, as a share of the range a module may use (0..the cap, 0xD2; sent as a step on 0xD4): applied while the module is the input, else when it becomes it (a later knob change wins); the other apps get it too |
 | `log TEXT` | a line in the kernel log, so on the console and in the MCU's log (`zd1 log`) |
+| `try SLOT` | start a slot once (`zd1-slot install-self --start`, the network update's end): reg 0xD8, the MCU restarts the module onto it |
+| `mcu-update` | the MCU's app staged in `/data/zd1/mcu` to the MCU (`zd1-ctl mcu-update`): reg 0xD7; taken only if a person allowed it (`docs/mcu/bootloader-hbl.md`) |
+| `host HEX` | a host link request from the network (`zd1-netd`) to the MCU: reg 0xD9, its reply back the same way |
+| `subscribe state` | the State record now and each time it changes (`zd1-netd`) |
 
 | zd1-linkd -> apps | |
 |---|---|
@@ -235,7 +239,8 @@ run programs; both lack a `dmesg` that works before Linux 3.5.
   the unit. `udelay`/`mdelay` busy-wait.
 - Memory: 32 MB, Linux gets 31 (`mem=31M`: the top MB holds the boot stub, then the Warp0 runtime's window and the
   Warp1 program window). The system is a slot (JFFS2) mounted as `/`, read as it is used (`docs/module/storage.md`);
-  only the rescue, and the emulator's dev boot (~0x61000000 up to the stub at 0x61F00000), are initramfs in RAM.
+  only the app partition's copy (when no slot runs) and the emulator's dev boot (~0x61000000 up to the stub at
+  0x61F00000) are initramfs in RAM.
 - The kernel's own NAND reads of the vendor's pages are miscorrected by its soft ECC: read those raw
   (`zd1-persparam` does); the vendor partition is read-only to the kernel. Our partitions are written and
   read through MTD with the kernel's own ECC (`docs/module/storage.md`, `docs/module/boot-chain.md`).

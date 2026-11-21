@@ -11,6 +11,7 @@
 #include "source.h"
 #include "usbaudio.h"
 #include "wifi.h"
+#include "mcufw.h"
 #include "settings.h"
 
 static bool net_up;
@@ -136,6 +137,10 @@ void wifi_notify(uint8_t reg, const uint8_t *b, uint16_t n) {
     case ZD1_REG_VOLUME_SET: /* our OS asks for a volume */
         if (dm870_native() && n >= 1)
             module_volume(b0);
+        break;
+    case ZD1_REG_MCU_FW: /* our OS has an app for us staged: taken only under a person's allowance (mcufw.c) */
+        if (dm870_native() && b0 == 1)
+            mcufw_request();
         break;
     default:
         break;

@@ -14,14 +14,18 @@ The images (emu/img/os/; docs/module/storage.md):
     system.cpio.gz          a system slot's root (busybox, the full zd1, /etc, the kernel modules, Nokia's firmware,
                             ALSA, Wi-Fi): what `zd1 update` installs (deterministic: sorted, root-owned, mtime 0)
     system-debug.cpio.gz    the same with zd1's debug build (os.toml [image.debug])
-    rescue.cpio(.gz)        the rescue, the app partition's initramfs: its busybox, the core programs, /init
+    initramfs-full.cpio.gz  the same system (release) as an initramfs, its init as /init: the app partition's copy
+    payload.bin, os.bcd     the flashable app image (B&W's preloader + our stub, the kernel and that initramfs; the
+                            relay, BL2): the stub asks the MCU for a slot; with no slot that gets ready the system runs
+                            from RAM, and with the slots empty (a first install) copies itself into one
+                            (zd1-slot install-self)
+    os-zd1l.bcd             the same for the Zeppelin Air with Lightning (its HWID and CnE, no resources): the module
+                            part of its B&W .fw for BL2's web updater (`nix build .#zd1l-fw`)
+    payload_debug.bin, os-debug.bcd   os.bcd with the debug services on by default (os.toml [image.debug])
+    nand_os.bin             the emulator's test unit with os.bcd installed, slots empty (`zemu run os --nand --mcu`:
+                            no boot image recorded in the run's EEPROM, so the rescue installs itself into slot A)
     payload_dev.bin         emulator dev boot (`zemu run os`): the debug system as one plain initramfs at
                             0x61000000, zd1.selftest zd1.debug
-    payload.bin, os.bcd     the flashable app image (stock preloader + our stub/kernel/gzip rescue; the relay, BL2):
-                            the system goes into a slot with `zd1 update`
-    nand_os.bin             the emulator's test unit with os.bcd installed, slots empty (`zemu run os --nand --mcu`:
-                            the rescue; then `--host 'zd1 update --uart'`)
-    os-debug.bcd            os.bcd with the debug services on by default (os.toml [image.debug]), for the unit
 """
 
 import argparse
@@ -64,8 +68,7 @@ def copy_tree(src, dst):
 
 # ---- assembly ----------------------------------------------------------------------------------------------------
 def os_release(version, built):
-    """The system's identification, /usr/lib/os-release (init adds the variant: the image's command line decides; the
-    rescue has its own, make_rescue)."""
+    """The system's identification, /usr/lib/os-release (init adds the variant: the image's command line decides)."""
     return 'NAME="zd1 module OS"\nID=zd1\nVERSION_ID="%s"\nBUILD_DATE="%s"\n' % (version, built)
 
 
@@ -84,32 +87,12 @@ def link_programs(root, target, names):
         os.symlink(target, os.path.join(root, "bin", b))
 
 
-def make_rescue(cfg, parts, root):
-    """The rescue, the app partition's initramfs (docs/module/storage.md): the rescue's busybox, the core build of zd1
-    (init, the MCU link, settings, the slot writer, the system image's reader); /init is init (its rescue profile:
-    /etc/os-release says VARIANT_ID=rescue). Its version is its content (content_id), not the commit or the build date:
-    the core build holds only what the rescue runs, so a commit that doesn't change that builds the same rescue, and
-    the app partition only needs rewriting when it does."""
-    a = cfg["apps"]
-    copy_tree(os.path.join(parts, "busybox-rescue"), root)
-    for d in ("dev", "proc", "sys", "tmp", "var", "run", "data", "etc"):
-        os.makedirs(os.path.join(root, d), exist_ok=True)
-    mc = os.path.join(root, "bin", a["multicall"])
-    shutil.copyfile(os.path.join(parts, "apps-core", "bin", a["multicall"]), mc)
-    os.chmod(mc, 0o755)
-    link_programs(root, a["multicall"], a["rescue"])
-    os.symlink("bin/" + a["multicall"], os.path.join(root, "init"))
-    open(os.path.join(root, "etc/os-release"), "w").write(
-        'NAME="zd1 module OS"\nID=zd1\nVERSION_ID="%s"\nVARIANT_ID=rescue\n' % content_id(root)
-    )
-
-
-def make_system(cfg, parts, root, version, built, debug=False):
+def make_system(cfg, parts, root, version, built, mcu_app, debug=False):
     """A system slot's tree, the whole root the kernel mounts (read-only): busybox, the full zd1 (/usr/bin/zd1: the
     core programs and the rest, a link each; /sbin/init), /etc, the kernel modules (Nokia's, our cfg80211 and
-    mac80211) and Nokia's Wi-Fi firmware, wpa_supplicant, ALSA's configuration and tools; mount points for what init
-    mounts (/dev, /run, /tmp, /var: tmpfs; /data its partition). `debug`: zd1's debug build, with its programs'
-    links."""
+    mac80211) and Nokia's Wi-Fi firmware, wpa_supplicant, ALSA's configuration and tools, the MCU's app of the same
+    release (/usr/lib/zd1/mcu/zd1.dmb: the MCU follows its OS, docs/protocol/net.md); mount points for what init mounts
+    (/dev, /run, /tmp, /var: tmpfs; /data its partition). `debug`: zd1's debug build, with its programs' links."""
     v, a = cfg["vendor"], cfg["apps"]
     vroot = os.path.join(REPO, v["root"])
     copy_tree(os.path.join(parts, "busybox"), root)
@@ -159,6 +142,9 @@ def make_system(cfg, parts, root, version, built, debug=False):
     shutil.copytree(os.path.join(REPO, cfg["image"]["overlay"]), root, symlinks=True, dirs_exist_ok=True)
     open(os.path.join(root, "etc/modules"), "w").write("\n".join(v["load"]) + "\n")
     open(os.path.join(usr, "lib/os-release"), "w").write(os_release(version, built))
+    if mcu_app:
+        os.makedirs(os.path.join(usr, "lib/zd1/mcu"), exist_ok=True)
+        shutil.copyfile(mcu_app, os.path.join(usr, "lib/zd1/mcu/zd1.dmb"))
     for f in ("os-release", "resolv.conf"):  # written at run time: / is read-only
         os.symlink("/run/" + f, os.path.join(root, "etc", f))
 
@@ -173,31 +159,51 @@ def cpio(root, out, name, slot=False):
     log("  %s %d B (%d B gzip)" % (name, len(raw), os.path.getsize(c + ".gz")))
 
 
-def payload(cfg, parts, initrd, out, cmdline_extra="", dev=False):
-    """The stub + kernel + initramfs as one app payload (mkpayload.py): the rescue's, the stub starting
-    a system slot unless the MCU says otherwise (--slots); dev = the emulator's direct boot, the initramfs the system.
+def payload(cfg, parts, initrd, out, cmdline_extra="", how="slots"):
+    """The stub + kernel + initramfs as one app payload (mkpayload.py). `how`: "slots", the stub asking the MCU what to
+    start, a system slot or the initramfs (--slots); "dev", the emulator's direct boot, the initramfs started as it is,
+    a plain one loaded lower.
     The kernel goes in deflated (half the size): the stub inflates it. The command line ends in `zd1.boot=ID`, the boot
-    image's identity: the content_id of what goes in (stub, kernel, initramfs, how, the command line before it), so a
-    commit that changes none of them builds the same one. The OS reports it (the State record's `boot`), `zd1 image`
-    reads it from a .bcd, and the page rewrites the app partition only when they differ."""
+    image's identity: the content_id of the stub, the kernel and how they start (the arguments, the command line before
+    it), so a commit that changes none of them builds the same one. The OS reports it (the State record's `boot`),
+    `zd1 image` reads it from a .bcd, and the page rewrites the app partition only when they differ. The initramfs
+    isn't in it: it is the release's system (the rescue), new in every release, and a rescue older than the slots is
+    still the way back (it runs, plays and takes updates); it is renewed whenever the stub or the kernel are.
+    Then `zd1.image=ID`, the whole image's identity (the same with the initramfs): the stub tells it to our MCU, which
+    keeps the last one and starts a new image's rescue to install itself into a slot (mcu/src/modboot.c)."""
     k = cfg["kernel"]
-    args = (["--initrd-at", "0x61000000"] if dev else ["--slots"]) + ["--deflate-kernel"]
+    args = {"slots": ["--slots"], "dev": ["--initrd-at", "0x61000000"]}[how] + ["--deflate-kernel"]
     files = [os.path.join(parts, "boot", "linuxboot.bin"), os.path.join(REPO, k["image"]), initrd]
     cmdline = (k["cmdline"] + " " + cmdline_extra).strip()
     with tempfile.TemporaryDirectory() as d:
-        for n, p in zip(("stub", "kernel", "initramfs"), files):
+        for n, p in zip(("stub", "kernel"), files):
             shutil.copyfile(p, os.path.join(d, n))
         open(os.path.join(d, "how"), "w").write(" ".join(args) + "\n" + cmdline + "\n")
-        cmdline += " zd1.boot=" + content_id(d)
+        boot = content_id(d)
+        shutil.copyfile(initrd, os.path.join(d, "initramfs"))
+        cmdline += " zd1.boot=" + boot + " zd1.image=" + content_id(d)
     sh(PY + [os.path.join(HERE, "mkpayload.py")] + files + [out] + args + ["--cmdline", cmdline])
 
 
-def wrap(payload_bin, out):
-    """The payload wrapped like the stock app (stock preloader, CnE, resources) for the relay and BL2. The system
-    isn't in it: `zd1 update` puts it into a slot (docs/module/updater.md)."""
-    stock = open(os.path.join(REPO, "blobs/module/app_DMP.bcd"), "rb").read()
-    open(out, "wb").write(mkbcd.build(stock, open(payload_bin, "rb").read()))
-    log("  %s %d B" % (os.path.basename(out), os.path.getsize(out)))
+# The models' .bcd parts besides the payload (blobs/README.md): HWID and factory CnE. B&W's preloader is common; the
+# resources (the stock app's web UI, which our OS doesn't read) are left empty: BL2 writes the partition empty.
+MODELS = {"zd1": 0xBD, "zd1l": 0xBE}
+
+
+def bcd_image(payload_bin, out, model, built):
+    """The payload as a model's .bcd for BL2 (its web updater, the relay's XModem): B&W's preloader, the model's HWID
+    and factory CnE, no resources, our build date (docs/module/boot-chain.md, ".bcd images")."""
+    blob = lambda name: open(os.path.join(REPO, "blobs", name), "rb").read()
+    image = mkbcd.build(
+        stage1=blob("dm870/preloader.bin"),
+        payload=open(payload_bin, "rb").read(),
+        cne=blob("%s/module/cne.bin" % model),
+        resources=[],
+        hwid=MODELS[model],
+        date="".join(c for c in built if c.isdigit()).ljust(14, "0"),
+    )
+    open(out, "wb").write(image)
+    log("  %s %d B" % (os.path.basename(out), len(image)))
 
 
 def install(base_nand, image, out):
@@ -207,31 +213,32 @@ def install(base_nand, image, out):
     open(out, "wb").write(nand)
 
 
-def assemble(cfg, parts, out, version, built, base_nand):
+def assemble(cfg, parts, out, version, built, base_nand, mcu_app):
     """Every image of os.toml into `out` (the nix build runs this)."""
     os.makedirs(out, exist_ok=True)
     log("system")
     sysroot = os.path.join(out, ".system")
-    make_system(cfg, parts, sysroot, version, built)
+    make_system(cfg, parts, sysroot, version, built, mcu_app)
     cpio(sysroot, out, "system", slot=True)
+    # the same system as the app partition's initramfs (gzip'd: it goes to the stub's default destination), its init
+    # as /init: what runs when no slot does, on both models
+    log("initramfs-full")
+    os.symlink("sbin/init", os.path.join(sysroot, "init"))
+    cpio(sysroot, out, "initramfs-full")
     shutil.rmtree(sysroot)
-    log("system-debug")
-    make_system(cfg, parts, sysroot, version, built, debug=True)
-    cpio(sysroot, out, "system-debug", slot=True)
-    log("rescue")
-    tmp = os.path.join(out, ".rootfs")
-    make_rescue(cfg, parts, tmp)
-    cpio(tmp, out, "rescue")
-    shutil.rmtree(tmp)
     img = cfg["image"]
     variants = [("", "")]
     if img.get("debug"):  # the debug image: its debug services on by default
         variants.append(("-debug", img["debug"]["cmdline"]))
     for suffix, cmdline in variants:
         p = os.path.join(out, "payload%s.bin" % suffix.replace("-", "_"))
-        payload(cfg, parts, os.path.join(out, "rescue.cpio.gz"), p, cmdline)
-        wrap(p, os.path.join(out, "os%s.bcd" % suffix))
+        payload(cfg, parts, os.path.join(out, "initramfs-full.cpio.gz"), p, cmdline)
+        bcd_image(p, os.path.join(out, "os%s.bcd" % suffix), "zd1", built)
+    bcd_image(os.path.join(out, "payload.bin"), os.path.join(out, "os-zd1l.bcd"), "zd1l", built)
     install(base_nand, os.path.join(out, "os.bcd"), os.path.join(out, "nand_os.bin"))
+    log("system-debug")
+    make_system(cfg, parts, sysroot, version, built, mcu_app, debug=True)
+    cpio(sysroot, out, "system-debug", slot=True)
     # the emulator's dev boot: the debug system as one plain initramfs loaded straight into SDRAM, its init as /init
     log("initramfs-dev")
     os.symlink("sbin/init", os.path.join(sysroot, "init"))
@@ -243,7 +250,7 @@ def assemble(cfg, parts, out, version, built, base_nand):
         os.path.join(out, "initramfs-dev.cpio"),
         os.path.join(out, "payload_dev.bin"),
         "zd1.selftest zd1.debug",
-        dev=True,
+        how="dev",
     )
 
 
@@ -277,10 +284,11 @@ def main():
     ap.add_argument("--version", help="assemble: the version in /etc/os-release")
     ap.add_argument("--built", default="", help="assemble: the build date in /etc/os-release")
     ap.add_argument("--out", help="assemble: where the images go")
+    ap.add_argument("--mcu-app", help="assemble: the MCU's app of the same release (zd1.dmb), carried by the system")
     a = ap.parse_args()
     cfg = tomllib.load(open(os.path.join(HERE, "os.toml"), "rb"))
     if a.cmd[:1] == ["assemble"]:
-        assemble(cfg, a.parts, a.out, a.version, a.built, a.base_nand)
+        assemble(cfg, a.parts, a.out, a.version, a.built, a.base_nand, a.mcu_app)
     elif a.cmd[:1] == ["mini"] and len(a.cmd) == 2:
         log(os.path.relpath(mini(a.cmd[1]), REPO))
     else:

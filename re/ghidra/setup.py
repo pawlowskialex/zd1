@@ -39,16 +39,16 @@ def mcu_app():
     return bytes(ihex.image(open(paths.MCU_STOCK_HEX).read(), 0x80000000, 0x40000)[1]).rstrip(b"\xff")
 
 
-def bl2_stages():
-    """(stage 1, stage 2) of the module's BL2 partition (docs/module/boot-chain.md, "Boot header")."""
-    b = open(paths.MODULE_BL2, "rb").read()
+def bl2_stages(path=paths.MODULE_BL2):
+    """(stage 1, stage 2) of a module BL2 partition (docs/module/boot-chain.md, "Boot header")."""
+    b = open(path, "rb").read()
     if b[0x30:0x38] != b"MetaInfo" or b[0x80:0x84] != b"\x55\x55\xaa\xaa":
-        sys.exit("%s: no MetaInfo + boot header" % paths.MODULE_BL2)
+        sys.exit("%s: no MetaInfo + boot header" % path)
     (base,) = struct.unpack_from("<I", b, 0x20)  # the partition's NAND address + 0x80
     s1_words, _, _, _, _, s2_nand, s2_len = struct.unpack_from("<7I", b, 0x90)
     s2 = b[s2_nand - base + 0x80 :][:s2_len]
     if len(s2) != s2_len:
-        sys.exit("%s: stage 2 runs past the partition" % paths.MODULE_BL2)
+        sys.exit("%s: stage 2 runs past the partition" % path)
     return b[0x98 : 0x98 + 8 * s1_words], s2
 
 
@@ -113,6 +113,14 @@ IMAGES = {
     ),
     "bl2": (
         lambda: bl2_stages()[1],
+        "ARM:LE:32:v5t",
+        0x60008000,
+        ["Bl2Pre.java", "Bl2Thumb.java", "Bl2Recover.java"],
+        [("NetDump.java", ["{out}"])],
+        [],
+    ),
+    "bl2-zd1l": (  # the Lightning model's BL2 (blobs/zd1l/module/bl2.bin, "The ZD1L BL2" in docs/module/boot-chain.md)
+        lambda: bl2_stages(paths.ZD1L_BL2)[1],
         "ARM:LE:32:v5t",
         0x60008000,
         ["Bl2Pre.java", "Bl2Thumb.java", "Bl2Recover.java"],

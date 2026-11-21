@@ -42,7 +42,7 @@ pub fn main() {
             Err(e) => die(&e),
         },
         ["get", key] => match crate::get(&recs, key) {
-            Some(d) => println!("{}", d.iter().map(|b| format!("{b:02x}")).collect::<String>()),
+            Some(d) => println!("{}", zd1_sys::hex(d)),
             None => die(&format!("no live {key}")),
         },
         ["list"] => {
@@ -50,7 +50,7 @@ pub fn main() {
                 let v = if ["MAC0", "MAC1", "GUID"].contains(&r.key.as_str()) {
                     "(masked)".to_string()
                 } else {
-                    r.data.iter().map(|b| format!("{b:02x}")).collect()
+                    zd1_sys::hex(r.data)
                 };
                 println!("{} {v}", r.key);
             }

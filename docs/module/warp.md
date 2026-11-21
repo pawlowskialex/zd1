@@ -721,7 +721,7 @@ Probing needs the unit owner's OK (`AGENTS.md`). It touches only RAM and registe
   reference model is not ground truth.
 - **Static**: the KnOS app decompiled (`re/ghidra/setup.py module-app`). Warp blobs: `llvm-objcopy -I binary -O
   elf32-tradlittlemips`, then `llvm-objdump -d --triple=mipsel`; kernel modules `llvm-objdump -dr`; the Nokia kernel
-  `blobs/module/nokia-hd1/kernel.bin` loads at 0xC0008000 (`newdma_blockmove_create` 0xC0031FD4).
+  `blobs/nokia-hd1/kernel.bin` loads at 0xC0008000 (`newdma_blockmove_create` 0xC0031FD4).
   `python3 -I re/netmodule/sol_dump.py BLOB MEM1 MEM0 N` prints a Sol program slot by slot.
 - **Emulator first**: `zemu run stock --keep` gives the KnOS shell on 127.0.0.1:4555, so `warprun.py`
   and the probes run unchanged. The Warp model hangs where section 3 says the unit does; addresses section 3
@@ -730,7 +730,7 @@ Probing needs the unit owner's OK (`AGENTS.md`). It touches only RAM and registe
 ### Vendor programs (reference material) [RE]
 Useful as working examples; we replace them. Loops below use the section 5 decode (body S..J+1).
 - **Nokia's WarpSol** (`wslsepp_warp` in Nokia's `JukeBlox_Release_ELX`, 0x9BA148, 0x6A84 bytes; kept as
-  `blobs/module/nokia-hd1/wslsepp_warp.bin`, extracted by `tools/zeppelin/warp/warpblob.py`; `solprobe.py` reads it): linked at 0x61FC0000, `$gp`
+  `blobs/nokia-hd1/wslsepp_warp.bin`, extracted by `tools/zeppelin/warp/warpblob.py`; `solprobe.py` reads it): linked at 0x61FC0000, `$gp`
   0x61FC8000; `sp` = 0x400, cache invalidate, Sol init, then a mailbox loop. Sol driver: load 0x4E78, start 0x4DD8,
   wait 0x4EA8, unit register write 0x4D2C, block move 0x4BA0, DMA wait 0x4C44. Biquad EQ stage 0x4ED4: maps unit 4 =
   0xE490 | in, unit 5 = 0xE409 | out << 4, writes coefficients to a parameter block, runs; once per band, banks 3

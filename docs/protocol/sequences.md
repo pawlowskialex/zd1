@@ -7,13 +7,15 @@ section says whether it has been done on the unit [HW] or only read from code [R
 1. PA17 low, PA04 low (module off). Attach: **PA04 high**, wait **1200 ms**.
 2. **PA17 high**, SPI0 on (mode 3), wait **200 ms**, then 1 s.
 3. Wait for PA20 high, read **0x11**: `20 00` = booting, keep polling while PA20 is high (on a read timeout retry after
-   300 ms); `21 00` = ready; `20 00` = booting (also our boot stub); `23 00` = BL2. Stock app: ready ~15 s after PA17.
+   300 ms); `21 00` = ready; `20 00` = booting (also our boot stub, once our MCU has knocked: 0xC4 = 0xFFFF; to anyone else
+   it answers nothing); `23 00` = BL2. Stock app: ready ~15 s after PA17.
 4. While PA20 is high: read **0x0C** → register number → V-read that register → dispatch; repeat until PA20 drops.
    After ready the stock app queues ~24-32 notifications (0x47 DRC XML views, 0x32 "21", 0x38 IP, 0x39, 0x3A, 0x40,
    0x56, 0xD1). Then re-read 0x11 every 3 s as a heartbeat.
 5. Supervision: stock retries a read that fails for 60 s, 30 times (~31 min), then raises system error 5/10/11 and
    powers the module off [RE]. Our firmware: the bring-up at boot waits 180 s for ready, then powers the module off;
-   a system slot our boot stub was told to start gets 90 s, then the module is power-cycled onto another slot
+   a system slot our boot stub was told to start gets 90 s (the rescue 180 s), then the module is power-cycled onto
+   another slot
    (`docs/module/storage.md`, The boot); `Module POWER` waits up to its timeout (120 s by default).
 6. Stock setup task after ready [RE]: read 0x25/0x26/0x27 (the "9112" gate on 0x25), 0x45 `R pssCne/CneId`, `W
    SystemHost/HostVersion = 2.04.05`, read 0x32; then the network-settings sync into the MCU user page.
@@ -36,7 +38,8 @@ section says whether it has been done on the unit [HW] or only read from code [R
 
 ## Into BL2 (module recovery)
 - **HCR** [HW]: W 0x28 = `21 00` while the image is ready (the stock app, or our `zd1-linkd`). The app writes the BL2
-  mailbox and resets itself through the watchdog; BL1 sees the mailbox and starts BL2, which reports **0x11 = 0x2300**
+  mailbox and resets itself through the watchdog (`zd1-linkd` with an MCU app staged answers a bootloader's 0x2120
+  as BL2 instead: `docs/mcu/bootloader-hbl.md`); BL1 sees the mailbox and starts BL2, which reports **0x11 = 0x2300**
   and serves its web updater.
 - **Leave SPI quiet while BL2 starts** [HW]. Sending HCR every 200 ms left BL2's SPI layer answering nothing. Our
   `zd1 module bl2`: power-cycle, one HCR at the first 0x2100, 15 s with no SPI traffic, then read 0x11 only
@@ -52,17 +55,53 @@ section says whether it has been done on the unit [HW] or only read from code [R
 ## Module firmware through the MCU bootloader (`zd1 dfu relay`) [HW]
 DFU on the MCU → `coproc-init` → the bootloader powers the module, sends HCR 0x2120 once the image is ready, waits
 for BL2 (coproc status 0x12) → HCR 0x2220 → XModem-1K over 0x2C (module → MCU: 'C'/ACK/NAK) and 0x2D (MCU → module:
-frames) → end of transfer → BL2 has written the image as it arrived. On the unit with the stock app and with our OS
+frames) → EOT → BL2 burns what it got, then starts the module on it; the bootloader holds the module powered 30 s
+meanwhile (`Dfu::relay`: our firmware started sooner cut the burn [HW 2026-11-20]). On the unit with the stock app and with our OS
 (`docs/mcu/bootloader-dfu.md`). Our MCU app does the same transfer itself (`zd1 xmodem`: HCR 0x21,
 then 0x2220).
+
+## MCU (host) firmware over SPI — the mirror direction
+The same XModem engine runs over the **same two registers with the roles swapped**: this is how the ZD1L's BL2
+flashes the MCU ("host firmware"), the reverse of the module-image relay above, and how our OS gives the MCU its app
+(the MCU follows its OS: `docs/mcu/bootloader-hbl.md`).
+
+| | Module image (relay / `zd1 xmodem`) | **MCU (host) firmware** |
+|---|---|---|
+| trigger | HCR 0x2220 | **HCR 0x2120** from the MCU's bootloader, BL2 (status 0x2300), then **DCR 0x2A = 0x2423** |
+| data frames | 0x2D (MCU → module) | **0x2C (module → MCU)**, 128-byte SOH blocks |
+| control bytes | 0x2C (module → MCU) | **0x2D (MCU → module)** |
+| XModem sender | MCU (bootloader/app) | **module BL2**, or our OS playing BL2 (`zd1-linkd`, `mcufw.rs`) |
+| XModem receiver | module BL2 | **the MCU's bootloader**: the ZD1L's Net HBL, our ZD1 preloader; the end: status 0x2500 (the stock app's `voBcoMgrXmodemTask`, HCR 0x2520: dead code) |
+
+Framing both ways [RE `re/mcu/work/bco_link_notes.txt`]: `[SOH 0x01 = 128 B | STX 0x02 = 1024 B][blk][~blk][data]
+[CRC16-CCITT]`; control `C` (0x43, CRC-mode start) / ACK 0x06 / NAK 0x15 / CAN 0x18 ×3 / EOT 0x04 (first NAKed, then
+ACKed); status on reg 0x29 by IRQ.
+
+- **BL2 side** [RE static strings, `blobs/zd1l/module/bl2.bin`]: the ZD1L's 2012 BL2 stages the MCU `.dmb` in
+  `MemoryBlobFirmwareUpdateService`, brings up `AVRPlayerService` (the SPI transport to the AVR/MCU) and transmits it
+  with `XModemOverSPI` in `RRegXModemTxMode`. Our 2010 BL2 has none of this (`docs/module/boot-chain.md`, "The ZD1L
+  BL2").
+- **MCU side**: the receiver primitive exists in the stock MCU app (`voBcoMgrXmodemTask`, started by HCR 0x2520) but
+  is **dead code** there — the NFU task never arms it (`docs/protocol/spi-registers.md`, 0x2520). On the ZD1L the
+  receiver is B&W's bootloader (Net HBL 2.07, read from a ZD1L: `docs/mcu/bootloader-hbl.md`); a ZD1L flashed the
+  stock-patch telnet-hook `.dmb` this way [HW 2026-11-16]. On the ZD1 our preloader speaks the same, with our OS as
+  BL2 [HW 2026-11-19].
+- **Our firmware rides it at bootloader time**: our OS asks on 0xD7, the MCU (allowed by a person) goes to its
+  bootloader (the preloader, the HBL), which takes the app from our OS playing BL2. The running app keeps 0x2C as the
+  control-answer channel while *it* sends (relay / `XmFrame`); the native MCU↔OS link lives at 0xC0+
+  (`protocol/spi/src/spec.rs`).
+- **Reading MCU flash over SPI** (the owner's "extended hook") is the sender direction: an MCU routine streams flash
+  `0x80000000–0x8003FFFF` out as XModem frames on 0x2D to a module-side collector — what `dm870.c`/`XmFrame` already
+  do, with flash as the source.
 
 ## Telnet shell on and off (stock module) [HW]
 - On: V-write 0x75 = port as ASCII (8 bytes, e.g. "23"), then F-write 0x76 = `05 00`. Off: 0x77 = "50001", 0x76 =
   `04 00`. Our firmware: `zd1 reg write` (`docs/module/knos.md`). Too soon after ready it has no effect; a few seconds later it works.
 
 ## Module asks the MCU to update itself (0x11 = 0x27) [RE]
-Stock on variant-2 boards: set ISP_FORCE, GPLP flag 0x1000000, mute, module hard-off, 200 ms, watchdog reset → MCU
-DFU. Variant 1 (ours) ignores it.
+Stock on variant-2 boards: set ISP_FORCE, GPLP flag 0x1000000, mute, module hard-off, 200 ms, watchdog reset → the
+MCU's bootloader (variant 2 is the ZD1L: its Net HBL, no USB, takes the app from BL2: `docs/mcu/bootloader-hbl.md`).
+Variant 1 ignores it. Our firmware has its own request for this: 0xD7.
 
 ## Shutdown [RE]
 Graceful: W 0xE2 = `00 00`, wait ≤ 5 s for a 0xE2 notification with b0 = 1, then PA17 low, 20 ms, PA04 low, SPI pins
@@ -109,5 +148,7 @@ firmware. Registers: `registers.md`.
    else stray in any reply (an MCU build that logged them); with the idle byte none in 900, nor in 12 Spotify toggles
    at the page's pace, which had 1 in 12 before; the emulator's model never showed it].
 On the unit [HW 2026-10-28]: the hello at boot and after `zd1-linkd` restarts, volume both ways, keys, play/pause
-(`status.md`). The relay to BL2 against our OS gets BL2-ready [EMU 2026-10-28, `zemu run --mcu`,
-`zd1 dfu relay --handover-only`].
+(`status.md`). The relay to BL2 against our OS [HW 2026-10-27, `docs/mcu/bootloader-dfu.md`].
+Our OS's other flows (the boot's knock and slot answer, the State record 0xD6, the MCU's app 0xD7, a slot to try
+0xD8, the host link from the network 0xD9): `docs/protocol/registers.md`, `docs/module/storage.md`,
+`docs/mcu/bootloader-hbl.md`, `docs/protocol/net.md`.

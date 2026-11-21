@@ -6,12 +6,12 @@
 //! module's status.
 
 use crate::codec::{self, Msg, Typed, Val};
+use crate::link::Link;
 use crate::spec::{Field, NetMode, Record, Ty};
-use crate::usb::Usb;
 use crate::{Error, Mcu, Result, msg};
 
 /// A setting's value (secrets read back as `(set)` or empty).
-pub async fn get<U: Usb>(m: &mut Mcu<U>, key: &str) -> Result<String> {
+pub async fn get<L: Link>(m: &mut Mcu<L>, key: &str) -> Result<String> {
     let v = m.call(&msg::GetSetting { key: key.into() }).await?.value;
     match v.strip_prefix('!') {
         Some(why) => Err(Error::Failed(format!("{key}: {why}"))),
@@ -21,7 +21,7 @@ pub async fn get<U: Usb>(m: &mut Mcu<U>, key: &str) -> Result<String> {
 
 /// Change a setting ("" = back to its default), or do an action (`spec::actions()`: the value says what): the value as
 /// the module has it now (an action's: empty).
-pub async fn set<U: Usb>(m: &mut Mcu<U>, key: &str, value: &str) -> Result<String> {
+pub async fn set<L: Link>(m: &mut Mcu<L>, key: &str, value: &str) -> Result<String> {
     let v = m.call(&msg::SetSetting { key: key.into(), value: value.into() }).await?.value;
     match v.strip_prefix('!') {
         Some(why) => {
@@ -33,7 +33,7 @@ pub async fn set<U: Usb>(m: &mut Mcu<U>, key: &str, value: &str) -> Result<Strin
 
 /// A record of the module OS (`ModRecord`), its bytes: a message of the spec, read in pieces of 240 bytes. A record
 /// the module hasn't comes back as `!` and why.
-pub async fn record<U: Usb>(m: &mut Mcu<U>, r: Record) -> Result<Vec<u8>> {
+pub async fn record<L: Link>(m: &mut Mcu<L>, r: Record) -> Result<Vec<u8>> {
     let mut buf = Vec::new();
     loop {
         let p = m.call(&msg::ModRecord { record: r, offset: buf.len() as u16 }).await?;
@@ -50,7 +50,7 @@ pub async fn record<U: Usb>(m: &mut Mcu<U>, r: Record) -> Result<Vec<u8>> {
 }
 
 /// The State record, decoded: the speaker as the module OS knows it (its settings and its status).
-pub async fn state_msg<U: Usb>(m: &mut Mcu<U>) -> Result<Msg> {
+pub async fn state_msg<L: Link>(m: &mut Mcu<L>) -> Result<Msg> {
     let st = codec::decode(&record(m, Record::State).await?)?;
     if st.name() != msg::State::NAME {
         return Err(Error::Failed(format!("the State record holds a {}", st.name())));
@@ -59,12 +59,12 @@ pub async fn state_msg<U: Usb>(m: &mut Mcu<U>) -> Result<Msg> {
 }
 
 /// The State record as its type.
-pub async fn state<U: Usb>(m: &mut Mcu<U>) -> Result<msg::State> {
+pub async fn state<L: Link>(m: &mut Mcu<L>) -> Result<msg::State> {
     Ok(msg::State::from_msg(&state_msg(m).await?))
 }
 
 /// A list record, its entries as their type.
-pub async fn list_of<U: Usb, T: Typed>(m: &mut Mcu<U>, r: Record) -> Result<Vec<T>> {
+pub async fn list_of<L: Link, T: Typed>(m: &mut Mcu<L>, r: Record) -> Result<Vec<T>> {
     let l = codec::decode_list(&record(m, r).await?)?;
     if let Some(e) = l.iter().find(|e| e.name() != T::NAME) {
         return Err(Error::Failed(format!("{r}: a {} where a {} belongs", e.name(), T::NAME)));
@@ -75,23 +75,23 @@ pub async fn list_of<U: Usb, T: Typed>(m: &mut Mcu<U>, r: Record) -> Result<Vec<
 /// The Wi-Fi networks around the speaker (the `Scan` record): the module's last scan, the strongest first, one entry
 /// per SSID; the module starts another scan at each read, so the first read of a fresh radio may be empty and a read
 /// a few seconds later has it. Err `Failed` without a radio (the Wi-Fi off).
-pub async fn scan<U: Usb>(m: &mut Mcu<U>) -> Result<Vec<msg::ScanEntry>> {
+pub async fn scan<L: Link>(m: &mut Mcu<L>) -> Result<Vec<msg::ScanEntry>> {
     list_of(m, Record::Scan).await
 }
 
 /// The Wi-Fi networks the speaker knows, the one it prefers first (their keys stay on the speaker).
-pub async fn networks<U: Usb>(m: &mut Mcu<U>) -> Result<Vec<msg::KnownNetwork>> {
+pub async fn networks<L: Link>(m: &mut Mcu<L>) -> Result<Vec<msg::KnownNetwork>> {
     list_of(m, Record::Networks).await
 }
 
 /// The snapservers on the speaker's networks (mDNS): the module's last look, and it looks again at each read (a
 /// first read may be empty: read again two seconds later).
-pub async fn servers<U: Usb>(m: &mut Mcu<U>) -> Result<Vec<msg::Snapserver>> {
+pub async fn servers<L: Link>(m: &mut Mcu<L>) -> Result<Vec<msg::Snapserver>> {
     list_of(m, Record::Servers).await
 }
 
 /// The controllers paired with AirPlay, the oldest first.
-pub async fn pairings<U: Usb>(m: &mut Mcu<U>) -> Result<Vec<msg::Pairing>> {
+pub async fn pairings<L: Link>(m: &mut Mcu<L>) -> Result<Vec<msg::Pairing>> {
     list_of(m, Record::Pairings).await
 }
 
@@ -113,7 +113,7 @@ pub fn shown(f: &Field, v: &Val) -> String {
 }
 
 /// Every setting with its value, from the State record (one read).
-pub async fn list<U: Usb>(m: &mut Mcu<U>) -> Result<Vec<(String, String)>> {
+pub async fn list<L: Link>(m: &mut Mcu<L>) -> Result<Vec<(String, String)>> {
     let st = state_msg(m).await?;
     Ok(st.fields().filter(|(f, _)| f.set).map(|(f, v)| (f.key(), shown(f, v))).collect())
 }
@@ -137,7 +137,7 @@ pub enum Wifi<'a> {
 
 /// Join `ssid`: added to the known networks (or its key changed) and put first, in one write (`wifi.add`); a Wi-Fi
 /// switched off comes on, by DHCP.
-pub async fn join<U: Usb>(m: &mut Mcu<U>, ssid: &str, how: Wifi<'_>) -> Result<()> {
+pub async fn join<L: Link>(m: &mut Mcu<L>, ssid: &str, how: Wifi<'_>) -> Result<()> {
     if ssid.is_empty() || ssid.len() > 32 {
         return Err(Error::Failed("an SSID has 1 to 32 bytes".into()));
     }
@@ -153,23 +153,23 @@ pub async fn join<U: Usb>(m: &mut Mcu<U>, ssid: &str, how: Wifi<'_>) -> Result<(
 }
 
 /// Forget a known network.
-pub async fn forget<U: Usb>(m: &mut Mcu<U>, ssid: &str) -> Result<()> {
+pub async fn forget<L: Link>(m: &mut Mcu<L>, ssid: &str) -> Result<()> {
     set(m, "wifi.forget", ssid).await.map(drop)
 }
 
 /// Put a known network first: the speaker prefers it when it sees it.
-pub async fn prefer<U: Usb>(m: &mut Mcu<U>, ssid: &str) -> Result<()> {
+pub async fn prefer<L: Link>(m: &mut Mcu<L>, ssid: &str) -> Result<()> {
     set(m, "wifi.first", ssid).await.map(drop)
 }
 
 /// The module back to its defaults: every setting (`all`: the known networks and AirPlay's pairings too).
-pub async fn reset<U: Usb>(m: &mut Mcu<U>, all: bool) -> Result<()> {
+pub async fn reset<L: Link>(m: &mut Mcu<L>, all: bool) -> Result<()> {
     set(m, "reset", if all { "all" } else { "settings" }).await.map(drop)
 }
 
 /// Every setting the speaker would take back (the secrets aren't readable, so none are among them): KEY=VALUE lines,
 /// the defaults left out; `import` writes them again.
-pub async fn export<U: Usb>(m: &mut Mcu<U>) -> Result<String> {
+pub async fn export<L: Link>(m: &mut Mcu<L>) -> Result<String> {
     let st = state_msg(m).await?;
     Ok(st
         .fields()
@@ -188,7 +188,7 @@ fn generated_name(v: &str) -> bool {
 
 /// Settings from `export`'s lines (`#` comments and blank lines skipped), each written; the keys this firmware's
 /// module refuses are listed in the error, the others stay written.
-pub async fn import<U: Usb>(m: &mut Mcu<U>, text: &str) -> Result<usize> {
+pub async fn import<L: Link>(m: &mut Mcu<L>, text: &str) -> Result<usize> {
     let mut n = 0;
     let mut refused = Vec::new();
     for l in text.lines().map(str::trim).filter(|l| !l.is_empty() && !l.starts_with('#')) {
@@ -210,7 +210,7 @@ pub async fn import<U: Usb>(m: &mut Mcu<U>, text: &str) -> Result<usize> {
 }
 
 /// The Wi-Fi off (the network stays stored: `join`, or `wifi.mode`, brings it back).
-pub async fn wifi_off<U: Usb>(m: &mut Mcu<U>) -> Result<()> {
+pub async fn wifi_off<L: Link>(m: &mut Mcu<L>) -> Result<()> {
     set(m, "wifi.mode", "off").await?;
     Ok(())
 }

@@ -15,11 +15,12 @@ load into this kernel.
 ```
 BL1 ──► stock preloader ──► our stage 2 at 0x60008000 = trampoline ──► boot stub (0x61F00000)
           (Fletcher check: a corrupt image still falls back to BL2)        │ pads, SPI link up (status 0x2000),
-                                                                             │ the MCU's answer on 0xC4: a slot or the rescue
+                                                                             │ after our MCU's knock, its answer on 0xC4: a slot,
+                                                                             │ the rescue, or the rescue to install itself
                                                                              └► kernel inflated → 0x60008000 (+ the rescue's
                                                                                 initramfs), ATAGs (machine 0x270F, ttyS1), jump
 ```
-The image is a normal `.bcd` (stock preloader, CnE and resources kept), so the MCU bootloader's relay and BL2's
+The image is a normal `.bcd` (B&W's preloader and the model's CnE and HWID, no resources), so the MCU bootloader's relay and BL2's
 web updater install it like any app and BL2 stays the way back: `zd1 module esc` reaches BL2 through BL1's
 serial menu whatever the image does, and `zd1-linkd` answers HCR 0x21 (`zd1 module bl2`) once Linux is up. The
 boot stub (`module/boot`) reports 0x2000 (booting) while it runs, so the stock MCU doesn't start its setup task until
@@ -82,7 +83,7 @@ kHz, 256-frame periods; `speaker-test` programs the AV PLL, port 2 and SuluDMA c
 block-moved from the ALSA buffer into an SRAM packet (header `0x26000804`, then L/R words with the sample in [31:8],
 port format 0x29) [EMU].
 
-How the driver plays [RE: `snd-sulu.ko`, `av-device.ko`, the kernel's `newdma_*` from `blobs/module/nokia-hd1/kernel.bin`
+How the driver plays [RE: `snd-sulu.ko`, `av-device.ko`, the kernel's `newdma_*` from `blobs/nokia-hd1/kernel.bin`
 at 0xC0008000, symbols from `tools/zeppelin/jtag/kallsyms.py`]: SuluDMA moves two SRAM packets in turn to the PTU FIFO,
 all the time, silence (a block move from 0xB2000000) while nothing plays; ALSA's start and stop only set a flag and
 reset the period counter (`sulu_av_cmd`), so the I2S never stops. Each finished packet interrupts

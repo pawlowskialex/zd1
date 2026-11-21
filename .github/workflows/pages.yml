@@ -3,8 +3,10 @@
 # image and the page, and pushes what it builds to the Cachix cache (vars.CACHIX_NAME, pawlowskialex-zd1; the token in
 # secrets.CACHIX_AUTH_TOKEN), so later runs fetch what hasn't changed.
 #
-# A release (a tag v*, published on GitHub) gets its three images and a `manifest.json` (from `zd1 image`) as
-# assets. Then, and on every push to main, the site is rebuilt from EVERY published release: the page beside
+# A release (a tag v*, published on GitHub) gets its images and a `manifest.json` (from `zd1 image`) as assets: the MCU
+# firmware, the system, the boot image, the Lightning model's .fw (its first install, through its BL2), and the system
+# signed for the network update (docs/protocol/net.md) with the release key, the secret ZD1_RELEASE_KEY of the environment
+# `release` (tags v* only; `zd1 keygen`; its public half is module/os/rootfs/etc/zd1/keys/release.pub, in the image); without the secret, no signed image. Then, and on every push to main, the site is rebuilt from EVERY published release: the page beside
 # images/<version>/... and images/index.json, newest release first. Same origin: the page fetches nothing from the
 # GitHub API and no image until it installs it.
 name: pages
@@ -19,6 +21,9 @@ jobs:
   assets:
     if: github.event_name == 'release'
     runs-on: ubuntu-latest
+    # the release key is the release environment's secret, which only tags v* may deploy from: a pull request's run
+    # (refs/pull/..., a fork's or a branch's, whatever its workflow says) never gets it
+    environment: release
     steps:
       - uses: actions/checkout@v4
       - uses: DeterminateSystems/nix-installer-action@v16
@@ -26,6 +31,7 @@ jobs:
         if: ${{ vars.CACHIX_NAME != '' }}
         with: { name: "${{ vars.CACHIX_NAME }}", authToken: "${{ secrets.CACHIX_AUTH_TOKEN }}" }
       - name: build the images
+        env: { ZD1_RELEASE_KEY: "${{ secrets.ZD1_RELEASE_KEY }}" }
         run: |
           set -eu
           v="${GITHUB_REF_NAME#v}"
@@ -34,6 +40,13 @@ jobs:
           os="$(nix build .#os-image --print-out-paths)"
           cp "$os/system.cpio.gz" "out/system-$v.cpio.gz"
           cp "$os/os.bcd" "out/os-$v.bcd"
+          cp "$(nix build .#zd1l-fw --print-out-paths)/zd1l.fw" "out/zd1l-$v.fw"
+          if [ -n "$ZD1_RELEASE_KEY" ]; then
+            key="$RUNNER_TEMP/release.key"
+            (umask 077 && printf '%s\n' "$ZD1_RELEASE_KEY" > "$key")
+            nix run .#zd1 -- sign "out/system-$v.cpio.gz" --key "$key" -o "out/system-$v.signed"
+            rm "$key"
+          fi
           nix run .#zd1 -- image out/* > out/manifest.json
           cat out/manifest.json
       - name: attach them to the release

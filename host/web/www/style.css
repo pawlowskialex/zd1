@@ -16,6 +16,7 @@
 @import url("css/components/tag.css") layer(components);
 @import url("css/components/notice.css") layer(components);
 @import url("css/components/banner.css") layer(components);
+@import url("css/components/choice.css") layer(components);
 @import url("css/components/progress.css") layer(components);
 @import url("css/components/dialog.css") layer(components);
 @import url("css/components/terminal.css") layer(components);

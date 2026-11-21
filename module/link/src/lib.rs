@@ -23,6 +23,8 @@ use zd1_spi::spec::status;
 /// module's longest was 256 (DRC XML on 0x47, in pieces).
 pub const NOTE_MAX: usize = 1024;
 const NOTES: usize = 16;
+/// Bytes queued in the TX FIFO ahead of an escape pair (poll).
+const PAIR_AHEAD: u32 = 48;
 const VALUE_MAX: usize = 48;
 const VALUES: usize = 24; // zd1-linkd keeps ~16 (versions, name, MAC, play state, network,
 // volume, config, DRC ack); when full, the last slot is reused
@@ -85,6 +87,7 @@ pub struct Link<M: Mmio> {
     regs: [u16; 256],
     status: u16, // what 0x11 answers: READY unless set_status
     status_unread: bool,
+    muted: bool,
     rx_count: u32,
     notes: [Note; NOTES],
     nh: usize,
@@ -115,6 +118,7 @@ impl<M: Mmio> Link<M> {
             regs: [0; 256],
             status: status::READY,
             status_unread: true,
+            muted: false,
             rx_count: 0,
             notes: [NOTE; NOTES],
             nh: 0,
@@ -128,6 +132,13 @@ impl<M: Mmio> Link<M> {
             #[cfg(feature = "trace")]
             reqs: 0,
         }
+    }
+
+    /// Muted, the link takes requests (writes are kept and come out of [`Link::next_event`]) but answers none and
+    /// keeps the request line low: to the MCU the module is still silent. Our boot stub stays so until our MCU has
+    /// knocked (`boot::KNOCK` on reg 0xC4).
+    pub fn set_muted(&mut self, m: bool) {
+        self.muted = m;
     }
 
     /// What reg 0x11 answers from now on (default [`status::READY`]); the MCU is told again through 0x0C.
@@ -348,6 +359,15 @@ impl<M: Mmio> Link<M> {
                 self.reqs = self.reqs.wrapping_add(1);
             }
             let (typ, reg, arg) = log;
+            if self.muted {
+                if typ == WRITE_F {
+                    self.regs[reg as usize] = arg;
+                }
+                if let Some(e) = ev {
+                    self.push_event(e);
+                }
+                continue;
+            }
             match typ {
                 READ_F => self.read_f(reg),
                 framing::READ_V => self.read_v(reg),
@@ -370,11 +390,24 @@ impl<M: Mmio> Link<M> {
         // an escape pair (27 27 / 27 01) goes into the FIFO whole: split across two refills, the MCU can clock the
         // 0x27 and then the idle 0xFF, a broken escape (the stock firmware asserts in ercBcoSpiRead). Every byte is
         // stuffed, so walking from the start a 0x27 is always the first of a pair.
+        // A pair's second byte written after the MCU has clocked out everything ahead of the first comes behind an
+        // idle 0xFF, a broken escape all the same: an interrupt or a preemption between the two writes is enough when
+        // the FIFO is nearly empty (the ZD1L's MCU bootloader then waits 5 s for the bytes it misses, gives up the
+        // read and with it the update [EMU 2026-11-19, docs/mcu/bootloader-hbl.md]). So a pair goes in only behind
+        // PAIR_AHEAD queued bytes, idle ones if there is nothing else: 128 us of the MCU's clock at 3 MHz.
         let tx = &mut self.tx;
         while tx.pos < tx.len {
             let pair = tx.buf[tx.pos] == framing::ESC && tx.pos + 1 < tx.len;
-            if pair && spi_slave(&mut self.m).tx_free() < 2 {
-                break;
+            if pair {
+                let free = spi_slave(&mut self.m).tx_free();
+                let queued = TX_DEPTH.saturating_sub(free);
+                let pad = PAIR_AHEAD.saturating_sub(queued);
+                if free < pad + 2 {
+                    break;
+                }
+                for _ in 0..pad {
+                    spi_slave(&mut self.m).tx(framing::IDLE);
+                }
             }
             if !spi_slave(&mut self.m).tx(tx.buf[tx.pos]) {
                 break;
@@ -385,7 +418,7 @@ impl<M: Mmio> Link<M> {
                 tx.pos += 1;
             }
         }
-        let want = self.status_unread || self.nn > 0;
+        let want = (self.status_unread || self.nn > 0) && !self.muted;
         request_line(&mut self.m, want);
     }
 }

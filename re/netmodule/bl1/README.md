@@ -2,12 +2,12 @@
 
 Captured 2026-10-19 on our unit with a capture image (the stock app plus a stub that copied SRAM to SDRAM before the
 app started; installed through BL2's web updater, read back with the module shell). BL1 sits in NAND block
-0 encrypted (`blobs/module/bl1.enc`, = the archive.org unit's); the boot ROM decrypts it into SRAM at 0x400000. The
+0 encrypted (`blobs/zd1/module/bl1.enc`, = the archive.org unit's); the boot ROM decrypts it into SRAM at 0x400000. The
 summary of what it does: `docs/module/boot-chain.md`.
 
 | File | What |
 |---|---|
-| `blobs/module/bl1.plain` | SRAM 0x400000-0x40869F as BL1 left it (0x869C = BL1's used length in NAND): code + its data/bss as of the hand-over (variables reflect that boot) |
+| `blobs/zd1/module/bl1.plain` | SRAM 0x400000-0x40869F as BL1 left it (0x869C = BL1's used length in NAND): code + its data/bss as of the hand-over (variables reflect that boot) |
 | `sram_at_stage2_entry.bin` | the whole 64 KB SRAM at the app's stage-2 entry: BL1, then the app preloader at 0x40DA00 (its stack 0x40D8CC-0x40D92C) |
 
 No per-unit data in either (checked: no MAC, no Wi-Fi strings).
@@ -48,7 +48,7 @@ No per-unit data in either (checked: no MAC, no Wi-Fi strings).
 ## Running it in the emulator
 `bl1_plain` can't be re-run as is (its packed data was overwritten by the unpacked copy). A re-runnable image =
 `sram_at_stage2_entry.bin[:0x8A08]` with 0x400010 patched to branch to 0x400688 (data in its post-boot state):
-`blobs/module/bl1.run`. `zemu run --nand --real-bl1` runs it and sets:
+`blobs/zd1/module/bl1.run`. `zemu run --nand --real-bl1` runs it and sets:
 - `core TimerFreerun true`: one-shot timers fire once and keep counting, so BL1's `threshold <= counter >> 4` helper
   sees its deadline;
 - `core TimerWaitPcs "405830"`: a counter read at 0x405830 with the deadline ahead halts the CPU until it (BL1's 2 s

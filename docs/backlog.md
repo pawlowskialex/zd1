@@ -4,10 +4,27 @@ Open work, grouped by area, roughly in priority order within each group. Each en
 and what is known. What already works: `status.md`; checks that need a person at the unit:
 `units/<unit>/hw-checks.md` (not in git). Remove an entry when it is done (the topic doc gets the result).
 
+## Updates and control over the network (`docs/protocol/net.md`, `docs/mcu/bootloader-hbl.md`)
+- **On the unit, what is left of the network link**: the pairing by the 5 s hold (6dbf94d); a provisional change that
+  cuts the link going back by itself; the hosted page over the network (below).
+- **The hosted page over the network in Chrome**: Local Network Access's permission and `ws://` to a private address
+  from https://pawlowskialex.github.io (Chrome 154 on: WebSockets); what Chrome says when it is refused, and that the
+  page's text matches. Then Edge, Brave, Opera.
+- **The MCU follows its OS on a ZD1L**: B&W's bootloader taking our app from our OS (emulator only,
+  `docs/mcu/bootloader-hbl.md`); needs a ZD1L owner.
+- **The ZD1L's first install from the page** (`zd1l.js`, no-cors to BL2; whole in the emulator): whether Chrome sends
+  BL2 the requests from the hosted page (Local Network Access, mixed content); the rest on a real ZD1L: Other models.
+- **A developer's key onto a speaker**: today `zd1 console run 'echo KEY > /data/zd1/keys/NAME.pub'` over USB; a
+  request of its own (gated, USB only) would make it a step of the page.
+- **Discovery**: browsers can't browse mDNS, so the page asks for an address; `zd1 --net` could find speakers
+  (`_zd1._tcp`, or the AirPlay records' host) and the page could list the addresses a USB connection reported.
+- **The page's keys** are in its origin's storage, which every page under the same GitHub Pages host shares; a
+  non-extractable WebCrypto key (X25519) would keep the secret out of reach, with snow on a resolver of its own.
+
 ## Module OS
 - **The page and the protocol's last pieces, checked on the unit** (`docs/web.md`, Order of work): on the unit since
-  2026-11-01 (4f2215a), the Wi-Fi's status and the scan seen working; the page in a browser, the actions, the
-  receivers' options, the amp's idle time and the Wi-Fi's failures are the open checks on the unit.
+  2026-11-01 (4f2215a), the Wi-Fi's status and the scan seen working; open on the unit: the Wi-Fi's failure cases (a wrong key, none in
+  range, two networks).
 - **A small API on the module for home automation** (Home Assistant): the State record as JSON (the same schema,
   `docs/module/settings.md`), settings writes, play / pause / volume / source, with a credential of its own; the
   USB-only rule for settings relaxes then (`decisions.md`).
@@ -78,8 +95,8 @@ and what is known. What already works: `status.md`; checks that need a person at
   it once the other source is silent.
 - **Stable USB identity**: macOS asks "Allow accessory to connect?" when the descriptors change; keep them as they are
   between builds (the serial number is fixed, "ZD1").
-- **The host link**: events as typed messages (source and module changes, keys) instead of only log text; a WinUSB
-  descriptor for Windows.
+- **The host link**: events as typed messages (source and module changes, keys) instead of only log text.
+- **Windows**: the WinUSB descriptors (bb0ea15) on a real Windows machine, and the page there.
 - **The transport keys after the CDC port went** (MCU feffd90; HID keeps play/pause, next, previous): not tried on
   the unit (a key starts Music on whatever the Mac plays to): the speaker's play/pause and next reaching the Mac.
 - **iPod dock** (USB host + iAP, `docs/mcu/stock-firmware.md`): not implemented.
@@ -89,12 +106,10 @@ and what is known. What already works: `status.md`; checks that need a person at
   (61 KB/s of ~95). Where the bytes go is unknown (the guess: the module's UART FIFO overruns while the NAND is
   written). Worth it only if updates must get faster: the driver's overrun bit, JTAG, or a larger frame window if the
   losses come in bursts (`module/updater.md`).
-- **The web page as the installer** (`docs/web.md`: the plan, in its order of work): `zd1 install` with the relay and
-  `zd1 rollback` on the unit as one flow (`install --no-bcd` has run there); the Pages workflow's first run on GitHub;
-  the page's three views (triage, installer, updater and configurator) with backups kept in the browser; interlocks
-  (`docs/web.md`, Interlocks).
-- **Rewriting BL2** from a running image: the stock app's `fburn ebin 0 0xA0000 0x160000` + XModem over the module
-  console (`zd1 console`; its y/n confirm never sees an answer over telnet). Untested.
+- **The page's Roll back on the unit** (`zd1 rollback` has run there as one flow, 2026-11-03).
+- **Rewriting BL2** from a running image: the stock app's `fburn ebin 0 0xA0000 <partitionLength>` (0x160000 on our
+  ZD1, 0x1A0000 on the ZD1L) + XModem over the module console (`zd1 console`; its y/n confirm never sees an answer
+  over telnet). Untested.
 - **The MAC back without the stock app**: BL2's serial menu "8 program MAC0" on the module console. Untested.
 - **A NAND programmer image**: the spare-area layout and ECC are known (`module/boot-chain.md`); needs the chip's
   bad-block list and whatever the boot ROM expects of block 0.
@@ -105,14 +120,28 @@ and what is known. What already works: `status.md`; checks that need a person at
 ## Other models
 - **The Zeppelin Air with Lightning** (`docs/mcu/stock-firmware.md`): our MCU firmware ignores the board variant, and
   BL2's SPI XModem (the relay, `zd1 xmodem`) takes our image whatever HWID the module has (`docs/module/boot-chain.md`)
-  [EMU]. Open: its MCU bootloader, in no `.fw`, whose relay our installer needs. Before a first install on one: the
-  module's PersParam on the stock console and a DFU backup of the MCU; the way back is the stock module image inside
-  `zd1lv20435.fw` (HWID 0xBE).
+  [EMU]. Much is now answered on hardware (issue #1): its BL2 is in hand (`blobs/zd1l/module/bl2.bin`, 2012 MR5 build),
+  its web updater **takes the whole `.fw` and flashes both the module `.bcd` and the MCU `.dmb`** — the MCU part over
+  SPI XModem (`docs/protocol/sequences.md`, "MCU (host) firmware over SPI") — and a ZD1L owner drove it end-to-end to
+  install the telnet hook [HW 2026-11-16]. So **our firmware on a ZD1L can go in the same way**: `nix build .#zd1l-fw`
+  (`docs/mcu/stock-firmware.md`, "Our firmware as a `.dmb`") from key-hold through BL2's expert confirm
+  (`docs/module/boot-chain.md`, "The ZD1L BL2"), no USB DFU, no stock-MCU mode (`bl2web IP zd1l.fw --yes`). The way back is the stock `blobs/zd1l/zd1lv20435.fw` (HWID 0xBE). Its MCU bootloader is read (B&W's "Net HBL" 2.07, no USB:
+  `docs/mcu/bootloader-hbl.md`). Still open: the rescue/slots `zd1l.fw` on a real ZD1L, from the page (the
+  2026-11-17 image without slots runs there [HW, the owners]; the whole install in the emulator [EMU 2026-11-21]), and
+  what of our MCU firmware works on its board (variant 2: the Lightning dock and the USB mux are the ZD1's code); and an owner pursuing a module-OS-on-stock-MCU route (issue #1).
 - **The A7**: the module program is the Zeppelin's, its MCU app (`AZ1_v2-04-77.dmb`, booting on the ZD1 board model) is
   another build of the same code; a port means its pins, DSP, amp and keys from that binary, and an A7 to try it on.
-- **BL2 and B&W's `.fw`**: what it does with the MCU part after the module image, and why it read the wrapper a byte
-  late in the emulator (`docs/module/boot-chain.md`, Web updater). The A7's and Lightning model's bootloaders would
-  show how their LAN update goes on from USB DFU.
+  The telnet hook already ports to it: `stock-patch/patch.py --fw` handles A7 2.04.77 (`voTask`/`WRITEREG` unchanged,
+  the RAM data shifted −0x5c8 so `STATUS`/`ATTACH` are 0x3918/0x482c, the carve follows `memend` 0x7a08). In the
+  emulator the patched MCU reaches RUN and the hook *fires* (its STATE byte at 0x7a08 runs 0→4, writing reg
+  0x75/0x76), and telnet port 23 opens; a live interactive shell is unproven there (the emulator's usernet shell
+  path returns nothing even for the known-good ZD1L), so it awaits an A7 unit. The ~21 s `dmhBcoMgr_ercGetCneValue`
+  assert is pre-existing emulator factory-data noise (wrong PersParam + empty persistent CnE at NAND 0x60000), hit by
+  ZD1L too, and non-fatal — the hook fires through it.
+- **B&W's LAN update**: answered for the ZD1L — its 2012 BL2 takes the whole `.fw` and flashes both parts, the MCU
+  `.dmb` over SPI XModem (`docs/module/boot-chain.md`, "The ZD1L BL2"). Our 2010 BL2 can't (it rejects a whole `.fw`
+  and lacks the host-firmware services). The **A7's** BL2 and bootloader are still unseen — likely the same MR5-era
+  path, but unconfirmed.
 
 ## Emulator
 Places where the emulator is known to differ from the unit; fix the model when one gets in the way.
@@ -140,6 +169,5 @@ Places where the emulator is known to differ from the unit; fix the model when o
 - **Stereo, level-calibrated probe**: `usprobe` uses the MacBook's single mic and can't run while other audio plays.
 - **`musictest.py sync`'s network-timeline figure** is off by the same ~0.5 s for both devices since senders may stream
   4 MB ahead (its reference assumes the first frame sent is the track's start).
-- Ideas: CI (build everything); `zemu run`'s
-  steps against the real speaker (host link + usprobe + module ping, with an amp-time budget); a
-  "porting to your CR870 device" page; tagged releases of the MCU `.hex` and the module image.
+- Ideas: `zemu run`'s steps against the real speaker (host link + usprobe + module ping, with an amp-time budget); a
+  "porting to your CR870 device" page.

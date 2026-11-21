@@ -127,7 +127,6 @@ let
     # cross set's would build a GCC for the module just to unpack it, its buildPackages link statically)
     craneLib = (crane.mkLib pkgsArm).overrideToolchain (_: rust);
     busybox = self.callPackage ./module/busybox.nix { };
-    busybox-rescue = self.busybox.override { rescue = true; };
     alsa-lib = self.callPackage ./module/alsa-lib.nix { };
     alsa-utils = self.callPackage ./module/alsa-utils.nix { };
     wpa_supplicant = self.callPackage ./module/wpa_supplicant.nix { };
@@ -136,7 +135,6 @@ let
       src = warp0Src;
     };
     apps = self.callPackage ./module/apps.nix { };
-    apps-core = self.apps.override { core = true; };
     apps-debug = self.apps.override { debug = true; };
     debug-tools = self.callPackage ./module/debug-tools.nix { };
   });
@@ -154,12 +152,10 @@ let
     inherit boot wifi;
     inherit (module)
       busybox
-      busybox-rescue
       alsa-lib
       alsa-utils
       wpa_supplicant
       apps
-      apps-core
       apps-debug
       ;
   };
@@ -172,6 +168,7 @@ let
       built
       ;
     parts = module-os-parts;
+    mcu = stampMcu mcu.mcu-raw;
   };
 
   # host tools: the AirPlay test sender; zd1 (the speaker over USB, host/cli) and the web page (host/web), host/core's
@@ -215,19 +212,25 @@ let
     };
     telnet-hook = self.callPackage ./mcu/stock-patch.nix { };
   });
-  # The firmware with its identification stamped in (mcu/stamp.py): on the host, so a new commit doesn't need the Linux
-  # builder unless the firmware's sources changed.
+  # The firmware with its identification stamped in (mcu/stamp.py: its version is its content, -dirty from uncommitted
+  # changes): on the host, so a new commit doesn't need the Linux builder unless the firmware's sources changed.
   stampMcu =
     raw:
     let
       tools = src [
         "mcu/stamp.py"
         "tools/zeppelin/__init__.py"
+        "tools/zeppelin/paths.py"
+        "tools/zeppelin/fw/bcd.py"
+        "tools/zeppelin/fw/bwfw.py"
+        "tools/zeppelin/xmodem.py"
         "tools/zeppelin/fw/ihex.py"
       ];
     in
     pkgs.runCommand raw.name { nativeBuildInputs = [ pkgs.python3 ]; } ''
-      python3 -I ${tools}/mcu/stamp.py --version ${version} --built "${built}" ${raw} $out
+      python3 -I ${tools}/mcu/stamp.py --built "${built}" ${
+        lib.optionalString (lib.hasSuffix "-dirty" version || version == "dev") "--dirty"
+      } ${raw} $out
     '';
 in
 {
@@ -245,13 +248,11 @@ in
       ;
     inherit (module)
       busybox
-      busybox-rescue
       alsa-lib
       alsa-utils
       wpa_supplicant
       warp0-fw
       apps
-      apps-core
       apps-debug
       debug-tools
       ;
@@ -263,6 +264,11 @@ in
       ;
     mcu = stampMcu mcu.mcu-raw;
     mcu-emu = stampMcu mcu.mcu-emu-raw;
+    # both chips of a Zeppelin Air with Lightning in one B&W .fw, for its BL2 web updater (nix/zd1l-fw.nix)
+    zd1l-fw = pkgs.callPackage ./zd1l-fw.nix {
+      inherit src os-image;
+      mcu = stampMcu mcu.mcu-raw;
+    };
   };
 
   formatter = treefmt;

@@ -9,9 +9,11 @@
 #define SLOT_READY_MS   90000u
 #define RESCUE_READY_MS 180000u
 
-static uint8_t last;   /* ZD1_BOOT_* answered at the module's last boot, 0 = none */
-static bool pending;   /* ... and it hasn't got ready yet */
-static uint8_t failed; /* bit (slot - 1): didn't get ready since the last ready */
+static uint8_t last;    /* ZD1_BOOT_* answered at the module's last boot, 0 = none */
+static bool install;    /* the rescue tried next is to install itself (BOOT_OP_INSTALL; RAM: it restarts at once) */
+static bool installing; /* the last answer was that: the rescue installing itself (BootState) */
+static bool pending;    /* ... and it hasn't got ready yet */
+static uint8_t failed;  /* bit (slot - 1): didn't get ready since the last ready */
 
 uint8_t modboot_good(void) { return g_settings.flags & SETTINGS_BOOT_GOOD_B ? ZD1_BOOT_SLOT_B : ZD1_BOOT_SLOT_A; }
 uint8_t modboot_last(void) { return last; }
@@ -32,7 +34,22 @@ static const char *name(uint8_t s) {
 static bool skip(uint8_t s) { return failed & (1u << (s - 1)); }
 static uint8_t other(uint8_t s) { return s == ZD1_BOOT_SLOT_A ? ZD1_BOOT_SLOT_B : ZD1_BOOT_SLOT_A; }
 
-uint16_t modboot_answer(void) {
+/* A boot image the stub names (its whole content's identity, `zd1.image=`; 0: a stub from before) other than the one
+ * recorded: its system goes into a slot, once (the rescue installs itself, as BOOT_OP_INSTALL), and it is recorded.
+ * None recorded (a speaker new to this, or from an older firmware) counts as other: a boot image always comes with our
+ * firmware's install, and its rescue is the release's system. Only the boot image's write tells the rescue from an
+ * older one: the MCU's own updates (from the module, over DFU) leave the record as it is. */
+static void new_image(uint32_t image) {
+    if (!image || image == g_settings.image_seen)
+        return;
+    g_settings.image_seen = image;
+    modboot_set(ZD1H_BOOT_OP_INSTALL, 0); /* saves the settings */
+    settings_save_now();                  /* the record, even when the flags didn't change */
+    log_puts("[boot] a boot image not seen before: its system goes into a slot\n");
+}
+
+uint16_t modboot_answer(uint32_t image) {
+    new_image(image);
     if (pending) {
         failed |= (uint8_t)(1u << (last - 1));
         log_puts("[boot] ");
@@ -40,6 +57,8 @@ uint16_t modboot_answer(void) {
         log_puts(" didn't get ready: it booted again\n");
     }
     uint8_t g = modboot_good(), t = next(), a;
+    bool inst = install;
+    install = false;
     if (t != ZD1H_SLOT_NONE && !skip(t)) {
         a = t;
         put(g, ZD1H_SLOT_NONE);
@@ -52,13 +71,16 @@ uint16_t modboot_answer(void) {
         a = ZD1_BOOT_RESCUE;
     last = a;
     pending = true;
+    inst = inst && a == ZD1_BOOT_RESCUE && t == a;
+    installing = inst;
     log_puts("[boot] starting ");
     log_puts(name(a));
     log_puts(a == g                 ? "\n"
-             : a == ZD1_BOOT_RESCUE ? " (no slot got ready)\n"
+             : inst                 ? " to install itself into a slot\n"
              : t == a               ? " (a try: once)\n"
+             : a == ZD1_BOOT_RESCUE ? " (no slot got ready)\n"
                                     : " (the good one didn't get ready)\n");
-    return (uint16_t)(a << 8 | g);
+    return (uint16_t)((inst ? ZD1_BOOT_INSTALL : a) << 8 | g);
 }
 
 void modboot_ready(void) {
@@ -112,6 +134,12 @@ bool modboot_set(uint8_t op, uint8_t slot) {
         log_puts(name(slot));
         log_putc('\n');
         return true;
+    case ZD1H_BOOT_OP_INSTALL: /* the rescue once, told to install itself: it then asks for the slot (reg 0xD8) */
+        put(modboot_good(), ZD1H_SLOT_RESCUE);
+        failed &= (uint8_t)~(1u << (ZD1H_SLOT_RESCUE - 1));
+        install = true;
+        log_puts("[boot] next boot: the rescue, to install itself into a slot\n");
+        return true;
     case ZD1H_BOOT_OP_CLEAR:
         put(modboot_good(), ZD1H_SLOT_NONE);
         failed = 0;
@@ -122,10 +150,11 @@ bool modboot_set(uint8_t op, uint8_t slot) {
     }
 }
 
-void modboot_state(uint8_t *g, uint8_t *t, uint8_t *l, bool *trial, uint8_t *f) {
+void modboot_state(uint8_t *g, uint8_t *t, uint8_t *l, bool *trial, uint8_t *f, bool *inst) {
     *g = modboot_good();
     *t = next();
     *l = last;
     *trial = pending;
     *f = failed;
+    *inst = installing;
 }

@@ -9,18 +9,19 @@ use crate::backup::Backup;
 use crate::dfu::{self, Relay};
 use crate::flash::{self, Report};
 use crate::image::{McuImage, system_version};
-use crate::spec::{ModOp, ModState, Slot};
+use crate::spec::{BootOp, ModOp, ModState, Slot};
 use crate::update::{self, Outcome};
 use crate::usb::Bus;
 use crate::{Error, Events, Mcu, Result, msg};
 use std::rc::Rc;
 
 /// What goes on: the module's boot image (`os.bcd`: the stub, the kernel, the rescue; None: it is there already, a
-/// repair of the two others), our MCU firmware, the system image.
+/// repair of the two others), our MCU firmware, and the system image without a boot image (with one, its rescue is the
+/// system and installs itself: [`system_settled`]).
 pub struct Images<'a> {
     pub bcd: Option<&'a [u8]>,
     pub mcu: &'a McuImage,
-    pub system: &'a [u8],
+    pub system: Option<&'a [u8]>,
 }
 
 /// How it ended: the firmware that runs, the slot the system went into (the good one now), its version.
@@ -32,7 +33,7 @@ pub struct Installed {
 }
 
 /// How long the module's first boot may take: two empty slots failing (a panic restarts the module), then the
-/// rescue, which the MCU gives 180 s.
+/// rescue, which the MCU gives 180 s; for the rescue's install, its copy and the slot's start too.
 const FIRST_BOOT_MS: f64 = 420_000.0;
 
 /// Our firmware on both boards. `keep` gets the backup of the MCU's app region and user page before anything is
@@ -50,13 +51,21 @@ pub async fn install<B: Bus>(
                 .into(),
         )
     })?;
-    let os = system_version(img.system)?;
-    let phases = if img.bcd.is_some() { 4 } else { 3 };
+    let system = match (img.bcd, img.system) {
+        (Some(_), _) => None,
+        (None, Some(s)) => Some(s),
+        (None, None) => return Err(Error::Failed("a system image, or a boot image (its rescue is the system)".into())),
+    };
+    let os = system.map(system_version).transpose()?;
+    let phases = 3;
     let mut n = 0;
     ev.step(&format!(
-        "installing: MCU firmware {}, system {os}{}",
+        "installing: MCU firmware {}, {}",
         ident.version,
-        if img.bcd.is_some() { ", the module's boot image" } else { "" }
+        match &os {
+            Some(os) => format!("system {os}"),
+            None => "the module's boot image and its system".into(),
+        }
     ));
     let mut d = flash::enter_dfu(bus, None, ev.clone()).await?;
     if let Some(bcd) = img.bcd {
@@ -74,17 +83,28 @@ pub async fn install<B: Bus>(
             firmware.fw, ident.version
         )));
     }
-    n += 1;
-    ev.phase(n, phases, "the module's first boot");
     let mut m = Mcu::open(bus, ev.clone(), false)
         .await?
         .ok_or_else(|| Error::Device("the new firmware left USB right after it answered".into()))?;
-    let i = wait_module(&mut m, FIRST_BOOT_MS).await?;
-    ev.step(&format!("the module runs {}", i.mod_os));
     n += 1;
-    ev.phase(n, phases, "the system");
-    match update::system(&mut m, img.system, &update::Options::default()).await? {
+    ev.phase(n, phases, "the module's system");
+    let outcome = match system {
+        // with a boot image the system is its rescue: our MCU firmware sees a boot image it hasn't seen, so the
+        // module's first boot is the rescue installing itself (no second upload, no empty slots tried first)
+        None => system_settled(&mut m).await?,
+        Some(s) => {
+            let i = wait_module(&mut m, FIRST_BOOT_MS).await?;
+            ev.step(&format!("the module runs {}", i.mod_os));
+            update::system(&mut m, s, &update::Options::default()).await?
+        }
+    };
+    match outcome {
         Outcome::Running(slot) => {
+            // the system the module runs now (the boot image's: its version is the module's word)
+            let os = match os {
+                Some(os) => os,
+                None => m.call(&msg::Info).await?.mod_os.split(' ').nth(1).unwrap_or_default().to_string(),
+            };
             ev.step(&format!("done: MCU firmware {}, system {os} in slot {slot}", firmware.fw));
             Ok(Installed { firmware, slot, os })
         }
@@ -104,18 +124,13 @@ fn ours_bcd(bcd: &[u8]) -> Result<()> {
 }
 
 /// The module's boot image alone (the app partition: stub, kernel, rescue), on a speaker that runs our firmware:
-/// into DFU, the relay, our firmware started again, the module up on its good slot. The system slots, `/data` and
-/// the MCU firmware stay as they are. For a release whose boot image differs from the one the module started from
+/// into DFU, the relay, our firmware started again, and the boot image's system from its rescue ([`system_settled`]:
+/// the MCU sees a boot image it hasn't seen). `/data`, the other slot and the MCU firmware stay as they are. For a release whose boot image differs from the one the module started from
 /// (the State record's `boot`, the .bcd's `zd1.boot=`). A relay that stops after BL2 erased the app partition leaves
 /// the module nothing to start: our firmware is started again all the same, and a module that settles in BL2 gets
 /// the image through BL2's XModem ([`boot_image_in_bl2`]); one up on its old boot image (nothing was erased) is the
 /// relay's error.
-pub async fn boot_image<B: Bus>(
-    bus: &B,
-    mcu: Option<Mcu<B::Dev>>,
-    bcd: &[u8],
-    ev: Rc<dyn Events>,
-) -> Result<msg::InfoReply> {
+pub async fn boot_image<B: Bus>(bus: &B, mcu: Option<Mcu<B::Dev>>, bcd: &[u8], ev: Rc<dyn Events>) -> Result<Settled> {
     ours_bcd(bcd)?;
     let mut d = flash::enter_dfu(bus, mcu, ev.clone()).await?;
     let relayed = d.relay(bcd, &Relay::default(), &*ev).await;
@@ -137,16 +152,118 @@ pub async fn boot_image<B: Bus>(
         }
         return boot_image_in_bl2(&mut m, bcd).await;
     }
-    let i = wait_module(&mut m, FIRST_BOOT_MS).await?;
-    ev.step(&format!("the module runs {}", i.mod_os));
-    Ok(i)
+    settled(&mut m).await
+}
+
+/// Where a boot image left the module: what it runs, and how its system went into a slot.
+pub struct Settled {
+    pub info: msg::InfoReply,
+    pub outcome: Outcome,
+}
+
+async fn settled<L: crate::link::Link>(m: &mut Mcu<L>) -> Result<Settled> {
+    let outcome = system_settled(m).await?;
+    let info = m.call(&msg::Info).await?;
+    m.events().step(&format!("the module runs {}", info.mod_os));
+    Ok(Settled { info, outcome })
+}
+
+/// The boot image's system into a slot, asked for (`Boot INSTALL`: `zd1 slot install`, a rescue with no system in a
+/// slot): the MCU starts the rescue once to install itself, then [`system_settled`]. The MCU keeps it until the boot
+/// stub next asks for a slot: before the first ask since the MCU started that is the coming boot, with no restart;
+/// after it, the module restarts now.
+pub async fn system_from_rescue<L: crate::link::Link>(m: &mut Mcu<L>) -> Result<Outcome> {
+    let t0 = crate::now_ms();
+    loop {
+        // an error: the MCU busy with the module's power, asked again
+        let sent = match m.call(&msg::BootState).await {
+            Ok(b) => m.call(&msg::Boot { op: BootOp::Install, slot: Slot::None, restart: b.last != Slot::None }).await,
+            Err(e) => Err(e),
+        };
+        match sent {
+            Ok(_) => break,
+            Err(e) if crate::now_ms() - t0 > 30_000.0 * m.slow() as f64 => return Err(e),
+            Err(_) => m.sleep(1000).await,
+        }
+    }
+    system_settled(m).await
+}
+
+/// The module's start after a boot image went on (or `Boot INSTALL`), to its end. Our MCU firmware starts a boot image
+/// it hasn't seen (the stub names it: `zd1.image`) as the rescue installing itself: it copies itself into the slot that
+/// isn't the good one (the good one if that holds none; none if a slot holds it already) and has the MCU start that
+/// slot once, ready making it the good one, else the MCU goes back. A boot image it has seen starts its good slot as
+/// before. The verdict: the slot tried running (the good one now) or not (the MCU went back), or, nothing installed,
+/// the good slot running.
+pub async fn system_settled<L: crate::link::Link>(m: &mut Mcu<L>) -> Result<Outcome> {
+    let ev = m.events().clone();
+    ev.step("the module's start with its boot image: a new one's system goes into a slot first");
+    let (t0, mut tried, mut installing) = (crate::now_ms(), None, false);
+    while crate::now_ms() - t0 < FIRST_BOOT_MS * m.slow() as f64 {
+        m.sleep(1000).await;
+        let secs = ((crate::now_ms() - t0) / 1000.0) as u64;
+        // what isn't our OS on its way: the boot image wasn't installed, or doesn't start
+        let Ok(i) = m.call(&msg::Info).await else { continue }; // the MCU busy with the module's power: again
+        ours(&i)?;
+        let Ok(b) = m.call(&msg::BootState).await else { continue };
+        if b.installing {
+            if !installing {
+                ev.step("the rescue installs its system into a slot");
+            }
+            installing = true;
+            ev.wait("the rescue installing its system", secs);
+            continue;
+        }
+        let name = |s: Slot| if s == Slot::Rescue { "the rescue".to_string() } else { format!("slot {s}") };
+        if b.next != Slot::None {
+            ev.wait(&format!("{} about to start", name(b.next)), secs);
+            continue;
+        }
+        if b.last == Slot::None || b.trial {
+            // the first slot started after the rescue's install is the one it filled (a fallback after it isn't)
+            if installing && tried.is_none() && matches!(b.last, Slot::A | Slot::B) {
+                tried = Some(b.last);
+            }
+            ev.wait(
+                &match b.last {
+                    Slot::None => "the module's first start".to_string(),
+                    s => format!("{} starting", name(s)),
+                },
+                secs,
+            );
+            continue;
+        }
+        if i.mod_state != ModState::Ready {
+            continue;
+        }
+        let o = match (tried, b.last) {
+            (Some(s), l) if l == s && b.good == s => Outcome::Running(s),
+            (Some(s), l) => Outcome::FellBack { slot: s, now: l },
+            (None, Slot::Rescue) => {
+                return Err(Error::Failed(
+                    "no slot got ready and nothing was installed: the module runs its rescue (`zd1 slot`, `zd1 log`)"
+                        .into(),
+                ));
+            }
+            (None, l) => Outcome::Running(l),
+        };
+        ev.step(&match o {
+            Outcome::FellBack { slot, now } => format!("slot {slot} didn't get ready: back on slot {now}"),
+            Outcome::Running(slot) | Outcome::Installed(slot) if tried.is_some() => {
+                format!("slot {slot} is up and the good slot now ({secs} s)")
+            }
+            Outcome::Running(slot) | Outcome::Installed(slot) => format!("up on slot {slot}, its system as it was"),
+        });
+        return Ok(o);
+    }
+    Err(Error::Timeout("the module's start didn't end on a slot in 7 minutes (`zd1 log`, `zd1 slot`)".into()))
 }
 
 /// The module's boot image written through BL2's XModem, our firmware driving it (`XmFrame`; ~5 min, no DFU: the
 /// connection stays), for a module in BL2 with no image to start (an update of the boot image that stopped after BL2
 /// erased the app partition: "Application: invalid image"). Then, once BL2 is done, the module powered up again and
-/// up on its good slot; back in BL2 with no image, written once more.
-pub async fn boot_image_in_bl2<U: crate::usb::Usb>(m: &mut Mcu<U>, bcd: &[u8]) -> Result<msg::InfoReply> {
+/// its start to the end ([`system_settled`]); back in BL2 with no image, written once more.
+pub async fn boot_image_in_bl2<U: crate::usb::Usb>(m: &mut Mcu<U>, bcd: &[u8]) -> Result<Settled> {
     ours_bcd(bcd)?;
     let ev = m.events().clone();
     for attempt in 0..2 {
@@ -161,9 +278,7 @@ pub async fn boot_image_in_bl2<U: crate::usb::Usb>(m: &mut Mcu<U>, bcd: &[u8]) -
             ev.step("the module is in BL2 again with no image to start: once more");
             continue;
         }
-        let i = wait_module(m, FIRST_BOOT_MS).await?;
-        ev.step(&format!("the module runs {}", i.mod_os));
-        return Ok(i);
+        return settled(m).await;
     }
     Err(Error::Failed("the module's boot image didn't take: BL2 has no image to start after two writes".into()))
 }
@@ -176,7 +291,7 @@ async fn bl2_done<U: crate::usb::Usb>(m: &mut Mcu<U>) -> Result<()> {
     let t0 = crate::now_ms();
     let mut last = t0;
     while crate::now_ms() - last < 10_000.0 && crate::now_ms() - t0 < 180_000.0 {
-        m.usb.sleep(500).await;
+        m.sleep(500).await;
         if m.poll().await? > 0 {
             last = crate::now_ms();
         }
@@ -190,6 +305,13 @@ async fn wait_module<U: crate::usb::Usb>(m: &mut Mcu<U>, ms: f64) -> Result<msg:
     let i = settle(m, ms).await?;
     match i.mod_state {
         ModState::Ready => Ok(i),
+        _ => ours(&i).and(Err(Error::Failed(format!("the module settled as {}", i.mod_state)))),
+    }
+}
+
+/// A module that isn't our OS (its software, a protocol, or BL2), as the error a person reads; Ok otherwise.
+fn ours(i: &msg::InfoReply) -> Result<()> {
+    match i.mod_state {
         ModState::Stock => {
             Err(Error::Failed("the module runs the stock software: its boot image wasn't installed".into()))
         }
@@ -199,7 +321,7 @@ async fn wait_module<U: crate::usb::Usb>(m: &mut Mcu<U>, ms: f64) -> Result<msg:
             i.mod_proto, i.link_proto
         ))),
         ModState::Bl2 => Err(Error::Failed("the module is in BL2: its boot image doesn't start".into())),
-        s => Err(Error::Failed(format!("the module settled as {s}"))),
+        _ => Ok(()),
     }
 }
 
@@ -207,11 +329,11 @@ async fn wait_module<U: crate::usb::Usb>(m: &mut Mcu<U>, ms: f64) -> Result<msg:
 /// protocol, or BL2 (no image to start). Off for 30 s (the MCU gave up on it) is an error, as is nothing settled in
 /// `ms`.
 async fn settle<U: crate::usb::Usb>(m: &mut Mcu<U>, ms: f64) -> Result<msg::InfoReply> {
-    let (t0, slow) = (crate::now_ms(), m.usb.slow() as f64);
+    let (t0, slow) = (crate::now_ms(), m.slow() as f64);
     let late = |ms: f64| crate::now_ms() - t0 > ms * slow;
     let mut shown = None;
     loop {
-        m.usb.sleep(2000).await;
+        m.sleep(2000).await;
         let _ = m.poll().await; // the MCU's log: the boot as it goes
         let i = match m.call(&msg::Info).await {
             Ok(i) => i,

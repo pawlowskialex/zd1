@@ -1,0 +1,8 @@
+[package]
+name = "zd1-text"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+description = "Text the Rust on both sides writes and reads: hex, a UTC date, a string cut to a field's bytes; no dependencies, no_std + alloc"
+
+[dependencies]

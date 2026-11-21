@@ -2,7 +2,7 @@
 
 The MCU's 16 KB bootloader at 0x80000000-0x80003FFF ("ZD1 Bootloader version 0514", DevID 7904) is the way back from
 anything that can go wrong with the app. It is Atmel's FLIP-style USB DFU bootloader with B&W extensions, including a
-relay that forwards network-module firmware over SPI. `blobs/mcu/bootloader.bin` is a copy read from our unit over
+relay that forwards network-module firmware over SPI. `blobs/zd1/mcu/bootloader.bin` is a copy read from our unit over
 DFU: BOOTPROT blocks writes and erases, not reads; LOCK is unset [HW]. The disassembly is
 `re/mcu/work/bootloader/bl.dis` (its DFU core runs from SRAM 0x4000 = flash 0x80000228 + offset). Tags:
 `docs/README.md`.
@@ -12,7 +12,7 @@ DFU: BOOTPROT blocks writes and erases, not reads; LOCK is unset [HW]. The disas
 | Region | Content |
 |---|---|
 | 0x80000000-0x80003FFF | bootloader (BOOTPROT = 2: DFU can't write it; only JTAG can) |
-| 0x80004000-0x8003FFFF | app (stock: a jump to 0x80008000, crt0 at 0x80008024) |
+| 0x80004000-0x8003FFFF | app region (stock: a jump to 0x80008000, crt0 at 0x80008024; ours: the preloader at 0x80004000, its record of the app at 0x80007E00, the app at 0x80008000: `bootloader-hbl.md`) |
 | 0x80800000 | user page (512 B): stock's copy of the network setup; **ISP config word 0x929E0870 at +0x1FC** |
 | GP fuses (FGPFR) | 0x7C04FFFF on this unit: LOCK 0xFFFF, EPFL 0, BOOTPROT 2, BOD settings, ISP_IO_COND_EN 1, **ISP_FORCE (bit 31) 0** [HW] |
 
@@ -32,7 +32,8 @@ else (BOD, other warm reset):
   runs until the page is rewritten.
 - DFU entry disables the watchdog first thing. There is no DFU idle timeout: the only ways out are the start-app
   commands.
-- The app starts at 0x80004000 with all registers zeroed, running on the RC oscillator (~115 kHz).
+- What sits at 0x80004000 starts with all registers zeroed, on the RC oscillator (~115 kHz): our preloader, which
+  passes that on to the app at 0x80008000 untouched (stock: a jump to 0x80008000).
 
 ## Ways into DFU
 1. **Hold ON/OFF while powering on** (needs a valid ISP word) [HW]. Let the caps drain (~10 s unplugged) before
@@ -47,6 +48,9 @@ else (BOD, other warm reset):
    never reads GPLP [RE `bl.dis`, direct calls; the relay code has no indirect ones].
 3. **Any DFU session** sets ISP_FORCE itself (the DNLOAD handler, so a reset mid-programming comes back to DFU); the
    start-app commands clear it [RE]. A unit that was left in a DFU session boots into DFU again.
+
+All of this is the 30-pin model's bootloader. The Lightning model's has the same reset decision but no USB at all: it
+takes the app from the module over SPI (`bootloader-hbl.md`).
 
 ## DFU protocol (USB 03EB:2FF8, interface 0)
 Atmel FLIP v2 framing. `host/core/src/dfu.rs` implements it (`zd1 dfu`, `zd1 flash`, the web page), checked frame
@@ -69,7 +73,7 @@ GETSTATUS is the usual 6 bytes, with byte 5 (iString) reused as the coprocessor 
 1 module off, 2 powered, 0x03 the module's app ready, 0x11 HCR sent / starting BL2, **0x12 BL2 ready**, 0x13
 download active (also after the end of transfer).
 
-The user page is written with the flash controller's page buffer (CPB, fill, EUP, WUP); `dfu userpage-write` drives
+The user page is written with the flash controller's page buffer (CPB, fill, EUP, WUP); `zd1 dfu user-page` drives
 it and refuses an image without the factory ISP word unless `--force`.
 
 ## The module relay (`zd1 dfu relay`) [HW, RE, EMU]
@@ -92,8 +96,10 @@ BL2 then answers XModem 'C' on register 0x2C and the bootloader streams the imag
   2e20f8d on: 33.8 s); with the app partition invalid BL1 goes straight to BL2 (20 s). Then 0x400-byte blocks at
   22.7-23.4 KB/s (median 38 ms each, max 263 ms): a 9 MB image (8946 blocks) in 382 s with no retries, `os.bcd`
   (2 MB) in 85 s. BL2 burns and resets the module into the new image; the bootloader's coproc status stays 0x13
-  ("download-active") after the end of transfer, so it doesn't say when the module is done. Everything over USB:
-  `zd1 bootloader`, `zd1 dfu relay IMAGE.bcd --yes`, `zd1 dfu start`.
+  ("download-active") after the end of transfer, so it doesn't say when the module is done. The app's start cuts the
+  module's power: started right after the end, BL2 was left with "Application: invalid image" twice [HW 2026-11-20],
+  so every relay keeps the module powered 30 s after it (`Dfu::relay`, fa64bf7). Everything over USB: `zd1 update
+  IMAGE.bcd` (our firmware running), or `zd1 bootloader`, `zd1 dfu relay IMAGE.bcd --yes`, `zd1 dfu start`.
 - **BL2 erases and writes the app partition as the blocks arrive**: a transfer stopped after 500 blocks left
   "Application: invalid image" (BL2's menu 5), and BL1 starts BL2 at every boot until a complete image is installed
   [HW 2026-10-26].
@@ -113,6 +119,7 @@ BL2 then answers XModem 'C' on register 0x2C and the bootloader streams the imag
   The tools refuse.
 - Every backup (`zd1 dfu backup`, and the one `zd1 flash`, the installs and the page take first) reads the bootloader
   region too, as `bootloader.bin` in the tar: for the record, since another unit's (B&W's other models) may differ
-  from `blobs/mcu/bootloader.bin` and only JTAG could put one back [EMU: byte-identical to it].
-- After a `flash`, `restore` or `userpage-write`, the tool reads back and verifies.
-- A raw `.bin` app image is based at 0x80004000; a verify must read back independently of the map that wrote it.
+  from `blobs/zd1/mcu/bootloader.bin` and only JTAG could put one back [EMU: byte-identical to it].
+- After a `flash`, `dfu restore` or `dfu user-page`, the tool reads back and verifies.
+- A raw `.bin` is the region from 0x80004000 (preloader, record, app; `zd1app.bin`, the app alone for 0x80008000, is
+  for `bwfw.py --pack`, not DFU); a verify must read back independently of the map that wrote it.

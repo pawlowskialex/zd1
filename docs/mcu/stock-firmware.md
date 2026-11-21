@@ -1,6 +1,6 @@
 # The stock MCU firmware (ZD1 2.04.05)
 
-What B&W's MCU app does, as far as our firmware needs it. Source: static analysis of `blobs/mcu/zd1-2.04.05.hex`
+What B&W's MCU app does, as far as our firmware needs it. Source: static analysis of `blobs/zd1/mcu/zd1-2.04.05.hex`
 (built "Dec 1 2014", avr32-gcc + newlib + ASF, source tree "iZound"; the Ghidra exports: `re/ghidra/setup.py
 mcu-app`, then `re/gen/mcu-app/decomp_resolved.c` has literals resolved). Everything here is [RE] unless tagged; much of it was also exercised by
 running the binary in the emulator, and where our firmware reproduces it and works on the unit it says [HW].
@@ -10,11 +10,11 @@ The same binary prints "2.04.05" on board variant 1 (model FP30570, ours) and "2
 the variant is ADC2 (PA23) at boot. Also embedded: DSP release v05.09, factory protocol v01.06, EEPROM version 0x0204.
 
 Variant 2 is almost certainly the Zeppelin Air with Lightning connector (ZD1L), whose last release B&W calls 2.04.35
-(March 2015, OTA `zd1lv20435.fw`, md5 d71a10be…: `downloads/bw-zeppelin-air-software/zeppelin-air-lightning/
+(March 2015, OTA `zd1lv20435.fw`, md5 d71a10be…, kept as `blobs/zd1l/zd1lv20435.fw`: `downloads/bw-zeppelin-air-software/zeppelin-air-lightning/
 SOURCES.md`). On variant 2 the binary reports model FP35548 and no video out over iAP (variant 1:
 FP30570, video on), and only variant 2 honours the module's request to enter DFU (`docs/protocol/spi-registers.md`,
-0x27). That doesn't bring the image over the network: the MCU then waits in USB DFU for a computer on the rear port
-(`docs/mcu/bootloader-dfu.md`). The ZD1L's MCU app 2.04.35 (`ZD1L_v2-04-35.dmb` in the `.fw`) is a near-twin of this
+0x27). Behind the ZD1's bootloader that doesn't bring the image over the network: the MCU then waits in USB DFU for a
+computer on the rear port (`docs/mcu/bootloader-dfu.md`); the ZD1L's (Net HBL) takes the app from BL2 instead. The ZD1L's MCU app 2.04.35 (`ZD1L_v2-04-35.dmb` in the `.fw`) is a near-twin of this
 binary, not the same bytes: the same size (0x80008000-0x800380F4), build date ("Dec 1 2014") and model strings, but
 39132 bytes differ, almost all by exactly -4, most of them in 0x80028000-0x80037FFF (a data offset moved by 4). The
 archive.org module NAND (item `20230115_20230115_1916`, a ZZ34088 board) fits this. Its module app and resources are
@@ -24,14 +24,37 @@ The A7's 2.04.77 is the same March 2015 release: B&W's notes for 2.04.05 (`relea
 the same text. This binary has no A7 variant (both variants are Zeppelins with a dock); the A7's MCU app is
 `AZ1_v2-04-77.dmb` in `a7v20477.fw`, another build of the same code ("Dec 12 2014", 191 KB, ~147k bytes differ).
 
-A B&W OTA `.fw` (A7, ZD1L; the A5 and Z2 too) is BridgeCo's encryption wrapper, unencrypted, around a module image,
-then the MCU part: a 32-byte header, u32 LE: 2 (the wrapper's version), the module image's length, 0 (encryption mode:
-none), the MCU part's length, a checksum and a smaller sum (not yet checked), 0, 0; then the `.bcd` (`bCoD`, as
-`app_DMP.bcd`); then the MCU part. BL2's web updater reads the wrapper (`docs/module/boot-chain.md`) [EMU]. On the A7
-and the ZD1L the MCU part is a `.dmb`: a 24-byte header (`00 01 00 80`, a word, the app's length, 0x80000000 + a sum),
-its name at +24, the app at +128, loaded at 0x80008000. The A5's and Z2's MCU part (63 KB, "B&WAZ2LITEON~",
-"B&WMA1LITEON~") is another MCU, and their module images name a CX870. B&W's manifest marks ZD1 2.04.05 `usb` (desktop
-app only) and ZD1L 2.04.35 and A7 2.04.77 `ota` (the iOS app too).
+A B&W OTA `.fw` (A7, ZD1L; the A5 and Z2 too) is a 32-byte wrapper, then the `.bcd` (`bCoD`, as `app_DMP.bcd`), then
+the MCU part, then one newline (0x0A, outside the CRC). All of it holds for every `.fw` we have [RE]:
+
+| Wrapper, u32 LE | |
+|---|---|
+| +0 | 2 |
+| +4 | the `.bcd`'s length |
+| +8 | 0 |
+| +12 | the MCU part's length |
+| +16 | CRC-32 of the `.bcd` and the MCU part |
+| +20 | the release as a decimal number (20435 for 2.04.35, 4852 for the A5's) |
+| +24, +28 | 0 |
+
+On the A7 and the ZD1L the MCU part is a `.dmb`, big-endian (the A5's and Z2's, 63 KB, "B&WAZ2LITEON~",
+"B&WMA1LITEON~", are another MCU, and their module images name a CX870):
+
+| `.dmb` | |
+|---|---|
+| +0 | `00 01 00 80` |
+| +4 | build time, Unix (0x547C2B42 = 2014-12-01, the app's "Dec 1 2014") |
+| +8 | the app's length |
+| +12 | 0x8000, the app's offset in flash |
+| +16 | CRC-16/XMODEM of the app (u16; zeros to +24) |
+| +24 | the name, 20 bytes (`ZD1L_v2-04-35.dmb`) |
+| +44 | the version, 3 bytes (`02 04 23`); zeros to +128 |
+| +128 | the app, for 0x80008000 |
+
+`tools/zeppelin/fw/bwfw.py` cuts a `.fw`, packs one (`--pack`) and checks itself (`--selftest`: each shipped file
+rebuilt from its parts, byte for byte: all five are). Which of these fields anything enforces is unknown: nothing
+that reads a `.fw` has been seen. The BL2 we have doesn't (`docs/module/boot-chain.md`, Web updater) [EMU]. B&W's
+manifest marks ZD1 2.04.05 `usb` (desktop app only) and ZD1L 2.04.35 and A7 2.04.77 `ota` (the iOS app too).
 
 **The three models' module images** (`tools/zeppelin/fw/bcd.py`, `cne2txt.py`, `ffsres_extract.py`): the module app
 (section 0) is byte-identical in ZD1 2.04.05, ZD1L 2.04.35 and A7 2.04.77. They differ in the header's HWID (0xBD,
@@ -54,11 +77,63 @@ counts down 35 s and opens `http://IP/`, expecting BL2's web updater there. The 
 | A7 2.04.77 | the ZD1 board's ADC2 (0x100) | AZ1 | as 2.04.05 on variant 2 |
 
 The ZD1's bootloader (0514, the one we have) then waits in USB DFU with the module off, so with it the LAN update
-ends there. The ZD1L's and A7's bootloaders, which no `.fw` carries, must start the module into BL2 instead
-[INF]; the A7's 2.00.28 was `a7v20028-bsl.fw` (not recovered). Each app writes its identity's version into the
+ends there. The ZD1L's and A7's bootloaders, which no `.fw` carries, start the module into BL2 instead, and BL2
+flashes the MCU part back over SPI ("How the MCU part is delivered" below, and the key-hold report) [RE and EMU for
+the ZD1L's (`docs/mcu/bootloader-hbl.md`), INF for the A7's; HW for the BL2 side]; the A7's 2.00.28 was `a7v20028-bsl.fw` (not recovered). Each app writes its identity's version into the
 EEPROM record (+6: 0x0005 for ZD1, 0x0035 for ZD1L, 0x0077 for the A7) and takes a record with another version as
 invalid (its defaults). The A7 app boots on the ZD1 board model ("PSS AZ1", DSP firmware v01.00, finds its DSP, codec
 and EEPROM, reaches RUN); the ZD1L app looks like 2.04.05 throughout (the -4 differences changed nothing seen).
+
+**The Lightning model's key-hold**, as an owner reported it on a stock 2.04.35 unit (GitHub issue #1; read-only, not
+seen here): ON/OFF held at power-up gives a white LED, nothing on USB (three tries, with the cable that works in normal
+mode), and the module on wired Ethernet only (DHCP), serving GoAhead's `/bl_index.asp`, "Zeppelin Air Setup - Firmware
+Update", © 2012. `/scripts/info.asp` gives `firmware_version="105.9112"` and `host_vers="2.04.35"`;
+`/1000/firmware_status.asp` the same and the progress; `scripts/firmware.js` says "This firmware file is incorrect for
+your speaker hardware" on a reply containing `_HWID`. A plain power cycle afterwards boots stock. A second owner has
+since driven this web updater to flash a `.fw` and dump the BL2 behind it (`blobs/zd1l/module/bl2.bin`, build
+2012-11-06 — the `firmware_version="105.9112"` here is the installed *module app*, not BL2) [HW 2026-11-16].
+
+**Its BL2 is not ours, and we now have it** [HW 2026-11-16]. A ZD1L owner dumped their BL2 over the stock-patch
+telnet hook (`blobs/zd1l/module/bl2.bin`; `docs/module/boot-chain.md`, "The ZD1L BL2"): a later, larger build
+(2012-11-06, BridgeCo MR5, GoAhead "Web Version 1.19.4.2") — so the factory's, as expected (a `.bcd` has three
+sections app/CnE/resources, so no update carries a BL2). Ours (2010-09-27) serves none of those `.asp` files (404)
+[EMU 2026-11-08] and rejects a whole `.fw`; the ZD1L's serves them and **takes the whole `.fw`, flashing both the
+module `.bcd` and the MCU `.dmb`** — which answers "what happens to a `.fw`'s MCU part" below.
+
+**How the MCU part is delivered.** The ZD1L's BL2 sends it over SPI, not USB, to the MCU's bootloader: B&W's "Net
+HBL", which has no USB at all (`bootloader-hbl.md`). BL2 stages the `.dmb` in RAM (`MemoryBlobFirmwareUpdateService`),
+ends the bootloader's wait with DCR 0x2423 and sends 128-byte XModem blocks on 0x2C, the bootloader answering on 0x2D
+[EMU 2026-11-19, the real BL2 and bootloader; RE]. Proven on hardware by every `.fw` the owners installed. The `.dmb`
+header (vs the ZD1's `.hex`) is that bootloader's: it checks the app's length and CRC-16, nothing else.
+
+**Our firmware as a `.dmb`**: the ZD1L's bootloader starts the app at 0x80008000 directly (no branch at 0x80004000:
+that is bootloader code there) and a `.dmb` holds that app. Our app is linked at 0x80008000 on both models since the ZD1
+got our preloader (`bootloader-hbl.md`): `nix build .#mcu` gives `zd1.dmb` and `zd1app.bin` alongside the ZD1's image.
+
+**Our firmware for a ZD1L, both chips in one `.fw`**: `nix build .#zd1l-fw` (`result/zd1l.fw`, 6.9 MB; `nix/zd1l-fw.nix`).
+The module part is `os-zd1l.bcd`: the boot stub, the kernel and the whole release system as one initramfs in the
+rescue's place (the stub asks the MCU for a slot as on the ZD1; on its first start our MCU firmware has no boot image
+recorded, so the rescue installs itself into slot A and the MCU starts it: `docs/module/storage.md`, The Lightning
+model), built from its parts (`mkbcd`): B&W's preloader and the ZD1L's
+factory CnE from `blobs/`, no resources (an empty section: the ZD1L's BL2 writes the partition empty, and our OS
+doesn't read it), HWID 0xBE, our build date. The MCU part is our app (`.#mcu`'s `zd1app.bin`) under B&W's name and
+version (`ZD1L_v2-04-35.dmb`, 2.04.35, release 20435), as the telnet-hook `.fw` the ZD1L's BL2 burned. It goes in
+through BL2's web updater from key-hold, with the expert confirm (`docs/module/boot-chain.md`, "The ZD1L BL2": BL2
+sends the MCU part first and needs the MCU's bootloader for it): the page's Install (Zeppelin Air with Lightning, a
+release's `zd1l-V.fw`) or `python3 tools/zeppelin bl2web IP zd1l.fw --yes`; the way back is the same with
+`blobs/zd1l/zd1lv20435.fw`. The image of 2026-11-17 (the system as the boot initramfs, no slots) runs on ZD1Ls [HW,
+the owners]; the one with the system in the rescue's place, from a stock ZD1L to slot A through the page's upload,
+in the emulator only [EMU 2026-11-21, `emu/tools/zd1lunit.py`].
+
+**A telnet hook on the stock 2.04.35, repacked as a `.fw`** (`stock-patch/`, `patch.py --fw`): a way to a shell on a
+stock ZD1L without replacing its firmware, e.g. to read BL2 out (`fburn rd`, the reverse-SPI code the relay needs). The
+2.04.05 hook (HW-proven 2026-10-16) ports to 2.04.35 untouched: every address it uses is byte-identical, only sbrk's
+heap-base literal moves (0x8002ae28 -> 0x8002ae24, the -4 shift), which `patch()` locates. A repacked `.fw` gave the
+KnOS shell on telnet (`sds://>`) in the emulator, a stock module image beside the patched MCU [EMU 2026-11-08, AUX
+boot]. **Delivery is proven on a real ZD1L** [HW 2026-11-16]: an owner uploaded the repacked `.fw` to BL2's web
+updater (key-hold → BL2 on Ethernet), BL2 burned both parts, and after the reset telnet answered on port 23 — then
+the shell dumped the unit's BL2 (`blobs/zd1l/module/bl2.bin`). So BL2's SPI XModem is the ZD1L's MCU-flash route;
+USB DFU is not needed for it.
 
 Other ways a `.fw` might get in, from the module app's strings [RE, untried]: its own online check (`GetLatestFwUrl`,
 `FirmwareIndexPage` = BridgeCo's dead `bridgeco-jukeblox.net/download/index.xml`), a USB stick

@@ -11,8 +11,10 @@
 #define EE_VER    1
 #define EE_ADDR2  0x88 /* the second page: [Z][E][ver][amp idle min][volume cap][firmware seen, LE 16][crc] */
 #define EE_MAGIC2 'E'
+#define EE_ADDR3  0x90 /* the third page: [Z][I][ver][boot image seen, LE 32][crc] */
+#define EE_MAGIC3 'I'
 
-#define DEFAULTS {SETTINGS_DEFAULT_VOL, 0, 0, 0, SETTINGS_AMP_IDLE_DEFAULT, SETTINGS_VOL_CAP_DEFAULT, 0}
+#define DEFAULTS {SETTINGS_DEFAULT_VOL, 0, 0, 0, SETTINGS_AMP_IDLE_DEFAULT, SETTINGS_VOL_CAP_DEFAULT, 0, 0}
 settings_t g_settings = DEFAULTS;
 static const settings_t defaults = DEFAULTS;
 static bool dirty;
@@ -28,8 +30,8 @@ static uint8_t crc8(const uint8_t *b, unsigned n) {
     return c;
 }
 
-/* page 1: [Z][D][ver][vol][bass][src][flags][crc]; page 2 has its own magic and CRC, so a blank page 2 leaves page 1
- * valid and takes the defaults */
+/* page 1: [Z][D][ver][vol][bass][src][flags][crc]; pages 2 and 3 have their own magic and CRC, so a blank one leaves
+ * page 1 valid and takes the defaults */
 bool settings_load(void) {
     uint8_t b[8];
     g_settings = defaults;
@@ -48,6 +50,9 @@ bool settings_load(void) {
             g_settings.vol_cap = b[4];
         g_settings.fw_seen = (uint16_t)(b[5] | b[6] << 8);
     }
+    if (i2c_read(I2C_EEPROM, EE_ADDR3, 1, b, 8) == 0 && b[0] == EE_MAGIC0 && b[1] == EE_MAGIC3 && b[2] == EE_VER &&
+        b[7] == crc8(b, 7))
+        g_settings.image_seen = (uint32_t)b[3] | (uint32_t)b[4] << 8 | (uint32_t)b[5] << 16 | (uint32_t)b[6] << 24;
     if (g_settings.vol_step > g_settings.vol_cap)
         g_settings.vol_step = g_settings.vol_cap; /* the one limit, at boot too */
     return true;
@@ -82,6 +87,11 @@ bool settings_save_now(void) {
                     0};
     c[7] = crc8(c, 7);
     ok = i2c_write(I2C_EEPROM, EE_ADDR2, 1, c, 8) == 0 && ee_written() && ok;
+    uint32_t im = g_settings.image_seen;
+    uint8_t d[8] = {EE_MAGIC0,           EE_MAGIC3,           EE_VER, (uint8_t)im, (uint8_t)(im >> 8),
+                    (uint8_t)(im >> 16), (uint8_t)(im >> 24), 0};
+    d[7] = crc8(d, 7);
+    ok = i2c_write(I2C_EEPROM, EE_ADDR3, 1, d, 8) == 0 && ee_written() && ok;
     dirty = !ok;
     if (!ok) {
         save_at = tick_ms() + SETTINGS_SAVE_DELAY_MS;

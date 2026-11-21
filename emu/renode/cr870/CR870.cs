@@ -1144,7 +1144,7 @@ namespace Antmicro.Renode.Peripherals.CR870
             return -1;
         }
 
-        // Nokia's 2.6.24 mach-sulu kernel (blobs/module/nokia-hd1): default_idle disables IRQs, loads TIF_NEED_RESCHED, ignores
+        // Nokia's 2.6.24 mach-sulu kernel (blobs/nokia-hd1): default_idle disables IRQs, loads TIF_NEED_RESCHED, ignores
         // it and returns (arch_idle is empty): cpu_idle spins at 240 MIPS. Patched to mainline's arch_idle =
         // cpu_arm926_do_idle (WFI; it wakes on a masked IRQ): tst need_resched; bleq do_idle; IRQs on. Only on the
         // exact instruction pattern of that build (PA = VA - 0x60000000).

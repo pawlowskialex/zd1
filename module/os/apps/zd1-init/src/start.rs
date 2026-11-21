@@ -1,12 +1,11 @@
 //! The early start, before any service: what the kernel leaves to PID 1.
 
-use super::{Profile, say};
+use super::say;
 use dm870::DevMem;
 use std::time::Instant;
-use zd1_sys::{OsRelease, mknod, mount, umount};
+use zd1_sys::{mknod, mount, umount};
 
 /// What the early start found, for the services.
-#[cfg_attr(not(feature = "full"), allow(dead_code))] // the command line: the system's services read it
 pub struct Boot {
     /// The kernel's command line (switches: zd1.debug, zd1.noairplay, ...).
     pub cmdline: String,
@@ -14,7 +13,6 @@ pub struct Boot {
     pub board_up: Instant,
 }
 
-#[cfg_attr(not(feature = "full"), allow(dead_code))]
 impl Boot {
     /// Whether the command line carries a switch (`zd1.nowifi`).
     pub fn switch(&self, name: &str) -> bool {
@@ -45,7 +43,7 @@ const NODES: &[(&str, u32, u32, u32)] = &[
 
 /// Everything before the services. Failures are said and the start goes on: a speaker with half a system still
 /// talks to the MCU, which can put a working one back.
-pub fn early(profile: Profile) -> Boot {
+pub fn early() -> Boot {
     let _ = mount("proc", "/proc", "proc", 0, "");
     let _ = mount("sys", "/sys", "sysfs", 0, "");
     // the kernel's log on the console too (it starts at level 1): the UART our MCU logs
@@ -76,25 +74,15 @@ pub fn early(profile: Profile) -> Boot {
     let cmdline = std::fs::read_to_string("/proc/cmdline").unwrap_or_default().trim().to_string();
     let boot = Boot { cmdline, board_up: Instant::now() };
     let kernel = std::fs::read_to_string("/proc/sys/kernel/osrelease").unwrap_or_default().trim().to_string();
-    match profile {
-        #[cfg(feature = "full")]
-        Profile::System => super::system::early(&boot, &kernel),
-        #[cfg(not(feature = "full"))]
-        Profile::System => unreachable!("the rescue's build has no system"),
-        Profile::Rescue => {
-            let release = OsRelease::read("/etc/os-release");
-            say(&format!("zd1 rescue {}, kernel {kernel}", release.get("VERSION_ID")));
-            data(false);
-        }
-    }
+    super::system::early(&boot, &kernel);
     board();
     Boot { board_up: Instant::now(), ..boot }
 }
 
 /// /data, the settings (docs/module/settings.md). A partition that isn't ours yet (no /data/.zd1-data: new, or the
-/// stock firmware's leftovers) is formatted once by the system, never again for a new image (every version reads
-/// what another wrote); the rescue only mounts ours. None, or no luck: RAM until the next boot.
-pub(super) fn data(may_format: bool) {
+/// stock firmware's leftovers) is formatted once, never again for a new image (every version reads what another
+/// wrote). None, or no luck: RAM until the next boot.
+pub(super) fn data() {
     const MARK: &str = "/data/.zd1-data";
     const DATA_IN_RAM: &str = "size=1m"; // the settings and the AirPlay pairing: a few KB
     let Some(n) = zd1_slot::mtd("data") else {
@@ -106,7 +94,7 @@ pub(super) fn data(may_format: bool) {
     let ours = mount(&block, "/data", "jffs2", 0, "").is_ok() && std::path::Path::new(MARK).exists();
     if !ours {
         umount("/data");
-        let formatted = may_format && {
+        let formatted = {
             say("data: formatting the data partition");
             match zd1_slot::erase(n) {
                 Ok(_) => mount(&block, "/data", "jffs2", 0, "").is_ok() && std::fs::write(MARK, "").is_ok(),
@@ -117,9 +105,7 @@ pub(super) fn data(may_format: bool) {
             }
         };
         if !formatted {
-            if may_format {
-                say("data: FAILED: settings in RAM until the next boot");
-            }
+            say("data: FAILED: settings in RAM until the next boot");
             umount("/data");
             let _ = mount("data", "/data", "tmpfs", 0, DATA_IN_RAM);
         }

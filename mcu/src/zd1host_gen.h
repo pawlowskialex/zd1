@@ -66,6 +66,7 @@
 #define ZD1H_RECORD_NETWORKS     2  /* the Wi-Fi networks the speaker knows, the one it prefers first: a list of `KnownNetwork`; it joins the first of them it sees (`Actions`: `wifi.add`, `wifi.first`, `wifi.forget`) */
 #define ZD1H_RECORD_SERVERS      3  /* the snapservers on the speaker's networks: a list of `Snapserver`; the module answers from its last look over mDNS and looks again (read again two seconds later for it) */
 #define ZD1H_RECORD_PAIRINGS     4  /* the controllers paired with the AirPlay receiver: a list of `Pairing`, the oldest first */
+#define ZD1H_RECORD_CONTROLLERS   5  /* the clients paired over the network (docs/protocol/net.md): a list of `Controller`, the oldest first (`Actions`: `net.forget`) */
 /* ModState:  */
 #define ZD1H_MOD_STATE_OFF          0  /* unpowered */
 #define ZD1H_MOD_STATE_RESET        1  /* powered, held in reset */
@@ -96,12 +97,15 @@
 #define ZD1H_BOOT_OP_TRY          1  /* start `slot` once, at the module's next boot: it becomes the good slot when the module gets ready with it, else the next boot is the good one again */
 #define ZD1H_BOOT_OP_GOOD         2  /* make `slot` (A or B) the good one */
 #define ZD1H_BOOT_OP_CLEAR        3  /* forget a try and the failures since the last ready */
+#define ZD1H_BOOT_OP_INSTALL      4  /* start the rescue once to install the system it is (the boot image's) into the slot that isn't the good one (into the good one if it holds none; none if a slot holds it already), then start that slot once: a boot image's system without a second upload (docs/module/storage.md) */
 /* Sink: Where the bulk OUT endpoint's data goes (`Pipe`). */
 #define ZD1H_SINK_DISCARD      0  /* nowhere: counted and CRC-32'd (measuring the USB path) */
 #define ZD1H_SINK_MODULE       1  /* to the network module's updater over its console UART, as it grants it (`Update` sets it) */
 /* UpdateOp: What `Update` does. */
 #define ZD1H_UPDATE_OP_BEGIN        1  /* start the module's updater: it takes `size` bytes from the bulk pipe into the slot that doesn't run */
-#define ZD1H_UPDATE_OP_ABORT        2  /* stop sending; the module gives up on its own (10 s without data) */
+#define ZD1H_UPDATE_OP_ABORT        2  /* stop sending; the module gives up on its own (10 s without data). `SystemUpdate`: at once, the slot holds no system */
+#define ZD1H_UPDATE_OP_DATA         3  /* `SystemUpdate`: the next piece of the image */
+#define ZD1H_UPDATE_OP_END          4  /* `SystemUpdate`: that was all of it: check it, stamp the slot, start it once */
 /* UpdateState: Where an update is (`UpdateReply`). */
 #define ZD1H_UPDATE_STATE_IDLE         0  /* none since the MCU started */
 #define ZD1H_UPDATE_STATE_STARTING     1  /* the module's updater was asked to start: waiting for its ready */
@@ -153,6 +157,7 @@
 #define ZD1H_ID_INFO           0x02
 #define ZD1H_ID_INFO_REPLY     0x42
 #define ZD1H_ID_UNLOCK         0x0E
+#define ZD1H_ID_ALLOW          0x22
 #define ZD1H_ID_LOCK           0x0F  /* gated */
 #define ZD1H_ID_PEEK           0x04  /* gated */
 #define ZD1H_ID_POKE           0x05  /* gated */
@@ -191,14 +196,19 @@
 #define ZD1H_ID_DIAG           0x14
 #define ZD1H_ID_DIAG_REPLY     0x54
 
-/* the requests (HelloReply.requests: bit id % 8 of byte id / 8; the emulator's build has more), and the gated ones */
+/* the requests (HelloReply.requests: bit id % 8 of byte id / 8; the emulator's build has more), the gated ones, and
+ * the ones a paired client may make over the network (docs/protocol/net.md: they come through SPI reg 0xD9) */
 #ifdef ZD1_EMU
-static const uint8_t zd1h_requests[32] = {0xF6,0xFF,0xFF,0xFF,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00};
+static const uint8_t zd1h_requests[32] = {0xF6,0xFF,0xFF,0xFF,0x04,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00};
 #else
-static const uint8_t zd1h_requests[32] = {0xF6,0xFF,0xFF,0xF7,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00};
+static const uint8_t zd1h_requests[32] = {0xF6,0xFF,0xFF,0xF7,0x04,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00};
 #endif
 static inline bool zd1h_gated(uint8_t id){
     static const uint8_t g[32] = {0xF0,0xB5,0x6F,0xBB,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00};
+    return (g[id >> 3] >> (id & 7)) & 1;
+}
+static inline bool zd1h_net(uint8_t id){
+    static const uint8_t g[32] = {0x06,0x08,0x9F,0x50,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00};
     return (g[id >> 3] >> (id & 7)) & 1;
 }
 
@@ -234,13 +244,15 @@ typedef struct { uint8_t unused_; } zd1h_info_t;
 typedef struct { char fw[41]; char built[25]; uint32_t uptime_ms; uint8_t rcause; uint8_t state; uint8_t source; uint8_t volume; uint8_t bass; bool amp_allowed; bool amp_on; uint8_t debug; uint8_t mod_state; uint16_t mod_status; char mod_os[65]; char mod_ip[17]; char mod_name[65]; bool modcon_open; uint8_t gate; uint16_t gate_s; bool amp_auto; bool amp_asleep; uint8_t player; uint8_t player_state; bool auto_switch; uint8_t players_on; uint8_t mod_proto; uint8_t link_proto; uint16_t amp_idle_s; uint8_t volume_cap; bool console_open; } zd1h_info_reply_t;
 /* Unlock: Open the gate: the MCU waits up to 30 s for a press of ON/OFF on the speaker (its LED flashes purple; the press does nothing else), then gated requests run until 10 minutes after the last one. `Error DENIED` if nobody pressed. Answered at once when the gate is open. */
 typedef struct { uint8_t unused_; } zd1h_unlock_t;
+/* Allow: A person at the speaker allows a system update from the network, and the MCU firmware it brings: the MCU waits up to 30 s for ON/OFF held 5 s (its LED flashes amber; a shorter press works as always); held, it takes an app our OS gives it (SPI reg 0xD7) once, within 10 minutes and no later than 60 s after the module's next ready (the update's trial, or the good slot's after one that failed), and none without. Our OS asks it at `SystemUpdate` BEGIN (docs/protocol/net.md). `Error DENIED` if nobody held it, `Error BUSY` while another confirmation waits. */
+typedef struct { uint8_t unused_; } zd1h_allow_t;
 /* Lock: Close the gate now, or open it for good (kept in the EEPROM across power cycles: a lab unit driven by tools unattended; the user's choice, made at the speaker since this request is gated). */
 typedef struct { bool open; } zd1h_lock_t;
 /* Peek: Read memory (gated: the MCU's RAM passes settings through). */
 typedef struct { uint32_t addr; uint16_t len; bool words; } zd1h_peek_t;
 /* Poke: Write memory. */
 typedef struct { uint32_t addr; uint16_t data_len; uint8_t data[240]; bool words; } zd1h_poke_t;
-/* Dfu: Into the B&W DFU bootloader (03EB:2FF8, ~3 s later): the module and amp made safe, ISP_FORCE set, a watchdog reset. The device leaves USB right after the reply. */
+/* Dfu: Into the B&W DFU bootloader (03EB:2FF8, ~3 s later): the module and amp made safe, ISP_FORCE set, a watchdog reset. The device leaves USB right after the reply. `Error ARG` on a ZD1L: its bootloader (B&W's "Net HBL") has no USB, its MCU firmware comes from the module (`docs/mcu/bootloader-hbl.md`). */
 typedef struct { uint8_t unused_; } zd1h_dfu_t;
 /* Reboot: Restart the MCU firmware (watchdog reset; the bootloader starts the app again). The module is powered off first. */
 typedef struct { uint8_t unused_; } zd1h_reboot_t;
@@ -299,7 +311,7 @@ typedef struct { bool open; uint16_t taken; uint32_t lost; } zd1h_console_reply_
 /* PipeData: Data into the bulk pipe as if it came on the bulk endpoint: the emulator's build only (its USB carries EP0 only). `Error BUSY` while both buffers are full: send it again. */
 typedef struct { uint16_t data_len; uint8_t data[240]; } zd1h_pipe_data_t;
 /* BootReply */
-typedef struct { uint8_t good; uint8_t next; uint8_t last; bool trial; uint8_t failed; } zd1h_boot_reply_t;
+typedef struct { uint8_t good; uint8_t next; uint8_t last; bool trial; uint8_t failed; bool installing; } zd1h_boot_reply_t;
 /* Prefs: The speaker's behaviour, kept in the EEPROM: switching to a USB stream by itself, how long a silent source keeps the amp on, the highest volume on every source. `change` says which fields to set (0: only read them). The amp's lock is `Amp`. */
 typedef struct { uint8_t change; bool auto_switch; uint16_t amp_idle_s; uint8_t volume_cap; } zd1h_prefs_t;
 /* PrefsReply */
@@ -393,6 +405,7 @@ static const zd1h_msg_t ZD1H_INFO = { 0x02, 0, 0, sizeof(zd1h_info_t) };
 static const zd1h_field_t zd1h_info_reply_fields[] = { { ZD1H_T_STR, 40, offsetof(zd1h_info_reply_t, fw), 0 }, { ZD1H_T_STR, 24, offsetof(zd1h_info_reply_t, built), 0 }, { ZD1H_T_U32, 0, offsetof(zd1h_info_reply_t, uptime_ms), 0 }, { ZD1H_T_U8, 0, offsetof(zd1h_info_reply_t, rcause), 0 }, { ZD1H_T_U8, 0, offsetof(zd1h_info_reply_t, state), 0 }, { ZD1H_T_U8, 0, offsetof(zd1h_info_reply_t, source), 0 }, { ZD1H_T_U8, 0, offsetof(zd1h_info_reply_t, volume), 0 }, { ZD1H_T_U8, 0, offsetof(zd1h_info_reply_t, bass), 0 }, { ZD1H_T_BOOL, 0, offsetof(zd1h_info_reply_t, amp_allowed), 0 }, { ZD1H_T_BOOL, 0, offsetof(zd1h_info_reply_t, amp_on), 0 }, { ZD1H_T_U8, 0, offsetof(zd1h_info_reply_t, debug), 0 }, { ZD1H_T_U8, 0, offsetof(zd1h_info_reply_t, mod_state), 0 }, { ZD1H_T_U16, 0, offsetof(zd1h_info_reply_t, mod_status), 0 }, { ZD1H_T_STR, 64, offsetof(zd1h_info_reply_t, mod_os), 0 }, { ZD1H_T_STR, 16, offsetof(zd1h_info_reply_t, mod_ip), 0 }, { ZD1H_T_STR, 64, offsetof(zd1h_info_reply_t, mod_name), 0 }, { ZD1H_T_BOOL, 0, offsetof(zd1h_info_reply_t, modcon_open), 0 }, { ZD1H_T_U8, 0, offsetof(zd1h_info_reply_t, gate), 0 }, { ZD1H_T_U16, 0, offsetof(zd1h_info_reply_t, gate_s), 0 }, { ZD1H_T_BOOL, 0, offsetof(zd1h_info_reply_t, amp_auto), 0 }, { ZD1H_T_BOOL, 0, offsetof(zd1h_info_reply_t, amp_asleep), 0 }, { ZD1H_T_U8, 0, offsetof(zd1h_info_reply_t, player), 0 }, { ZD1H_T_U8, 0, offsetof(zd1h_info_reply_t, player_state), 0 }, { ZD1H_T_BOOL, 0, offsetof(zd1h_info_reply_t, auto_switch), 0 }, { ZD1H_T_U8, 0, offsetof(zd1h_info_reply_t, players_on), 0 }, { ZD1H_T_U8, 0, offsetof(zd1h_info_reply_t, mod_proto), 0 }, { ZD1H_T_U8, 0, offsetof(zd1h_info_reply_t, link_proto), 0 }, { ZD1H_T_U16, 0, offsetof(zd1h_info_reply_t, amp_idle_s), 0 }, { ZD1H_T_U8, 0, offsetof(zd1h_info_reply_t, volume_cap), 0 }, { ZD1H_T_BOOL, 0, offsetof(zd1h_info_reply_t, console_open), 0 } };
 static const zd1h_msg_t ZD1H_INFO_REPLY = { 0x42, 30, zd1h_info_reply_fields, sizeof(zd1h_info_reply_t) };
 static const zd1h_msg_t ZD1H_UNLOCK = { 0x0E, 0, 0, sizeof(zd1h_unlock_t) };
+static const zd1h_msg_t ZD1H_ALLOW = { 0x22, 0, 0, sizeof(zd1h_allow_t) };
 static const zd1h_field_t zd1h_lock_fields[] = { { ZD1H_T_BOOL, 0, offsetof(zd1h_lock_t, open), 0 } };
 static const zd1h_msg_t ZD1H_LOCK = { 0x0F, 1, zd1h_lock_fields, sizeof(zd1h_lock_t) };
 static const zd1h_field_t zd1h_peek_fields[] = { { ZD1H_T_U32, 0, offsetof(zd1h_peek_t, addr), 0 }, { ZD1H_T_U16, 0, offsetof(zd1h_peek_t, len), 0 }, { ZD1H_T_BOOL, 0, offsetof(zd1h_peek_t, words), 0 } };
@@ -453,8 +466,8 @@ static const zd1h_field_t zd1h_console_reply_fields[] = { { ZD1H_T_BOOL, 0, offs
 static const zd1h_msg_t ZD1H_CONSOLE_REPLY = { 0x5D, 3, zd1h_console_reply_fields, sizeof(zd1h_console_reply_t) };
 static const zd1h_field_t zd1h_pipe_data_fields[] = { { ZD1H_T_BYTES, 240, offsetof(zd1h_pipe_data_t, data), offsetof(zd1h_pipe_data_t, data_len) } };
 static const zd1h_msg_t ZD1H_PIPE_DATA = { 0x1B, 1, zd1h_pipe_data_fields, sizeof(zd1h_pipe_data_t) };
-static const zd1h_field_t zd1h_boot_reply_fields[] = { { ZD1H_T_U8, 0, offsetof(zd1h_boot_reply_t, good), 0 }, { ZD1H_T_U8, 0, offsetof(zd1h_boot_reply_t, next), 0 }, { ZD1H_T_U8, 0, offsetof(zd1h_boot_reply_t, last), 0 }, { ZD1H_T_BOOL, 0, offsetof(zd1h_boot_reply_t, trial), 0 }, { ZD1H_T_U8, 0, offsetof(zd1h_boot_reply_t, failed), 0 } };
-static const zd1h_msg_t ZD1H_BOOT_REPLY = { 0x57, 5, zd1h_boot_reply_fields, sizeof(zd1h_boot_reply_t) };
+static const zd1h_field_t zd1h_boot_reply_fields[] = { { ZD1H_T_U8, 0, offsetof(zd1h_boot_reply_t, good), 0 }, { ZD1H_T_U8, 0, offsetof(zd1h_boot_reply_t, next), 0 }, { ZD1H_T_U8, 0, offsetof(zd1h_boot_reply_t, last), 0 }, { ZD1H_T_BOOL, 0, offsetof(zd1h_boot_reply_t, trial), 0 }, { ZD1H_T_U8, 0, offsetof(zd1h_boot_reply_t, failed), 0 }, { ZD1H_T_BOOL, 0, offsetof(zd1h_boot_reply_t, installing), 0 } };
+static const zd1h_msg_t ZD1H_BOOT_REPLY = { 0x57, 6, zd1h_boot_reply_fields, sizeof(zd1h_boot_reply_t) };
 static const zd1h_field_t zd1h_prefs_fields[] = { { ZD1H_T_U8, 0, offsetof(zd1h_prefs_t, change), 0 }, { ZD1H_T_BOOL, 0, offsetof(zd1h_prefs_t, auto_switch), 0 }, { ZD1H_T_U16, 0, offsetof(zd1h_prefs_t, amp_idle_s), 0 }, { ZD1H_T_U8, 0, offsetof(zd1h_prefs_t, volume_cap), 0 } };
 static const zd1h_msg_t ZD1H_PREFS = { 0x1C, 4, zd1h_prefs_fields, sizeof(zd1h_prefs_t) };
 static const zd1h_field_t zd1h_prefs_reply_fields[] = { { ZD1H_T_BOOL, 0, offsetof(zd1h_prefs_reply_t, auto_switch), 0 }, { ZD1H_T_BOOL, 0, offsetof(zd1h_prefs_reply_t, amp_auto), 0 }, { ZD1H_T_U16, 0, offsetof(zd1h_prefs_reply_t, amp_idle_s), 0 }, { ZD1H_T_U8, 0, offsetof(zd1h_prefs_reply_t, volume_cap), 0 } };

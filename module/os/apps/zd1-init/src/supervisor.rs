@@ -3,9 +3,9 @@
 //! signalfd), the control socket and the pipes of the services' output (into their logs, which it keeps small: RAM),
 //! with the next timer as its timeout.
 
+use super::say;
 use super::services::{self, Check, Command, Ctx, Lifetime, Output, Service, Start};
 use super::start::Boot;
-use super::{Profile, say};
 use std::fs::OpenOptions;
 use std::io::{Read, Write};
 use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
@@ -89,7 +89,6 @@ struct Client {
 }
 
 struct Supervisor {
-    profile: Profile,
     boot: Boot,
     live: Vec<Live>,
     /// The debug services' mode from the MCU (zd1-linkd): None = the image's default.
@@ -99,7 +98,7 @@ struct Supervisor {
     clients: Vec<Client>,
 }
 
-pub fn run(profile: Profile, boot: Boot) -> ! {
+pub fn run(boot: Boot) -> ! {
     let signals = match Signals::block() {
         Ok(s) => s,
         Err(e) => {
@@ -115,7 +114,7 @@ pub fn run(profile: Profile, boot: Boot) -> ! {
         say(&format!("{}: {e}: nothing can reach us", zd1_svc::SOCKET));
     }
     let now = Instant::now();
-    let live = services::table(profile)
+    let live = services::table()
         .iter()
         .map(|svc| Live {
             svc,
@@ -132,7 +131,7 @@ pub fn run(profile: Profile, boot: Boot) -> ! {
             health: svc.health.as_ref().map(|h| ((h.new)(), now + h.every)),
         })
         .collect();
-    let mut s = Supervisor { profile, boot, live, debug: None, cursor: 0, announced: false, clients: Vec::new() };
+    let mut s = Supervisor { boot, live, debug: None, cursor: 0, announced: false, clients: Vec::new() };
     s.advance();
     loop {
         let now = Instant::now();
@@ -200,7 +199,7 @@ impl Supervisor {
             let i = self.cursor;
             if self.live[i].svc.output == Output::Shell && !self.announced {
                 self.announced = true;
-                services::up(self.profile);
+                services::up();
             }
             if self.live[i].state == State::Pending {
                 self.start(i);
@@ -214,7 +213,7 @@ impl Supervisor {
         }
         if !self.announced {
             self.announced = true;
-            services::up(self.profile);
+            services::up();
         }
     }
 

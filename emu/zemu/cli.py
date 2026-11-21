@@ -6,8 +6,8 @@
 IMAGE: os (default), stock (KnOS), none (no module: the main board alone),
 or a file: a .bcd (installed into the factory NAND, booted through BL1), a NAND image, a stage 2 for 0x60008000.
 
-Steps (in order, all times virtual): --until RX, --wait STREAM RX, --sh CMD, --send TEXT, --sleep S, --spi CMDS,
---host CMD. They start once the image is up ([os] up, ...) unless the first one is a wait or --at-once
+Steps (in order, all times virtual): --until RX, --wait STREAM RX, --sh CMD, --send TEXT, --sleep S, --press S,
+--confirm S, --spi CMDS, --host CMD. They start once the image is up ([os] up, ...) unless the first one is a wait or --at-once
 is given. Output: emu/run/NAME/.
 Exit code 1 if a wait timed out, a --sh or --host command failed, or the guest panicked (unless --allow-panic). Nothing here touches hardware.
 """
@@ -139,6 +139,10 @@ def run(a):
                     s.sleep(float(v))
                 elif kind == "send":
                     s.send(v)
+                elif kind == "press":
+                    s.press(float(v))
+                elif kind == "confirm":
+                    s.confirm(float(v))
                 elif kind == "sh":
                     rc, out = s.sh(v, a.timeout)
                     if a.quiet:
@@ -240,6 +244,19 @@ def main(argv=None):
     g.add_argument("--sh", action=Step, metavar="CMD", help="a command in the module's shell, wait for it to end")
     g.add_argument("--send", action=Step, metavar="TEXT", help="type TEXT + CR on the module console (raw: \\xNN)")
     g.add_argument("--sleep", action=Step, metavar="SECS")
+    g.add_argument(
+        "--press",
+        action=Step,
+        metavar="SECS",
+        help="ON/OFF pressed SECS (virtual) from now, while the next steps run (a person at the speaker: the USB gate)",
+    )
+    g.add_argument(
+        "--confirm",
+        action=Step,
+        metavar="SECS",
+        help="ON/OFF held 5 s, SECS (virtual) from now, while the next steps run (a person at the speaker: pairing, "
+        "an MCU update from the module)",
+    )
     g.add_argument("--spi", action=Step, metavar="CMDS", help='the SPI test host (module alone): "rd 0x11 rdv 0xc0"')
     g.add_argument(
         "--host",

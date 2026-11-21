@@ -105,4 +105,28 @@ static inline int zd1_play_push(zd1_play_matcher_t *m, char c) {
     return ZD1_PLAY_NONE;
 }
 
+/* ---- XModem over SPI (0x2C / 0x2D; protocol/spi xmodem.rs): its blocks and CRC-16 ---- */
+
+/* CRC-16/XMODEM from c (0 to start): a block's check, and a B&W .dmb's (over the app in flash: volatile) */
+static inline uint16_t zd1_xmodem_crc16(uint16_t c, const volatile uint8_t *d, uint32_t n) {
+    while (n--) {
+        c ^= (uint16_t)(*d++ << 8);
+        for (int i = 0; i < 8; i++)
+            c = (c & 0x8000) ? (uint16_t)((c << 1) ^ 0x1021) : (uint16_t)(c << 1);
+    }
+    return c;
+}
+
+/* a block received (n bytes: SOH or STX, its number, its complement, the data, the CRC-16 big-endian): its number,
+ * or -1 when its header or CRC doesn't check */
+static inline int zd1_xmodem_check(const uint8_t *b, uint16_t n) {
+    uint16_t size = n > 0 && b[0] == ZD1_XMODEM_SOH   ? ZD1_XMODEM_BLOCK
+                    : n > 0 && b[0] == ZD1_XMODEM_STX ? ZD1_XMODEM_BLOCK_1K
+                                                      : 0;
+    if (!size || n != size + 5 || b[2] != (uint8_t)~b[1] ||
+        zd1_xmodem_crc16(0, b + 3, size) != (uint16_t)(b[3 + size] << 8 | b[4 + size]))
+        return -1;
+    return b[1];
+}
+
 #endif

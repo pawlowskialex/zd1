@@ -1,5 +1,7 @@
 #include <sysclk.h>
 #include <flashc.h>
+#include <spi.h>
+#include <delay.h>
 #include "zd1_board.h"
 
 uint32_t g_rcause;
@@ -20,33 +22,37 @@ void board_bl_pins(void) {
 /* Clock bring-up in the bootloader's order (OSC0 -> run from OSC0 -> PLL0 -> run from PLL0) instead of
  * ASF's direct RCSYS -> PLL0 switch. Ends in the same state ASF's sysclk_init gives for conf_clock.h
  * (PLL0 0x3f0f020d = 12*16/2/2 = 48 MHz, FWS=1), so sysclk_get_cpu_hz()/USB stay valid.
- * Bounded waits; a failure leaves stage | 0x80 in the boot log and returns false (main blinks red on the RC
+ * Bounded waits; a failure returns false, the stage | 0x80 told (the app's main logs it and blinks red on the RC
  * oscillator). */
-bool board_clock_init(void) {
+static void reached(void (*stage)(uint8_t), uint8_t n) {
+    if (stage)
+        stage(n);
+}
+bool board_clock_init(void (*stage)(uint8_t)) {
     struct pll_config pll;
     uint32_t t;
     osc_enable(OSC_ID_OSC0); /* BOARD_OSC0_*: 12 MHz crystal -> OSCCTRL0 0x307 */
     for (t = 0; !osc_is_ready(OSC_ID_OSC0) && t < 2000000u; t++) {
     }
     if (!osc_is_ready(OSC_ID_OSC0)) {
-        blog(0x82);
+        reached(stage, 0x82);
         return false;
     }
-    blog(2);
+    reached(stage, 2);
     sysclk_set_source(SYSCLK_SRC_OSC0); /* run from OSC0 (12 MHz) first, like the bootloader */
-    blog(3);
+    reached(stage, 3);
     pll_config_defaults(&pll, 0); /* conf_clock.h: 12*8/2 = 48 MHz -> PLL0 0x3f0f020d */
     pll_enable(&pll, 0);
     for (t = 0; !pll_is_locked(0) && t < 2000000u; t++) {
     }
     if (!pll_is_locked(0)) {
-        blog(0x84);
+        reached(stage, 0x84);
         return false;
     }
-    blog(4);
+    reached(stage, 4);
     flash_set_bus_freq(sysclk_get_cpu_hz()); /* FWS=1 above 33 MHz */
     sysclk_set_source(SYSCLK_SRC_PLL0);
-    blog(5);
+    reached(stage, 5);
     return true;
 }
 
@@ -59,6 +65,40 @@ void board_safe_gpio(void) {
     gpio_configure_pin(PIN_MOD_PWR, GPIO_DIR_OUTPUT | GPIO_INIT_LOW);
     gpio_configure_pin(PIN_MOD_RST, GPIO_DIR_OUTPUT | GPIO_INIT_LOW);
     gpio_configure_pin(PIN_LED_R, GPIO_DIR_OUTPUT | GPIO_INIT_LOW); /* red LED off until the PWM takes it */
+}
+
+/* ---- the module's power (zd1_board.h) ---- */
+static const uint32_t spi_pins[] = {AVR32_PIN_PA09, AVR32_PIN_PA11, AVR32_PIN_PA12, AVR32_PIN_PA13};
+void board_module_spi(void) {
+    static const gpio_map_t pins = {
+        {AVR32_SPI0_NPCS_2_0_PIN, AVR32_SPI0_NPCS_2_0_FUNCTION}, /* PA09 */
+        {AVR32_SPI0_MISO_0_0_PIN, AVR32_SPI0_MISO_0_0_FUNCTION}, /* PA11 */
+        {AVR32_SPI0_MOSI_0_0_PIN, AVR32_SPI0_MOSI_0_0_FUNCTION}, /* PA12 */
+        {AVR32_SPI0_SCK_0_0_PIN, AVR32_SPI0_SCK_0_0_FUNCTION},   /* PA13 */
+    };
+    const spi_options_t opt = {.reg = 2,
+                               .baudrate = 3000000,
+                               .bits = 8,
+                               .spck_delay = 0,
+                               .trans_delay = 0,
+                               .stay_act = 1,
+                               .spi_mode = 3,
+                               .modfdis = 1};
+    gpio_set_pin_high(PIN_MOD_RST);
+    sysclk_enable_pba_module(SYSCLK_SPI0);
+    gpio_enable_module(pins, sizeof pins / sizeof pins[0]);
+    spi_initMaster(&AVR32_SPI0, &opt);
+    spi_selectionMode(&AVR32_SPI0, 0, 0, 0); /* fixed peripheral select */
+    spi_setupChipReg(&AVR32_SPI0, &opt, sysclk_get_pba_hz());
+    spi_enable(&AVR32_SPI0);
+    spi_unselectChip(&AVR32_SPI0, 2); /* every request toggles NPCS2 itself (SPI_PROTOCOL 1.3) */
+}
+void board_module_off(void) {
+    gpio_set_pin_low(PIN_MOD_RST);
+    delay_ms(20);
+    gpio_set_pin_low(PIN_MOD_PWR);
+    for (unsigned i = 0; i < sizeof spi_pins / sizeof spi_pins[0]; i++)
+        gpio_configure_pin(spi_pins[i], GPIO_DIR_INPUT);
 }
 
 /* External USB routing mux -> MCU device port. Uses the bootloader's DFU-mode pin state exactly

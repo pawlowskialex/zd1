@@ -79,10 +79,8 @@ pub async fn main() {
         ..Default::default()
     });
 
-    let session_config = SessionConfig {
-        device_id: format!("{:0<40}", mac.iter().map(|b| format!("{b:02x}")).collect::<String>()),
-        ..SessionConfig::default()
-    };
+    let session_config =
+        SessionConfig { device_id: format!("{:0<40}", zd1_text::hex(&mac)), ..SessionConfig::default() };
     let connect_config = ConnectConfig { name: name.clone(), device_type: DeviceType::Speaker, ..Default::default() };
 
     let spirc: Arc<Mutex<Option<Spirc>>> = Arc::new(Mutex::new(None));

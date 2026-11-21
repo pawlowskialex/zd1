@@ -18,68 +18,72 @@ export async function drawDfu() {
   const last = st.boot.at(-1);
   const lastOk = last?.stage === "main loop";
   $("dfu-boot").textContent = last
-    ? `our firmware's last boot (${last.boot}) reached “${last.stage}”${lastOk ? ": it ran" : ": it stopped there"}`
-    : "no boot of our firmware logged: B&W's firmware, an empty speaker, or an install erased the log";
+    ? `our firmware's boot ${last.boot} reached “${last.stage}”${lastOk ? "" : ": it stopped there"}`
+    : "none of our firmware logged: B&W's firmware, a new speaker, or an install erased the log";
   $("dfu-module").textContent = st.module;
   const rel = releases[0];
-  const p = $("dfu-primary");
-  p.replaceChildren();
   const btn = (label, primary, f) => {
     const b = el("button", { textContent: label, className: primary ? "primary" : "" });
     b.onclick = f;
     return b;
   };
+  const row = (...kids) => el("div", { className: "row" }, ...kids);
+  const small = (textContent) => el("p", { className: "small", textContent });
+  const noRelease = (what) =>
+    el("p", { className: "warn", textContent: `No release is offered to this page: ${what}.` });
+  let lead;
+  const p = [];
   if (!last) {
-    p.append(
-      el("p", {
-        textContent:
-          "Install puts our firmware on both boards: the module's boot image, the main board's " +
-          "firmware (a backup of what is there first), the module's first boot, its system. About 5 minutes; keep the " +
-          "speaker plugged in. The speaker ends up without a network: the page shows where to add one.",
-      }),
-    );
-    p.append(
+    lead = "Ready for our firmware.";
+    p.push(
+      el(
+        "ol",
+        { className: "steps" },
+        ...[
+          "The module's boot image, the release's system in it: about 6 minutes.",
+          "The main board's firmware, after a backup of what is there (a download, and a copy in this browser).",
+          "The module installs its system into a slot and starts it: about a minute.",
+        ].map((textContent) => el("li", { textContent })),
+      ),
+      small(
+        "Keep the speaker plugged in and this tab in front. It ends without a network: the page shows where to add one.",
+      ),
       rel?.mcu && rel?.system
-        ? el(
-            "div",
-            { className: "row" },
-            btn(`Install release ${rel.version}`, true, () => installAll(rel)),
-          )
-        : el("p", {
-            className: "warn",
-            textContent: "No release with both images is offered to this page: install from files under Advanced.",
-          }),
+        ? row(btn(`Install release ${rel.version}`, true, () => installAll(rel)))
+        : noRelease("install from files under Advanced"),
     );
   } else if (lastOk) {
-    p.append(
-      el("p", {
-        textContent: "Our firmware ran here: it was asked into the bootloader, or ON/OFF was held at power-up.",
-      }),
-      el(
-        "div",
-        { className: "row" },
+    lead = "Our firmware is installed, and waits here.";
+    p.push(
+      small("It was asked into the bootloader, or ON/OFF was held while it powered up."),
+      row(
         btn("Start the firmware", true, startFirmware),
         rel?.mcu ? btn(`Install release ${rel.version}'s firmware`, false, () => installRelease(rel, "mcu")) : null,
       ),
     );
   } else {
-    p.append(
-      el("p", {
-        textContent:
-          "Our firmware was here, but its last boot stopped before it ran. Repair writes the " +
-          "firmware again (a backup first); a backup below puts back what was there before.",
-      }),
-      el(
-        "div",
-        { className: "row" },
+    lead = `Our firmware's last start stopped early, at “${last.stage}”.`;
+    p.push(
+      small("Repair writes the firmware again (a backup first); a backup below puts back what was there before."),
+      row(
         rel?.mcu
           ? btn(`Repair: release ${rel.version}'s firmware`, true, () => installRelease(rel, "mcu"))
-          : el("span", { className: "warn", textContent: "No release offered: install from a file under Advanced." }),
-        btn("Start the firmware anyway", false, startFirmware),
+          : noRelease("install from a file under Advanced"),
+        btn("Start it anyway", false, startFirmware),
       ),
     );
   }
+  $("dfu-lead").textContent = lead;
+  $("dfu-primary").replaceChildren(...p);
   drawBackups($("dfu-backups"), restoreBackup);
+  // the backups only when there are some (or the browser keeps none: it says why)
+  backups()
+    .then((l) => {
+      $("dfu-kept").hidden = !l.length;
+    })
+    .catch(() => {
+      $("dfu-kept").hidden = false;
+    });
 }
 
 export async function startFirmware() {
@@ -97,17 +101,15 @@ export async function installAll(rel) {
     !(await ask(
       `Install release ${rel.version}?`,
       "Both boards get our firmware; what is on the main board is " +
-        "backed up first (a download, and a copy in this browser). About 5 minutes; the browser may ask once for the firmware.",
+        "backed up first (a download, and a copy in this browser). About 7 minutes; the browser may ask once for the firmware.",
       "Install",
     ))
   )
     return;
   const r = await job(`Install release ${rel.version}`, false, async () => {
-    const [mcu, system, bcd] = [
-      await fetchImage(rel.mcu),
-      await fetchImage(rel.system),
-      rel.bcd ? await fetchImage(rel.bcd) : undefined,
-    ];
+    // with a boot image its rescue is the system (it installs itself); without one, the system image
+    const bcd = rel.bcd ? await fetchImage(rel.bcd) : undefined;
+    const [mcu, system] = [await fetchImage(rel.mcu), bcd ? undefined : await fetchImage(rel.system)];
     const r = await app.bl.install(bcd, rel.mcu.file, mcu, system);
     return `Done: MCU firmware ${r.fw}, system ${r.os} in slot ${r.slot.toUpperCase()}.`;
   });
@@ -145,17 +147,20 @@ export function drawSoftware(b) {
     slot = names(app.S.Slot);
   const runs = slot[st.slot];
   const failed = ["A", "B", "the rescue"].filter((_, k) => (b.failed >> k) & 1);
+  // a slot's stamp is "VERSION [SHA LENGTH]": the version says it
   const line = (s, stampv) =>
-    `${s.toUpperCase()}: ${stampv || "no system"}${runs === s ? " (runs)" : ""}${slot[st.good] === s ? " (good)" : ""}`;
+    `${s.toUpperCase()}: ${stampv?.split(" ")[0] || "empty"}${runs === s ? ", running" : ""}${slot[st.good] === s ? ", the good one" : ""}`;
   $("slots").textContent =
-    [line("a", st.stamp_a), line("b", st.stamp_b)].join("; ") +
-    (runs === "none" ? "; the module runs its rescue" : "") +
-    (b.next ? `; the next boot tries ${slot[b.next].toUpperCase()}` : "") +
-    (failed.length ? `; failed: ${failed.join(", ")}` : "");
+    [line("a", st.stamp_a), line("b", st.stamp_b)].join(" · ") +
+    (runs === "none" ? " · the module runs its rescue" : "") +
+    (b.next ? ` · the next boot tries ${slot[b.next].toUpperCase()}` : "") +
+    (b.installing ? " · the rescue installs itself into a slot" : "") +
+    (failed.length ? ` · failed: ${failed.join(", ")}` : "");
   const back = $("ways-back");
   back.replaceChildren();
   const other = runs === "a" ? "b" : runs === "b" ? "a" : null;
-  if (other && st[`stamp_${other}`]) {
+  const usb = app.sp.link() === "usb"; // the slots and the MCU's backups are USB's (over the network: no going back)
+  if (usb && other && st[`stamp_${other}`]) {
     const x = el("button", {
       className: "quiet",
       textContent: `Back to slot ${other.toUpperCase()} (${st[`stamp_${other}`].split(" ")[0]})`,
@@ -179,7 +184,7 @@ export function drawSoftware(b) {
   }
   backups()
     .then((l) => {
-      if (!l.length) return;
+      if (!l.length || !usb) return;
       const x = el("button", {
         className: "quiet",
         textContent: `Restore the MCU firmware ${l[0].holds} (backed up ${new Date(l[0].date).toLocaleDateString()})`,
@@ -202,8 +207,21 @@ export async function loadReleases() {
     releases = [];
   }
   app.drawnFor = "";
+  drawInstall();
   if (app.sp && app.info) drawReleases();
   if (app.bl) drawDfu();
+}
+
+/// The welcome view's Install: the release it puts on, and the Lightning model's form: an alpha, so only when a release
+/// has its file and the person ticked that they'll try one.
+export function drawInstall() {
+  const rel = releases[0],
+    fw = releases.find((r) => r.fw);
+  $("install-release").textContent = rel
+    ? `It installs release ${rel.version}${rel.date ? `, ${rel.date}` : ""}.${fw ? "" : " The Lightning model's file isn't in a release yet."}`
+    : "No release is offered to this page: the install needs one.";
+  $("zd1l-alpha").disabled = !fw;
+  for (const e of $("zd1l-form").elements) e.disabled = !fw || !$("zd1l-alpha").checked;
 }
 
 /// A release's image, fetched and checked against the manifest's SHA-256.
@@ -224,10 +242,10 @@ export async function fetchImage(img) {
 /// order), -1 for a build the list doesn't have.
 export const position = (running, kind) => (running ? releases.findIndex((r) => r[kind]?.version === running) : -1);
 
-/// The banner on top: what there is to do, with the one button.
+/// The banner on top: what there is to do, with the one button (none: it's for the person at the speaker).
 function banner(title, text, label, f, notes) {
-  const u = el("button", { className: "primary", textContent: label });
-  u.onclick = f;
+  const u = label ? el("button", { className: "primary", textContent: label }) : null;
+  if (u) u.onclick = f;
   $("update").replaceChildren(
     el("i", { className: "lamp on" }),
     el(
@@ -251,8 +269,11 @@ function banner(title, text, label, f, notes) {
 
 /// An install that stopped on the way (the person away, the page closed): the state it left, picked up from there.
 /// Our firmware with the module on the stock software (the boot image never went on): the whole install again. The
-/// module on its rescue: it has no system yet (or none that starts): the system. The module in BL2: an update of its
-/// boot image stopped after BL2 erased the old one: the boot image through BL2's XModem.
+/// module on its rescue, no system in a slot: the release's rescue installs itself (the MCU first if it is behind:
+/// Boot INSTALL is the release's); an older rescue gets the release's whole update when its boot image differs (the
+/// boot image and the MCU, then the new rescue installs itself: never the release's system on an older boot image and
+/// MCU), else the system into a slot. The module in BL2: an update of its boot image stopped after BL2 erased the old
+/// one: the boot image through BL2's XModem.
 function unfinished(rel) {
   const ms = names(app.S.ModState)[app.info.mod_state];
   if (ms === "bl2" && rel.bcd?.ours) {
@@ -274,12 +295,25 @@ function unfinished(rel) {
     );
     return true;
   }
-  if (ms === "ready" && app.info.mod_os?.split(" ")[2] === "rescue" && rel.system) {
+  const os = app.info.mod_os?.split(" ") ?? [];
+  if (ms === "ready" && os[2] === "rescue" && rel.system) {
+    const mcu = rel.mcu && position(app.info.fw, "mcu") !== 0 ? ["mcu"] : [];
+    const needs =
+      os[1] === rel.system.version
+        ? [...mcu, "rescue"]
+        : bootBehind(rel)
+          ? ["boot", ...mcu, "system"]
+          : ["system", ...mcu];
     banner(
       "The install isn't finished",
-      "The module runs its rescue: it has no system yet. The system goes on (about 2 minutes).",
-      `Finish: install ${rel.version}'s system`,
-      () => updateTo(rel, ["system"], true),
+      "The module runs its rescue: it has no system in a slot yet. " +
+        (needs.includes("boot")
+          ? `${rel.version}'s boot image goes on, then its system from it (about 8 minutes).`
+          : needs.includes("rescue")
+            ? "It installs itself into one (about a minute)."
+            : "The system goes on (about 2 minutes)."),
+      `Finish: install ${rel.version}`,
+      () => updateTo(rel, needs, true),
     );
     return true;
   }
@@ -296,10 +330,10 @@ async function writeBootInBl2(rel) {
 
 async function finishAll(rel) {
   const r = await job(`Install release ${rel.version}`, false, async () => {
-    const [mcu, system, bcd] = [await fetchImage(rel.mcu), await fetchImage(rel.system), await fetchImage(rel.bcd)];
+    const [mcu, bcd] = [await fetchImage(rel.mcu), await fetchImage(rel.bcd)];
     const sp = app.sp;
     app.sp = null; // the install takes the speaker into its bootloader: this connection ends
-    const r = await sp.install(bcd, rel.mcu.file, mcu, system);
+    const r = await sp.install(bcd, rel.mcu.file, mcu, undefined); // the boot image's rescue is the system
     return `Done: MCU firmware ${r.fw}, system ${r.os} in slot ${r.slot.toUpperCase()}.`;
   });
   await connect(false);
@@ -315,6 +349,13 @@ function moduleBoot() {
   const st = app.state;
   if (names(app.S.ModState)[app.info?.mod_state] !== "ready" || !st || st.os !== app.info.mod_os) return undefined;
   return st.boot ?? "";
+}
+
+/// The release's boot image isn't the one the module started from (by its stub and kernel: `zd1.boot=`); false while
+/// that isn't known (the module starting, no State record).
+function bootBehind(rel) {
+  const boot = moduleBoot();
+  return !!rel.bcd?.version && boot !== undefined && boot !== rel.bcd.version;
 }
 
 export function drawReleases() {
@@ -335,34 +376,37 @@ export function drawReleases() {
     const [pm, ps] = [position(fw, "mcu"), position(os, "system")];
     // the module starting (after an update, a power-up): not judged until it is up
     const starting = ["off", "reset", "booting", "up"].includes(names(app.S.ModState)[app.info?.mod_state]);
-    const say = (p, what, running) =>
+    // what is behind, each with where it stands: "the main board's firmware (2 releases behind)"
+    const part = (p, what, running) =>
       p === 0
-        ? `${what} up to date`
-        : p > 0
-          ? `${what} ${p} release${p > 1 ? "s" : ""} behind`
-          : running
-            ? `${what} on ${running}, a build that isn't a release`
-            : `${what} without our software`;
-    // the boot image (stub, kernel, rescue): rewritten only when the release's differs from the one the module
-    // started from, by content (module/os/assemble.py, payload)
+        ? null
+        : `${what} (${p > 0 ? `${p} release${p > 1 ? "s" : ""} behind` : running ? `${running}, not a release` : "not ours"})`;
+    const and = (l) => (l.length < 2 ? (l[0] ?? "") : `${l.slice(0, -1).join(", ")} and ${l.at(-1)}`);
+    // the boot image: rewritten only when the release's stub or kernel differ from the ones the module started from
+    // (bootBehind; module/os/assemble.py, payload)
     const boot = moduleBoot();
-    const bootBehind = !!rel.bcd?.version && boot !== undefined && boot !== rel.bcd.version;
+    const behind = bootBehind(rel);
     const needs = [
       rel.system && !starting && ps !== 0 && "system",
-      bootBehind && "boot",
+      behind && "boot",
       rel.mcu && pm !== 0 && "mcu",
     ].filter(Boolean);
-    const where =
-      `${say(pm, "main board", fw)}, ${starting ? "module starting" : say(ps, "module", os)}` +
-      `${bootBehind ? `, its boot image ${boot ? "older" : "from before boot images had a version"}` : ""}.`;
+    const updates = and(
+      [
+        rel.mcu && part(pm, "the main board's firmware", fw),
+        rel.system && !starting && part(ps, "the module's system", os),
+        behind && `the module's boot image${boot ? "" : " (from before boot images had a version)"}`,
+      ].filter(Boolean),
+    );
+    const where = `It updates ${updates}.${starting ? " The module is starting: its system is checked once it is up." : ""}`;
     const named = `release ${rel.version}${rel.date ? ` (${rel.date})` : ""}`;
-    v.append(el("p", { textContent: needs.length ? `Latest ${named}: ${where}` : `Up to date: ${named}.` }));
+    v.append(el("p", { textContent: needs.length ? `Latest: ${named}. ${where}` : `Up to date: ${named}.` }));
     if (rel.notes) v.append(el("p", { className: "small notes", textContent: rel.notes }));
     // behind: the banner on top of the page says so, with the one button
     if (needs.length)
       banner(
         `Release ${rel.version} is available`,
-        where[0].toUpperCase() + where.slice(1),
+        where,
         `Update to ${rel.version}`,
         () => updateTo(rel, needs),
         rel.notes,
@@ -397,53 +441,85 @@ export function drawReleases() {
   $("builds").hidden = !rows.length;
 }
 
-/// The speaker to a release: the system, the module's boot image (through the bootloader: the connection ends), then
-/// the MCU firmware (this order keeps the page connected longest), each only if it isn't there already.
+/// The speaker to a release, each part only if it isn't there already. With a boot image to write: the boot image
+/// and the MCU firmware in one visit to the bootloader (host/core's `install`), else the boot image alone; either
+/// way the release's system comes from it (the MCU has a boot image it hasn't seen install its rescue into a slot: no
+/// second upload); without one: the system into a slot, then the MCU firmware.
 export async function updateTo(rel, needs, finishing = false) {
+  if (app.sp.link() === "net") return updateOverNetwork(rel, needs);
+  const has = (k) => needs.includes(k);
+  const steps = !has("boot")
+    ? needs
+    : has("mcu")
+      ? ["boot+mcu"] // `install`: both from the bootloader, then the system from the rescue
+      : ["boot"]; // the system from its rescue as well
   const parts = {
     system: "the module's system goes into the slot that doesn't run (the old one stays as the way back)",
-    boot: "the module's boot image (its start-up and its rescue) is rewritten through the bootloader, about 5 minutes (keep this tab in front: a browser slows a tab in the background)",
+    boot: "the module's boot image (its start-up, and the release's system as its rescue) is rewritten through the bootloader, about 6 minutes (keep this tab in front: a browser slows a tab in the background); then the release's system goes from it into the slot that doesn't run (the old one stays as the way back)",
     mcu: "the main board's firmware (a backup of it first: a download, and a copy in this browser)",
+    "boot+mcu":
+      "the module's boot image (its start-up, and the release's system as its rescue) and the main board's firmware (a backup of it first: a download, and a copy in this browser) go on from the bootloader, about 7 minutes (keep this tab in front: a browser slows a tab in the background); then the release's system goes from the boot image into the slot that doesn't run (the old one stays as the way back)",
+    rescue:
+      "the release's system goes from the boot image into the slot that doesn't run (the old one stays as the way back)",
   };
-  const plan = needs.map((k) => parts[k]).join("; then ");
+  const plan = steps.map((k) => parts[k]).join("; then ");
   if (
     !finishing &&
     !(await ask(
       `Update to ${rel.version}?`,
-      `${plan[0].toUpperCase()}${plan.slice(1)}. A few minutes${needs.includes("boot") ? " more" : ""}; sound stops meanwhile.`,
+      `${plan[0].toUpperCase()}${plan.slice(1)}. A few minutes${steps.includes("boot") ? " more" : ""}; sound stops meanwhile.`,
       "Update",
     ))
   )
     return;
+  // a step that ends the connection (the bootloader): the next one needs it back
+  const again = async (after) => {
+    await connect(false);
+    if (!app.sp) throw new Error(`The speaker didn't come back after ${after}: connect again, then update.`);
+  };
   const r = await job(`Update to ${rel.version}`, false, async () => {
     const said = [];
     let n = 0;
-    if (needs.includes("system")) {
-      events.phase(++n, needs.length, "the module's system");
-      const r = await app.sp.updateSystem(await fetchImage(rel.system), true);
-      if (r.outcome === "fellBack")
-        throw new Error(
-          `The system in slot ${r.slot.toUpperCase()} didn't come up: the module is back on slot ${r.now.toUpperCase()}. Nothing else was changed.`,
+    for (const [i, k] of steps.entries()) {
+      const more = i < steps.length - 1;
+      if (k === "system" || k === "rescue") {
+        events.phase(++n, steps.length, "the module's system");
+        const r =
+          k === "system"
+            ? await app.sp.updateSystem(await fetchImage(rel.system), true)
+            : await app.sp.installFromRescue();
+        if (r.outcome === "fellBack")
+          throw new Error(
+            `The system in slot ${r.slot.toUpperCase()} didn't come up: the module is back on slot ${r.now.toUpperCase()}.`,
+          );
+        said.push(`system ${rel.system.version} in slot ${r.slot.toUpperCase()}`);
+      } else if (k === "boot+mcu") {
+        const [bcd, mcu] = [await fetchImage(rel.bcd), await fetchImage(rel.mcu)];
+        const sp = app.sp;
+        app.sp = null; // through the bootloader: this connection ends
+        const r = await sp.install(bcd, rel.mcu.file, mcu, undefined);
+        said.push(
+          `boot image ${rel.bcd.version}, MCU firmware ${r.fw}, system ${r.os} in slot ${r.slot.toUpperCase()}`,
         );
-      said.push(`system ${rel.system.version} in slot ${r.slot.toUpperCase()}`);
-    }
-    if (needs.includes("boot")) {
-      events.phase(++n, needs.length, "the module's boot image");
-      const bcd = await fetchImage(rel.bcd);
-      const sp = app.sp;
-      app.sp = null; // through the bootloader: this connection ends
-      await sp.updateBoot(bcd);
-      said.push(`boot image ${rel.bcd.version}`);
-      if (needs.includes("mcu")) {
-        await connect(false);
-        if (!app.sp) throw new Error("The speaker didn't come back after its boot image: connect again, then update.");
+      } else if (k === "boot") {
+        events.phase(++n, steps.length, "the module's boot image");
+        const bcd = await fetchImage(rel.bcd);
+        const sp = app.sp;
+        app.sp = null; // through the bootloader: this connection ends
+        const r = await sp.updateBoot(bcd);
+        if (r.outcome === "fellBack")
+          throw new Error(
+            `The boot image went on, but its system in slot ${r.slot.toUpperCase()} didn't come up: the module is back on slot ${r.now.toUpperCase()}.`,
+          );
+        said.push(`boot image ${rel.bcd.version}, system ${r.os.split(" ")[1]} in slot ${r.now.toUpperCase()}`);
+        if (more) await again("its boot image");
+      } else if (k === "mcu") {
+        events.phase(++n, steps.length, "the main board's firmware");
+        const r = await app.sp.flashMcu(rel.mcu.file, await fetchImage(rel.mcu));
+        app.sp = null;
+        said.push(r.matches ? `MCU firmware ${r.fw}` : `MCU firmware: ${r.fw} runs, not the one written`);
+        if (more) await again("its main board's firmware");
       }
-    }
-    if (needs.includes("mcu")) {
-      events.phase(++n, needs.length, "the main board's firmware");
-      const r = await app.sp.flashMcu(rel.mcu.file, await fetchImage(rel.mcu));
-      app.sp = null;
-      said.push(r.matches ? `MCU firmware ${r.fw}` : `MCU firmware: ${r.fw} runs, not the one written`);
     }
     return `Done: ${said.join(", ")}.`;
   });
@@ -452,14 +528,55 @@ export async function updateTo(rel, needs, finishing = false) {
   return r;
 }
 
+/// Over the network: the module's system alone, the release's signed image (the speaker checks its signature), allowed
+/// by a person at the speaker (ON/OFF held 5 s), which allows the main board's firmware it brings too; a boot image
+/// that differs needs USB (docs/protocol/net.md).
+async function updateOverNetwork(rel, needs) {
+  if (!needs.includes("system"))
+    return notice(
+      needs.includes("boot")
+        ? "This release's boot image differs from the speaker's: that goes over USB (connect it with a cable)."
+        : "The main board's firmware doesn't match its system: update over USB.",
+      "warn",
+    );
+  if (!rel.signed)
+    return notice(`Release ${rel.version} has no image signed for the network: update over USB.`, "warn");
+  if (
+    !(await ask(
+      `Update to ${rel.version}?`,
+      "Someone at the speaker allows it: ON/OFF held 5 s while its LED flashes amber. Then the module's system goes " +
+        "into the slot that doesn't run (the old one stays as the way back) and the speaker restarts on it" +
+        (needs.includes("mcu") ? ", the main board taking its firmware from it" : "") +
+        ". A few minutes; sound stops meanwhile, and this page connects again by itself.",
+      "Update",
+    ))
+  )
+    return;
+  const r = await job(`Update to ${rel.version}`, false, async () => {
+    const r = await app.sp.updateSystem(await fetchImage(rel.signed), true);
+    if (r.outcome === "fellBack")
+      throw new Error(
+        `The system in slot ${r.slot.toUpperCase()} didn't come up: the speaker is back on slot ${r.now.toUpperCase()}.`,
+      );
+    return `Done: system ${rel.signed.version} in slot ${r.slot.toUpperCase()}${needs.includes("boot") ? "; the boot image goes over USB" : ""}.`;
+  });
+  refresh(true);
+  return r;
+}
+
 export async function installRelease(rel, kind) {
+  if (kind === "system" && app.sp.link() === "net") {
+    if (!rel.signed)
+      return notice(`Release ${rel.version} has no image signed for the network: install it over USB.`, "warn");
+    kind = "signed";
+  }
   let data;
   try {
     data = await fetchImage(rel[kind]);
   } catch (e) {
     return failed(e);
   }
-  return kind === "system" ? installSystem(rel[kind].file, data) : installMcu(rel[kind].file, data);
+  return kind === "mcu" ? installMcu(rel[kind].file, data) : installSystem(rel[kind].file, data);
 }
 
 export async function installSystem(name, data) {
@@ -469,7 +586,11 @@ export async function installSystem(name, data) {
   } catch (e) {
     return failed(e);
   }
-  if (i.kind !== "system") return notice(`${name} is not a system image (a gzip'd cpio).`, "warn");
+  const net = app.sp.link() === "net";
+  if (net && i.kind !== "signed")
+    return notice(`${name}: over the network a system must be signed (a release's .signed image).`, "warn");
+  if (i.kind !== "system" && i.kind !== "signed")
+    return notice(`${name} is not a system image (a gzip'd cpio).`, "warn");
   if (
     !(await ask(
       "Install the module's system?",

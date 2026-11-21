@@ -35,20 +35,26 @@ which license, and where its source is.
 
 ## In the release images
 
-The MCU firmware (`nix build .#mcu`, a `.hex`): our code (`mcu/`), the ASF parts it uses, B&W's DSP data.
+The MCU firmware (`nix build .#mcu`, a `.hex`: the ZD1's preloader and the app): our code (`mcu/`), the ASF parts it
+uses, B&W's DSP data.
 
-The module's system (`nix build .#os-image`, `os.bcd`):
+The module's images (`nix build .#os-image`: the system `system-V.cpio.gz` and `system-V.signed`, and `os.bcd`, which
+carries the same system as its rescue):
 
 | Part | License | Source |
 |---|---|---|
 | boot stub, `zd1` (init, the link, the receivers), the Warp0 images | MIT, with shairplay-rust and the LGPL files above | this repo |
-| Linux 2.6.24.7 (`mach-sulu`), Nokia's build, unmodified | GPL-2.0 | Nokia's binary from the HD-1 (`blobs/module/nokia-hd1/kernel.bin`, provenance in `blobs/README.md`). This repo has no source for it |
+| Linux 2.6.24.7 (`mach-sulu`), Nokia's build, unmodified | GPL-2.0 | Nokia's binary from the HD-1 (`blobs/nokia-hd1/kernel.bin`, provenance in `blobs/README.md`). This repo has no source for it |
 | `cfg80211.ko`, `mac80211.ko` (`module/os/os.toml` `[wifi]`) | GPL-2.0 | `module/wifi/` in this repo, built against linux-stable's v2.6.24.7 (`nix/module/wifi.nix`) |
-| Nokia's other kernel modules and the Wi-Fi firmware (`module/os/os.toml` `[vendor]`) | Nokia's / BridgeCo's, binary | `blobs/module/nokia-hd1/rootfs/` |
+| Nokia's other kernel modules and the Wi-Fi firmware (`module/os/os.toml` `[vendor]`) | Nokia's / BridgeCo's, binary | `blobs/nokia-hd1/rootfs/` |
 | busybox 1.36.1 | GPL-2.0 | https://busybox.net/downloads/busybox-1.36.1.tar.bz2, configured by `module/os/busybox.config` and `os.toml` `[busybox]` |
 | alsa-lib 1.2.12 | LGPL-2.1-or-later | https://www.alsa-project.org/files/pub/lib/alsa-lib-1.2.12.tar.bz2 (linked statically into `zd1`) |
 | alsa-utils 1.2.12 (`aplay`, `amixer`, `speaker-test`) | GPL-2.0-or-later | https://www.alsa-project.org/files/pub/utils/alsa-utils-1.2.12.tar.bz2 |
 | wpa_supplicant 2.11 | BSD-3-Clause | https://w1.fi/releases/wpa_supplicant-2.11.tar.gz, configured by `module/os/wpa_supplicant.config` |
 | musl | MIT | nixpkgs' musl (the flake's `nixpkgs` input) |
+| B&W's module preloader (stage 1) and the model's factory CnE, in the `.bcd` only | Bowers & Wilkins / BridgeCo, binary | `blobs/dm870/preloader.bin`, `blobs/<model>/module/cne.bin` |
+
+The Lightning model's `zd1l-V.fw`: `os-zd1l.bcd` (as above, with its HWID and CnE) and our MCU app, in B&W's `.fw`
+wrapper.
 
 `module/os/os.toml` pins each download's sha256; `nix/module/` has the build recipes.
