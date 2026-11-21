@@ -3,6 +3,7 @@
 #include "zd1_board.h"
 #include "i2c.h"
 #include "dsp_data.h"
+#include "model.h"
 #include "dsp.h"
 
 static bool running;
@@ -19,17 +20,32 @@ static int wr32(uint16_t sub, uint32_t v) {
     return wr(sub, b, 4);
 }
 
-/* Power-up and download, stock FUN_80020980: PB03 high, 10 ms, PB02 high, 100 ms, then the 24 records
- * (core control, program RAM 0x2000, config 0xE000.., param RAM 0x0000, start: E228=1 E220=1 E221=0 E221=5). */
+/* Power-up and download, stock FUN_80020980 (the A7's FUN_8001ff4c): PB03 high, 10 ms, PB02 high, 100 ms, then the
+ * model's records (core control, program RAM 0x2000, config 0xE000.., param RAM 0x0000, start: E228=1 E220=1 E221=0
+ * E221=5; the A7's E220 before E228). Its own crossover for each model's drivers: none on a model we don't know, and
+ * then no amp either (source.c, amp_may_run). */
 int dsp_init(void) {
     int rc;
+    const dsp_rec_t *dl;
+    unsigned steps;
     running = false;
+    switch (model()) {
+    case MODEL_ZD1:
+    case MODEL_ZD1L:
+        dl = dsp_download_zd1, steps = dsp_download_zd1_steps;
+        break;
+    case MODEL_A7:
+        dl = dsp_download_a7, steps = dsp_download_a7_steps;
+        break;
+    default:
+        return -3; /* held in reset */
+    }
     gpio_set_pin_high(PIN_DSP_PWR);
     delay_ms(10);
     gpio_set_pin_high(PIN_DSP_RST);
     delay_ms(100);
-    for (unsigned i = 0; i < DSP_DOWNLOAD_STEPS; i++) {
-        if ((rc = wr(dsp_download[i].subaddr, dsp_download[i].data, dsp_download[i].len)) != 0)
+    for (unsigned i = 0; i < steps; i++) {
+        if ((rc = wr(dl[i].subaddr, dl[i].data, dl[i].len)) != 0)
             return rc;
     }
     running = true;

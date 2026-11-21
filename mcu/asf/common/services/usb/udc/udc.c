@@ -620,8 +620,14 @@ static bool udc_req_std_dev_get_str_desc(void)
 #endif
 #ifdef USB_DEVICE_PRODUCT_NAME
 	case 2:
+#  ifdef USB_DEVICE_GET_PRODUCT_NAME_POINTER
+		/* zd1: the name chosen at run time (the speaker's model), at most as long as USB_DEVICE_PRODUCT_NAME */
+		str_length = Min(USB_DEVICE_GET_PRODUCT_NAME_LENGTH, USB_DEVICE_PRODUCT_NAME_SIZE);
+		str = (const uint8_t *)USB_DEVICE_GET_PRODUCT_NAME_POINTER;
+#  else
 		str_length = USB_DEVICE_PRODUCT_NAME_SIZE;
 		str = udc_string_product_name;
+#  endif
 		break;
 #endif
 #if defined USB_DEVICE_SERIAL_NAME || defined USB_DEVICE_GET_SERIAL_NAME_POINTER

@@ -1,9 +1,10 @@
 # Our MCU firmware
 
-Replacement firmware for the Zeppelin Air main board (AT32UC3A1256), built on Atmel's ASF. It does what the stock
+Replacement firmware for the Zeppelin Air main board (AT32UC3A1256), built on Atmel's ASF; the same build runs on the
+Zeppelin Air with Lightning and the A7, and tells them apart itself (`src/model.c`, `docs/models/`). It does what the stock
 firmware does for USB, AUX and AirPlay, through the network module running our OS, plus a host link for tools (typed requests over USB,
-the network module's console among them). The app links at 0x80008000 on both models: behind the ZD1L's B&W
-bootloader, and on the ZD1 behind our preloader (`preloader/`, at 0x80004000, where B&W's DFU bootloader starts the
+the network module's console among them). The app links at 0x80008000 on every model: behind the ZD1L's (and the
+A7's) B&W bootloader, and on the ZD1 behind our preloader (`preloader/`, at 0x80004000, where B&W's DFU bootloader starts the
 app), which stays in place with B&W's DFU bootloader below it, so any build can be undone
 (`docs/mcu/bootloader-dfu.md`). Both bootloaders take a new app from the module (`docs/mcu/bootloader-hbl.md`).
 
@@ -59,8 +60,8 @@ registers, peek/poke, the module OS's debug services); `zd1 settings` the module
   link works there through the emulated USB (`zemu run --mcu --host 'zd1 info'`, or `--keep`
   and `ZD1DFU_EMU=127.0.0.1:4620`), with the gate opened in the run's copy of the EEPROM. `zd1 dfu boot-log` reads the cold-boot stage log over DFU.
 - Only flash with the unit owner's OK, with a DFU backup first. Recovery from anything on a ZD1: hold ON/OFF at
-  power-up → DFU → `zd1 dfu`. A ZD1L has no USB bootloader: its BL2's web updater from key-hold, with
-  `blobs/zd1l/zd1lv20435.fw` (`docs/mcu/stock-firmware.md`).
+  power-up → DFU → `zd1 dfu`. A ZD1L or an A7 has no USB bootloader: its BL2's web updater from key-hold, with
+  `blobs/zd1l/zd1lv20435.fw` / `blobs/a7/a7v20477.fw` (`docs/mcu/stock-firmware.md`, `docs/models/a7.md`).
 
 ## The host link
 Typed requests and the firmware's log over USB, defined in `protocol/host/src/lib.rs` (reference:
@@ -132,11 +133,12 @@ The rest drives the DFU bootloader (`zd1 dfu ...`, `docs/mcu/bootloader-dfu.md`)
 | `src/zd1_board.*` | pin map, safe GPIO, clocks (48 MHz from one PLL for CPU and USB), stage log in flash page 511; the board's start and the module's power, shared with the preloader |
 | `preloader/` | the ZD1's preloader at 0x80004000: the app, or a new one from the module (`docs/mcu/bootloader-hbl.md`) |
 | `src/mcufw.*` | the app from the module: `Allow`, into the preloader or the ZD1L's bootloader, the preloader's report |
+| `src/model.*` | which model, from the bootloader (B&W's HBL's HWID): the DSP's setup, the USB name, `InfoReply.model`; an unknown one holds the DSP and the amp |
 | `src/msos.*` | Microsoft OS 2.0 descriptors: WinUSB for the host link's interface on Windows (vendor request 0x20) |
 | `stamp.py`, `flash.sh` | the version (the app's content) and the images the tools take; build + `zd1 flash` |
 | `src/hostif.*`, `src/pipe.*`, `src/udi_hostif.h`, `src/zd1host_gen.h`, `src/version.c` | the host link (requests and replies), its bulk pipe, its USB interface, the protocol (generated), the firmware's identification (stamped by the build) |
 | `src/log.*`, `src/util.h`, `src/selfdfu.*` | the log (a ring the host link reads), the bounded string copy, DFU entry and reboot, the watchdog |
-| `src/i2c.*`, `src/dsp.*`, `src/dsp_data.*`, `src/codec.*`, `src/cs2000.*`, `src/amp.*`, `src/audio.*` | audio chain; `dsp_data.c` is generated from the stock download (`tools/gen_dsp_data.py`) |
+| `src/i2c.*`, `src/dsp.*`, `src/dsp_data.*`, `src/codec.*`, `src/cs2000.*`, `src/amp.*`, `src/audio.*` | audio chain; `dsp_data.c` is generated from the stock downloads, the Zeppelin's and the A7's (`tools/gen_dsp_data.py`) |
 | `src/source.*`, `src/inputs.*`, `src/led.*` (`src/led_pwm.*`: its PWM, the preloader's too), `src/ir.*`, `src/protect.*`, `src/settings.*`, `src/tick.*` | behaviour: sources, keys, LED, IR, protections, EEPROM settings at 0x80 (three pages, each with its magic and CRC: 0x80 volume, bass, source, flags; 0x88 the amp's idle time and the volume cap; 0x90 the module's boot image last seen, whose change has its rescue install itself) |
 | `src/udi_audio.*`, `src/udi_hid_cc.*`, `src/usbaudio.*` | USB audio class (ASF has none), HID consumer control, the streaming engine |
 | `src/dm870.*`, `src/modboot.*`, `src/update.*`, `src/wifi.*`, `src/modcon.*` | module link (stock protocol and timing; our OS's version, settings, debug mode), which system slot the module's boot stub starts (the good one and a try in the EEPROM, the fall-back when a boot doesn't get ready, a boot image not recorded yet installed from its rescue: `docs/module/storage.md`), the module's update (the bulk pipe to its console UART as it grants it: `docs/module/updater.md`), the AirPlay glue, the module console on USART1 (its bytes to the host that opened it, `Console`; lines into the log otherwise) |

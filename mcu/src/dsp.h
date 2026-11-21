@@ -1,6 +1,6 @@
-/* ADAU1445 DSP (I2C 0x38, 2-byte sub-address): power-up + stock download, safeload parameters, volume, bass,
- * input routing, S/PDIF lock. Behaviour reproduces stock 2.04.05 (docs/mcu/stock-firmware.md,
- * "DSP"; re/mcu/extracted/dsp/). */
+/* ADAU1445 DSP (I2C 0x38, 2-byte sub-address): power-up + the model's stock download, safeload parameters, volume,
+ * bass, input routing, S/PDIF lock. Behaviour reproduces stock 2.04.05 (docs/mcu/stock-firmware.md, "DSP";
+ * re/mcu/extracted/dsp/); the A7's app differs only in its download (docs/models/a7.md, "DSP"). */
 #ifndef DSP_H
 #define DSP_H
 #include <compiler.h>
@@ -16,7 +16,7 @@ typedef enum {
 
 #define DSP_VOL_MUTE 71 /* volume index: 0 = +10 dB .. 70 = -60 dB, 71 = mute */
 
-int dsp_init(void); /* power (PB03), reset release (PB02), 24-step download, start. 0 = OK */
+int dsp_init(void); /* power (PB03), reset release (PB02), the model's download, start. 0 = OK; -3: no model */
 bool dsp_running(void);
 int dsp_set_volume_index(unsigned idx); /* 0..DSP_VOL_MUTE */
 int dsp_set_bass(unsigned preset);      /* 0..DSP_BASS_PRESETS - 1 */

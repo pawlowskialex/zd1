@@ -189,9 +189,10 @@ static void fade_out(void) {
         delay_ms(FADE_STEP_MS);
     }
 }
-/* May the amp be on? Every supply-on and unmute asks: allowed (the interlock: Amp deny), no protection tripped (ERROR
- * waits for ON/OFF), a source running and not asleep for silence (the idle rule) */
-static bool amp_may_run(void) { return amp_allowed && state == SYS_RUN && phase != RUN_ASLEEP; }
+/* May the amp be on? Every supply-on and unmute asks: allowed (the interlock: Amp deny), the DSP set up with this
+ * model's crossover (not on a model we don't know, nor after a failed download), no protection tripped (ERROR waits
+ * for ON/OFF), a source running and not asleep for silence (the idle rule) */
+static bool amp_may_run(void) { return amp_allowed && dsp_running() && state == SYS_RUN && phase != RUN_ASLEEP; }
 /* the amp up from asleep (sound came, or a person asked): the normal sequence; t_active from now */
 static void amp_wake(uint32_t now, const char *why) {
     if (state != SYS_RUN || phase != RUN_ASLEEP)
