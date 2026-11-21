@@ -4,9 +4,11 @@ import { Bootloader, newIdentity, Speaker } from "../pkg/zd1_web.js";
 import { keepBackup } from "./backups.js";
 import { consoleText } from "./console.js";
 import { hero, heroProgress } from "./hero.js";
+import { host } from "./host.js";
 import { app } from "./shared.js";
 import { drawDfu } from "./software.js";
 import { refresh } from "./speaker.js";
+import { drawSpeakers, rememberName } from "./speakers.js";
 import { $, ask, failed, hex4, notice } from "./ui.js";
 
 // ---- what the flows tell the page -------------------------------------------------------------------------------
@@ -84,6 +86,11 @@ export const events = {
     return app.cancel;
   },
   wantsDevice(vid, pid, what) {
+    if (host.granted) {
+      // nothing to allow: the device just hasn't appeared yet
+      if (jobRunning) $("job-now").textContent = `Waiting for ${what} on USB…`;
+      return;
+    }
     $("grant-what").textContent =
       `The speaker restarted into ${what}: it is a USB device of its own (${hex4(vid)}:${hex4(pid)}).`;
     $("grant").dataset.vid = vid;
@@ -106,6 +113,16 @@ export function appendLog(s) {
 }
 // ---- connecting ---------------------------------------------------------------------------------------------------
 
+/// Connect over USB found nothing (a browser: its chooser closed without a pick): what to try, and Help's list open.
+function noUsb() {
+  notice(
+    host.granted
+      ? "No speaker on USB. Plug it in with a cable that carries data: it connects by itself. Help, below, if it doesn't."
+      : "No speaker picked. Not in the browser's list? Help, below.",
+  );
+  $("help-usb").open = true;
+}
+
 export async function connect(ask) {
   if (ask) {
     try {
@@ -115,9 +132,10 @@ export async function connect(ask) {
           { vendorId: app.S.usb.vid, productId: app.S.usb.dfuPid },
         ],
       });
-    } catch {
+    } catch (e) {
+      if (e?.name === "NotFoundError") noUsb();
       return;
-    } // the chooser closed
+    }
   }
   try {
     app.sp = await Speaker.connect(events);
@@ -182,6 +200,7 @@ export async function connectNet(addr) {
   app.bl = null;
   show("app");
   await refresh(true);
+  rememberName(addr, app.state?.name);
 }
 
 /// Over the network, after changes that can cut the page off (`provisional`): connect again once they have taken
@@ -210,7 +229,10 @@ export function show(what) {
   $("dfu").hidden = what !== "dfu";
   $("disconnect").hidden = what === "welcome";
   $("playing").hidden = what !== "app";
-  if (what === "welcome") hero({ mode: what, title: "Zeppelin Air", status: "Not connected" });
+  if (what === "welcome") {
+    hero({ mode: what, title: "Zeppelin Air", status: "Not connected" });
+    drawSpeakers();
+  }
   if (what === "dfu") hero({ mode: what, title: "Bootloader", status: "Waiting for firmware" });
   if (what === "app") $("verdict").after($("builds"));
 }

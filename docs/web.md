@@ -12,13 +12,18 @@ no framework). `nix build .#web` is the page as a directory. It is hosted at htt
 releases' images (below, Releases); `python3 tools/zeppelin web` serves it on localhost with this checkout's built
 images offered under `images/` instead (`index.json` names them). The three views below are built:
 - **Not connected**, three panels. Connect: over USB (the chooser filters on our firmware 03EB:2FE0 and the DFU
-  bootloader 03EB:2FF8), or an address over the network (`docs/protocol/net.md`: the browser's Local Network Access,
-  pairing with ON/OFF held the first time; `Speaker.connectNet`), how that works folded away. Install, for a speaker
+  bootloader 03EB:2FF8; nothing picked or nothing there: a notice and Help's USB list open), or over the network: the
+  speakers this browser paired with, by address and their last name (`js/speakers.js`), and those announcing
+  themselves where the host can look (zd1-app: mDNS, below), a click each; or an address (`docs/protocol/net.md`: the
+  browser's Local Network Access, pairing with ON/OFF held the first time; `Speaker.connectNet`), how that works folded
+  away. Install, for a speaker
   on B&W's software, the two models side by side (the choice cards), each with its steps and its action: the
   Zeppelin Air into its bootloader (the key-hold) and Connect, the page installing from there; the Lightning model
   through its BL2's web updater over Ethernet (`zd1l.js`: its address and Install, offered when a release has its
   `.fw`; an alpha until this image has run on a real one: the card says so, and Install waits for a tick that the
-  person will try one); the release it installs named above them. Help: a speaker that isn't listed (cable, browsers, WinUSB on
+  person will try one; B&W's own `.fw` from a file, the way back, any time; where BL2's answers can be read, zd1-app,
+  what answers at the address before anything is sent, Find it, and the write followed to its end:
+  `docs/protocol/net.md`); the release it installs named above them. Help: a speaker that isn't listed (cable, browsers, WinUSB on
   Windows for B&W's bootloader, the Linux udev rule), a stopped update, what its light says, the way back to B&W's
   software for each model.
 - **Over the network** the app view is the same, less what is USB's (the MCU's firmware, the boot image, the console,
@@ -72,6 +77,29 @@ so it needs no driver installed; B&W's DFU bootloader declares nothing and can't
 protected): it wants WinUSB installed once by hand (Zadig), as do our releases before the descriptors for their
 interface 3. What it can't do yet: install without a release manifest beside it (the bootloader view's Install wants a release;
 files go one board at a time).
+
+**The app** (`host/app`: `nix run .#app`, on macOS also `zd1.app`; `cargo run -p zd1-app -- [URL]`) is the page in a
+window of its own, with nothing to grant: the system's web view (wry: WebKit on macOS and Linux, WebView2 on Windows),
+and a script put in before the page's own (`host/app/src/polyfill.js`) that gives it `navigator.usb` with the
+speaker's two devices granted from the start (03EB:2FE0, 03EB:2FF8; nothing else on the computer's USB), each WebUSB
+call done in the app through nusb, and a `WebSocket` and `fetch` that reach private and link-local addresses, `.local`
+names and localhost through the app (the speaker's link, with the page's `Origin`; BL2's web updater), which a web
+view refuses from an HTTPS page. WebKit has no WebUSB of its own; the page and its WebAssembly are unchanged. It adds
+`window.zd1app` for what no browser offers (our speakers on the network from mDNS: their AirPlay records, model
+Zeppelin Air; the computer's networks, virtual ones left out), and the page asks for all of it in one place,
+`js/host.js`, by what it needs (`granted`, `lan`, `speakers`, `networks`), never by name: the welcome's hints (no
+chooser, plugged in connects by itself), the grant dialog left out, the speakers listed, the Lightning model's updater
+looked at and looked for. Only pages from the page's origin and localhost reach the app's side; other links open in
+the system's browser. macOS: View, Reload (⌘R) and zoom (⌘+, ⌘−). A page
+(re)loading lets go of the devices and sockets the last one had. It loads the published page, or the URL given
+(`http://localhost:8765/` for `zeppelin web`); `ZD1_APP_LOG=1` prints each request and what the page logs,
+`ZD1DFU_EMU=host:port` takes the emulator's bridge for USB. The published page in the app on the Mac connected to the
+unit over USB by itself and showed the running view [HW 2026-11-21, reads only]; this checkout's page did the same
+over the emulator's bridge, and its WebAssembly's `Speaker.connectNet` through the app's WebSocket reached the
+emulated module's link (the Noise handshake, Hello), with a `fetch` to it beside [EMU 2026-11-21: `zemu run --mcu
+--keep`, `zd1-app` on a localhost page, `ws://127.0.0.1:8080/zd1`]. In the app on the Mac [HW 2026-11-21]: the
+unit found by mDNS and listed, Connect over USB with nothing there saying so, Find it over this network's 256
+addresses in about 25 s saying none answers. Not yet: a flash or a pairing through it.
 
 ## Goals
 - **Hosted on GitHub Pages** from the public repo, with its releases: a visitor installs, updates and restores with the
@@ -147,12 +175,22 @@ records it and has a new one's rescue install itself into a slot (`docs/module/s
 
 The Pages workflow (`.github/workflows/pages.yml`) attaches a tag's
 images and their `manifest.json` (`zd1 image`) to the GitHub release, then builds the page, copies every
-release's images beside it and writes `images/index.json`: the releases newest
+release's images (those its manifest names) beside it and writes `images/index.json`: the releases newest
 first, each with its version, date, notes, and per image the file, size and SHA-256. Same origin: no GitHub API, no
 rate limit, no CORS, and the page fetches an image only when it installs it. The manifest keeps older releases, which is "install a previous version" for free. Stock images for the
 rollback are B&W's own update files; the page doesn't serve them (uploading them is not ours to decide: `AGENTS.md`):
 it takes them as a file, or fetches them from the archive.org items `downloads/manifest.json` lists if those answer
 cross-origin.
+
+A release also carries zd1-app for computers without nix, built by the same workflow (its `app` jobs), named
+`zd1-app-SYSTEM` without the version (the README links `releases/latest/download/NAME`), unsigned (macOS and Windows ask once before they open it: Control-click and Open; More info and
+Run anyway): `macos.zip` (zd1.app, one binary for both CPUs, macOS 14 on: `nix/app-macos.nix`, the Intel half built
+through Rosetta; its one library from the store pointed at macOS's own, checked; signed ad hoc, as Apple Silicon
+wants), `windows-x64.zip` (the .exe and WebView2's loader beside it, cross-compiled with MinGW:
+`nix/app-windows.nix`), and `linux-x86_64.flatpak` and `linux-aarch64.flatpak` (on GNOME's runtime, which has
+WebKitGTK: `host/app/linux/io.github.pawlowskialex.zd1.yml`; Flatpak fetches the runtime from Flathub when it installs
+it; the speaker's udev rule still on the host). Its icon is the speaker as the page draws it (`host/app/icon/zd1.svg`,
+`nix/app-icons.nix`).
 
 ## The three views
 **Not connected** is three panels: Connect (USB, or an address), Install by model (the key-hold into DFU for the

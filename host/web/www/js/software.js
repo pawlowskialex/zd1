@@ -220,8 +220,9 @@ export function drawInstall() {
   $("install-release").textContent = rel
     ? `It installs release ${rel.version}${rel.date ? `, ${rel.date}` : ""}.${fw ? "" : " The Lightning model's file isn't in a release yet."}`
     : "No release is offered to this page: the install needs one.";
+  // B&W's file and the address go any time (the way back); our release's only with one, and the alpha ticked
   $("zd1l-alpha").disabled = !fw;
-  for (const e of $("zd1l-form").elements) e.disabled = !fw || !$("zd1l-alpha").checked;
+  $("zd1l-install").disabled = !fw || !$("zd1l-alpha").checked;
 }
 
 /// A release's image, fetched and checked against the manifest's SHA-256.
