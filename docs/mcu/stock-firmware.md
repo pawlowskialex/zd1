@@ -83,6 +83,7 @@ the ZD1L's (`docs/mcu/bootloader-hbl.md`), INF for the A7's; HW for the BL2 side
 EEPROM record (+6: 0x0005 for ZD1, 0x0035 for ZD1L, 0x0077 for the A7) and takes a record with another version as
 invalid (its defaults). The A7 app boots on the ZD1 board model ("PSS AZ1", DSP firmware v01.00, finds its DSP, codec
 and EEPROM, reaches RUN); the ZD1L app looks like 2.04.05 throughout (the -4 differences changed nothing seen).
+Our firmware for all three: `docs/models/`.
 
 **What the three apps do with the MCU's peripherals** [EMU 2026-11-17]: each stock app with its own module image, the
 MCU traced whole until the emulator's ~21 s CnE assert (`re/scripts/mcutracecmp.py`, its docstring has the `zemu run`)
@@ -133,7 +134,7 @@ sends the MCU part first and needs the MCU's bootloader for it): the page's Inst
 release's `zd1l-V.fw`) or `python3 tools/zeppelin bl2web IP zd1l.fw --yes`; the way back is the same with
 `blobs/zd1l/zd1lv20435.fw`. The image of 2026-11-17 (the system as the boot initramfs, no slots) runs on ZD1Ls [HW,
 the owners]; the one with the system in the rescue's place, from a stock ZD1L to slot A through the page's upload,
-in the emulator only [EMU 2026-11-21, `emu/tools/zd1lunit.py`].
+in the emulator only [EMU 2026-11-21, `emu/tools/stockunit.py`].
 
 **A telnet hook on the stock 2.04.35, repacked as a `.fw`** (`stock-patch/`, `patch.py --fw`): a way to a shell on a
 stock ZD1L without replacing its firmware, e.g. to read BL2 out (`fburn rd`, the reverse-SPI code the relay needs). The
@@ -206,8 +207,12 @@ parameters. **The A7's is another design**: 419 of the 1360 program words differ
 0xE140/0xE142, 0xE200/0xE202 (written as 0xE101 and 0xE141, 2 bytes), 0xE246 and 0xE252 (0xE240 written as 4 + 12
 bytes); 47 of the 400 parameters, mostly filter coefficients a little apart (another voicing), two of the ZD1's
 filters left as pass-throughs (0x071-0x073, 0x0A1-0x0A5) and other gains (0x04B −5 dB for −3, 0x083 −4 dB for −1.5,
-0x0B5-0x0B8 0/+3 dB for +1.5/+2). With another program the same address may be another control, so the ZD1's
-parameter map (above) holds for the ZD1L, not yet for the A7.
+0x0B5-0x0B8 0/+3 dB for +1.5/+2). The controls the app writes at run time are the ZD1's on the A7 too [RE]: the same
+record table and volume table, byte for byte, and the program's first 690 words (the input stage, the volume and
+bass, the meter at 0x031) are the ZD1's but for one; the 419 words that differ are the output stage. So the map above
+holds for the A7's inputs, volume, bass and meter; its driver mutes and mains compensation (output stage) are
+unchecked, and our firmware writes neither (`docs/models/a7.md`, DSP). The A7's download, extracted statically
+(`re/scripts/extract_dsp.py --model a7`, `re/mcu/extracted/dsp-a7/`), is the recording write for write.
 
 Tables: `re/mcu/extracted/dsp/runtime_tables.txt`, `param_records_8001f5bc.txt`. The "soft mute" records stock
 writes on some paths are input-path selectors, not a mute: `FUN_800200b4` writes the source gains 0x147/0x148/0x173/

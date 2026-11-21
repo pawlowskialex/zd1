@@ -64,7 +64,9 @@ on a 2010 ARM9 for all of this. What works and how it was checked: `docs/status.
   updater (ON/OFF held at power-up, an Ethernet cable to your router), from the page or `tools/zeppelin bl2web`.
   Owners run an earlier build of ours on theirs; this one (the rescue and the slots) has run whole only in the
   emulator, so the page offers it as an alpha. Its dock is unsupported either way.
-  The **Zeppelin A7** runs another MCU build on other hardware: not without changes.
+  The **A7** (no dock) has its own sound tuning in our firmware and installs the way the Lightning model does
+  (`a7.fw`), but no A7 has run it yet: the page offers it as untried, after a dry run of `tools/zeppelin bl2web`
+  against its updater (`docs/models/a7.md`).
 - **On your network** the speaker runs an AirPlay receiver like any other AirPlay speaker, and answers our page and
   `zd1` on port 80: only computers paired by holding ON/OFF 5 s, and only signed system updates. Its debug services
   (a shell and memory access) are off and can only be switched on over USB. Requests that change the speaker over
@@ -73,8 +75,8 @@ on a 2010 ARM9 for all of this. What works and how it was checked: `docs/status.
 
 ## Installing
 **With the web page**: **https://pawlowskialex.github.io/zd1/**, in Chrome, Edge or Brave (WebUSB; Windows untried),
-with a USB cable to the speaker's rear USB-B port (the Lightning model: an Ethernet cable, as the page's Install
-shows). It installs, updates, configures and rolls back,
+with a USB cable to the speaker's rear USB-B port (the Lightning model and the A7: an Ethernet cable, as the page's
+Install shows). It installs, updates, configures and rolls back,
 and needs nothing else on the computer.
 1. Unplug the speaker, then hold ON/OFF while plugging it back in: the speaker starts B&W's bootloader, which the
    page can talk to whatever firmware is on it.

@@ -14,11 +14,11 @@ images offered under `images/` instead (`index.json` names them). The three view
 - **Not connected**, three panels. Connect: over USB (the chooser filters on our firmware 03EB:2FE0 and the DFU
   bootloader 03EB:2FF8), or an address over the network (`docs/protocol/net.md`: the browser's Local Network Access,
   pairing with ON/OFF held the first time; `Speaker.connectNet`), how that works folded away. Install, for a speaker
-  on B&W's software, the two models side by side (the choice cards), each with its steps and its action: the
+  on B&W's software, the three models side by side (the choice cards), each with its steps and its action: the
   Zeppelin Air into its bootloader (the key-hold) and Connect, the page installing from there; the Lightning model
-  through its BL2's web updater over Ethernet (`zd1l.js`: its address and Install, offered when a release has its
-  `.fw`; an alpha until this image has run on a real one: the card says so, and Install waits for a tick that the
-  person will try one); the release it installs named above them. Help: a speaker that isn't listed (cable, browsers, WinUSB on
+  and the A7 through their BL2's web updater over Ethernet (`fwinstall.js`: the address and Install, offered when a
+  release has the model's `.fw`; the Lightning model an alpha until this image has run on a real one, the A7 untried:
+  the cards say so, and Install waits for a tick that the person will try it); the release it installs named above them. Help: a speaker that isn't listed (cable, browsers, WinUSB on
   Windows for B&W's bootloader, the Linux udev rule), a stopped update, what its light says, the way back to B&W's
   software for each model.
 - **Over the network** the app view is the same, less what is USB's (the MCU's firmware, the boot image, the console,
@@ -134,7 +134,8 @@ direction.
 A release is built from one tag by CI (nix on Linux runners, with a binary cache: the MCU needs Microchip's x86_64
 toolchain, the OS image Linux): the MCU firmware (`zd1-V.hex`), the system image (`system-V.cpio.gz`, and signed for
 the network: `system-V.signed`, signed with the release key), the `.bcd` (`os-V.bcd`: stub, kernel, the
-system as the rescue) and the Lightning model's `.fw` (`zd1l-V.fw`), with notes. Versions
+system as the rescue) and the `.fw` of the models whose BL2 takes one (`zd1l-V.fw`, `a7-V.fw`: `docs/models/`), with
+notes. Versions
 don't order: the page compares by position in the list, never by value. The system's version is its commit; the
 others' are their content, so a release whose part is the same as the speaker's leaves it alone. The MCU's: 12 hex
 digits of SHA-256 over its app (`mcu/stamp.py`; the same in every release until MCU code changes, so a system-only
@@ -147,7 +148,9 @@ records it and has a new one's rescue install itself into a slot (`docs/module/s
 The Pages workflow (`.github/workflows/pages.yml`) attaches a tag's
 images and their `manifest.json` (`zd1 image`) to the GitHub release, then builds the page, copies every
 release's images beside it and writes `images/index.json`: the releases newest
-first, each with its version, date, notes, and per image the file, size and SHA-256. Same origin: no GitHub API, no
+first, each with its version, date, notes, and per image the file, size and SHA-256; the `.fw` files under `fw` by
+model (`fw.zd1l`, `fw.a7`: `zd1 image` says each one's model from its HWID; a release from before that had the
+Lightning model's only). Same origin: no GitHub API, no
 rate limit, no CORS, and the page fetches an image only when it installs it. The manifest keeps older releases, which is "install a previous version" for free. Stock images for the
 rollback are B&W's own update files; the page doesn't serve them (uploading them is not ours to decide: `AGENTS.md`):
 it takes them as a file, or fetches them from the archive.org items `downloads/manifest.json` lists if those answer
@@ -155,7 +158,7 @@ cross-origin.
 
 ## The three views
 **Not connected** is three panels: Connect (USB, or an address), Install by model (the key-hold into DFU for the
-Zeppelin Air; BL2's web updater over Ethernet for the Lightning model), and Help (the requirements: Chrome, Edge,
+Zeppelin Air; BL2's web updater over Ethernet for the Lightning model and the A7), and Help (the requirements: Chrome, Edge,
 Brave, Opera, Android Chrome too; on Windows WinUSB by hand for B&W's bootloader; Linux's udev rule shown to copy; a
 stopped update, the light, the way back). A stock speaker under its own firmware never shows up on the chooser:
 Install and Help say so.
@@ -283,7 +286,7 @@ cases (a wrong key, none in range, two networks). Next, in order:
   `Speaker.updateBoot` / `installFromRescue` / `updateBootInBl2`, `connectNet`, `spec()`), `www/app.js` (the wiring) and its ES modules in `www/js/` (no build step): `connection.js` (`events`,
   `connect`, `job`), `backups.js` (IndexedDB), `network.js` (`drawSettings`, `wifiStatus`), `receivers.js`,
   `software.js` (`drawDfu`, `drawInstall`, `drawReleases`, `unfinished`, `updateTo`, `updateOverNetwork`), `console.js`
-  (the console pane), `zd1l.js` + `bl2.js` (the ZD1L's install through its BL2, no-cors), `speaker.js`, `hero.js` (the top: the drawing, the
+  (the console pane), `fwinstall.js` + `bl2.js` (the ZD1L's and the A7's install through its BL2, no-cors), `speaker.js`, `hero.js` (the top: the drawing, the
   title, the status), `led.js`, `zd-speaker.js`, `diagnostics.js`, `ui.js`, `shared.js`, `design.js` (the catalogue);
   the local manifest
   `tools/zeppelin/web.py`; the workflow `.github/workflows/pages.yml`.
