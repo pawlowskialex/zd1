@@ -62,8 +62,7 @@ on a 2010 ARM9 for all of this. What works and how it was checked: `docs/status.
 - **One unit tested**, a 30-pin Zeppelin Air. The **Zeppelin Air with Lightning connector** (2013) installs
   differently: its MCU bootloader has no USB, so both chips go on as one B&W `.fw` through its network module's
   updater (ON/OFF held at power-up, an Ethernet cable to your router), from the page or `tools/zeppelin bl2web`.
-  Owners run an earlier build of ours on theirs; this one (the rescue and the slots) has run whole only in the
-  emulator, so the page offers it as an alpha. Its dock is unsupported either way.
+  Its dock is unsupported.
   The **Zeppelin A7** runs another MCU build on other hardware: not without changes.
 - **On your network** the speaker runs an AirPlay receiver like any other AirPlay speaker, and answers our page and
   `zd1` on port 80: only computers paired by holding ON/OFF 5 s, and only signed system updates. Its debug services

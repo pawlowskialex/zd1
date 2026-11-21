@@ -8,7 +8,7 @@ import { consoleInit } from "./js/console.js";
 import { report } from "./js/diagnostics.js";
 import { joinForm, joinWatch, scan } from "./js/network.js";
 import { app } from "./js/shared.js";
-import { drawInstall, installMcu, installSystem, loadReleases, rollback, startFirmware } from "./js/software.js";
+import { installMcu, installSystem, loadReleases, rollback, startFirmware } from "./js/software.js";
 import { refresh } from "./js/speaker.js";
 import { $, ask, download, fill, names, notice, readFile, stamp } from "./js/ui.js";
 import { installZd1l } from "./js/zd1l.js";
@@ -25,7 +25,6 @@ async function main() {
     e.preventDefault();
     op(() => connectNet($("net-addr").value));
   };
-  $("zd1l-alpha").onchange = drawInstall;
   $("zd1l-form").onsubmit = (e) => {
     e.preventDefault();
     installZd1l($("zd1l-addr").value);
