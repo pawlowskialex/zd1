@@ -10,6 +10,7 @@ shairplay = { workspace = true, default-features = false, features = ["ap2-core"
 tokio = { version = "1", features = ["rt", "macros", "signal"] }
 tracing = "0.1"
 zd1-compat.workspace = true
+zd1-persparam.workspace = true
 zd1-sys.workspace = true
 zd1-text.workspace = true
 zd1-warp0 = { workspace = true, features = ["airplay"] }

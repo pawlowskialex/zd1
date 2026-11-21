@@ -11,4 +11,5 @@ nix = { version = "0.29", default-features = false, features = ["time"] }
 tracing = "0.1"
 # tracing-log: librespot logs through `log`
 tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "ansi", "tracing-log"] }
+zd1-persparam.workspace = true
 zd1-sys.workspace = true

@@ -39,11 +39,11 @@ impl Args {
         self.flags.iter().any(|f| f == flag)
     }
 
-    /// `--name`, else "Zeppelin Air XXXXXX" from eth0's MAC, like the stock module.
+    /// `--name`, else the model's name and eth0's MAC ("Zeppelin Air XXXXXX", "A7 XXXXXX"), like the stock module.
     pub fn name(&self) -> String {
         match self.get("--name") {
             Some(n) if !n.is_empty() => n.to_string(),
-            _ => zd1_sys::default_name(zd1_sys::eth0_mac()),
+            _ => zd1_sys::default_name(zd1_sys::eth0_mac(), zd1_persparam::unit_model()),
         }
     }
 
