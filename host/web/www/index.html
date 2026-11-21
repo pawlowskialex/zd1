@@ -101,18 +101,23 @@
           <div class="row"><button type="button" id="connect-dfu">Connect to its bootloader…</button></div>
         </article>
         <article class="choice">
-          <h3>Zeppelin Air with Lightning</h3>
+          <h3>Zeppelin Air with Lightning <span class="tag">alpha</span></h3>
           <p class="small">the Lightning dock</p>
+          <p class="small">An earlier build of ours runs on owners' Lightning models; this release's has run only in the
+             emulator so far. If it doesn't come up, B&amp;W's own file goes back on the same way (Help, below).</p>
           <ol class="steps">
             <li>Connect it to your router with an Ethernet cable.</li>
             <li>Unplug its power, hold ON/OFF, and plug the power back in while holding it: its light goes white and
                 it takes an address from your router (the router's list of devices shows it).</li>
             <li>That address here, then Install: about 10 minutes, then the page connects to it.</li>
           </ol>
-          <form id="zd1l-form" class="row">
-            <input id="zd1l-addr" class="grow" autocomplete="off" spellcheck="false" placeholder="its address, 192.0.2.20" aria-label="Its address">
-            <button type="submit">Install…</button>
-          </form>
+          <div class="stack">
+            <label class="check"><input id="zd1l-alpha" type="checkbox"> I'll try an alpha on my speaker</label>
+            <form id="zd1l-form" class="row">
+              <input id="zd1l-addr" class="grow" autocomplete="off" spellcheck="false" placeholder="its address, 192.0.2.20" aria-label="Its address">
+              <button type="submit">Install…</button>
+            </form>
+          </div>
         </article>
       </div>
       <p class="small">Both keep a way back to B&amp;W's software (Help, below).</p>

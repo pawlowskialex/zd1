@@ -212,14 +212,16 @@ export async function loadReleases() {
   if (app.bl) drawDfu();
 }
 
-/// The welcome view's Install: the release it puts on, and the Lightning model's form only when a release has its file.
-function drawInstall() {
+/// The welcome view's Install: the release it puts on, and the Lightning model's form: an alpha, so only when a release
+/// has its file and the person ticked that they'll try one.
+export function drawInstall() {
   const rel = releases[0],
     fw = releases.find((r) => r.fw);
   $("install-release").textContent = rel
     ? `It installs release ${rel.version}${rel.date ? `, ${rel.date}` : ""}.${fw ? "" : " The Lightning model's file isn't in a release yet."}`
     : "No release is offered to this page: the install needs one.";
-  for (const e of $("zd1l-form").elements) e.disabled = !fw;
+  $("zd1l-alpha").disabled = !fw;
+  for (const e of $("zd1l-form").elements) e.disabled = !fw || !$("zd1l-alpha").checked;
 }
 
 /// A release's image, fetched and checked against the manifest's SHA-256.
