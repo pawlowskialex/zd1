@@ -3,8 +3,13 @@
 The module OS is the Nokia Home Music HD-1's kernel (BCoLinux 2.2.1, Linux 2.6.24.7, `arch/arm/mach-sulu`),
 unmodified, with our own userspace (`module/os/`). The HD-1 uses the same BridgeCo chip family with the same
 peripheral map (same bases, same IRQs, the same WILD Wi-Fi firmware build); its kernel is unstripped and its modules
-are GPL: a working driver set for our hardware. Analysis of the dump: `re/netmodule/NOKIA_HD1.md`; the
-kernel's symbols: `tools/zeppelin/jtag/kallsyms.py`. Tags: `docs/README.md`.
+are GPL: a working driver set for our hardware. Of those modules we build `cfg80211` and `mac80211` from source
+(`module/wifi/`) and keep the rest. Analysis of the dump: `re/netmodule/NOKIA_HD1.md`; the kernel's symbols:
+`tools/zeppelin/jtag/kallsyms.py`. Tags: `docs/README.md`.
+
+Modules of our own build against vanilla 2.6.24.7 prepared by `module/wifi/kernel.py`: Nokia's configuration from
+the image (`IKCFG_ST`), a stand-in for their `mach-sulu` headers; `module/wifi/README.md` has what a module needs to
+load into this kernel.
 
 ## How it boots
 ```
@@ -100,5 +105,3 @@ driver, the copy into the ring and the system calls together are at most ~1.8 %.
 
 ## Open
 - The kernel's idle loop doesn't sleep (`arch_idle` is empty): the ARM runs flat out (`docs/backlog.md`).
-- An out-of-tree module for anything kernel-side needs vanilla 2.6.24.7 headers and a matching config (no
-  source for this build).

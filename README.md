@@ -117,8 +117,9 @@ stock, `zd1 dfu restore BACKUP.tar --yes` writes a backup back, and `zd1 module 
 bootloader whatever it runs.
 
 ## Living with it
-- **The volume is capped at step 40 of 71** by default, on every source (keys, remote, senders, the computer); the
-  page's Behaviour (or `zd1 prefs --volume-cap N`) changes it.
+- **The volume goes up to step 71**, stock's range, on every source (keys, remote, senders, the computer); the page's
+  Behaviour (or `zd1 prefs --volume-cap N`) sets a lower cap. A speaker installed before 0.2.0 keeps the cap of 40 it
+  had (Behaviour raises it).
 - **The amp sleeps after 5 minutes of silence** and wakes with sound, so the first ~2.5 s after a long pause are
   lost while it comes back (Behaviour's "Off after", 1 to 30 minutes). The LED dims while it sleeps.
 - **A computer that starts playing over USB takes the speaker** by itself after ~3 s (Behaviour turns that
@@ -142,9 +143,10 @@ is in other speakers of that era too, so the module side is written for any CR87
 
 ## License
 Our code is MIT (`LICENSE`). Not ours and not under it: `blobs/` (B&W's, BridgeCo's and Nokia's binaries), `re/`
-(material derived from the vendor firmware), `mcu/src/dsp_data.c` (B&W's DSP data), `mcu/asf/` and
-`mcu/link_zd1.lds` (Microchip's ASF license), `mcu/dfp-include/` (Apache-2.0), `emu/renode/avr32/insn.decode` and the
-decoder generated from it (LGPL-2.1). A few files are built from LGPL code (the AAC tables, the Warp0 ALAC decoder),
-and the images hold GPL and LGPL programs: `NOTICE.md` lists each with its license and where its source is.
+(material derived from the vendor firmware), `mcu/src/dsp_data.c` (B&W's DSP data), `mcu/asf/` and `mcu/link_zd1.lds`
+(Microchip's ASF license), `mcu/dfp-include/` (Apache-2.0), `emu/renode/avr32/insn.decode` and the decoder generated
+from it (LGPL-2.1), `module/wifi/` but `kernel.py` (Linux's wireless code, GPL-2.0). A few files are built from LGPL
+code (the AAC tables, the Warp0 ALAC decoder), and the images hold GPL and LGPL programs: `NOTICE.md` lists each with
+its license and where its source is.
 
 Not affiliated with Bowers & Wilkins, Apple or Spotify.

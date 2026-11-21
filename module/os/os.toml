@@ -16,12 +16,10 @@ cmdline = "console=ttyS1,115200 mem=31M mtdparts=sulu-nand:32m(vendor)ro,32m(sys
 
 [vendor]
 # Binary pieces from Nokia's rootfs (blobs/nokia-hd1/rootfs) that only work with that kernel: its modules and the
-# Wi-Fi firmware. `load` = insmod order at boot (/etc/modules).
+# Wi-Fi firmware. `load` = insmod order at boot (/etc/modules), ours ([wifi]) among them.
 root = "blobs/nokia-hd1/rootfs"
 modules = [
   "drivers/base/firmware_class",
-  "net/wireless/cfg80211",
-  "net/mac80211/mac80211",
   "drivers/net/wireless/sulu/sulu_wlan",
   "arch/arm/mach-sulu/drivers/av-device",
   "arch/arm/mach-sulu/drivers/warp_debugger",
@@ -38,6 +36,13 @@ load = [
   "sound/arm/snd-sulu",
 ]
 firmware = ["lib/firmware/sulu-wlan.fw-rev78512", "lib/firmware/sulu-wlan.fw"]
+
+[wifi]
+# cfg80211 and mac80211 from source (module/wifi: Linux's wireless code of April 2008, the build Nokia's sulu_wlan was
+# made for, ours since), in place of Nokia's: built out of tree against this vanilla kernel (nix/module/wifi.nix,
+# module/wifi/kernel.py). Hash: fetchgit of the tag, 2026-11-21.
+modules = ["net/wireless/cfg80211", "net/mac80211/mac80211"]
+kernel = { url = "https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git", rev = "refs/tags/v2.6.24.7", hash = "sha256-Htg3zDjQDv3h+0ujT945g2j2qxguKs4brkmeJirS5Ts=" }
 
 [busybox]
 # static, musl (nix/module/busybox.nix); busybox.config = our changes on top of `make defconfig`

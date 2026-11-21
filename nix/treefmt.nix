@@ -21,12 +21,16 @@
   csharpier,
 }:
 let
-  # what isn't ours to format: the vendored Atmel ASF and part headers, the decompiler's C (re/), the generators' output
+  # what isn't ours to format: the vendored Atmel ASF and part headers, the decompiler's C (re/), Linux's wireless code
+  # (module/wifi, kernel style: our changes in it follow it), the generators' output
   skip = {
     vendored = [
       "mcu/asf/**"
       "mcu/dfp-include/**"
       "re/**"
+      "module/wifi/net/**"
+      "module/wifi/include/**"
+      "module/wifi/config.h"
     ];
     generated = [
       "mcu/src/zd1host_gen.h"

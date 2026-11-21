@@ -112,6 +112,44 @@ dev_id 1)`, the "old DMA" block moves sulu_eth uses), groups 2/3 → **12/13** a
 - Where our stock app keeps its copy of the firmware is unknown (no plain vector-table match; probably compressed or
   in a resource). Not needed while we ship Nokia's blob; its licence is open.
 
+### Where `cfg80211.ko` and `mac80211.ko` come from
+- Not the kernel's: the kernel's own config (embedded, `IKCFG_ST`) has `# CONFIG_MAC80211 is not set` and
+  `# CONFIG_CFG80211 is not set`. Both modules were built out of tree from **compat-wireless** (`__FILE__` strings
+  `/root/popov/src/kernel/trunk/compat-wireless/net/mac80211/*.c`) against this kernel, with GCC 4.1.2: EABI
+  (e_flags 0x04000000, v5TE), `vermagic=2.6.24.7 mod_unload ARMv5`, no `__versions` (no MODVERSIONS: a module
+  rebuilt with the same vermagic loads without symbol CRCs). `CONFIG_MAC80211_MESH` was on, LEDs and debugfs off.
+- The snapshot is wireless-testing of about 2008-04-22 (between 2.6.25 and 2.6.26-rc1), matched against mainline
+  history: every mac80211 symbol in the binary is in the source there, the exports are the same (no
+  `ieee80211_iterate_active_interfaces_atomic`, still `ieee80211_start_queues`), the TX path stores a byte
+  `key_idx` in `ieee80211_tx_control` (before `1c01442058`), it has the `ieee80211_rx_bss_put` race fix
+  (`atomic_dec_and_lock`, `1ebebea8e8`) but still a 3-byte mesh sequence number (before `51ceddade0`), mesh header
+  lengths 5/11/17/23 (before `ef26925477`), printks without the newlines of `a4278e18e7`. No single mainline commit
+  has that combination (wireless-testing was rebased then, and its dated tags start in 2011): the exact tree is
+  gone. Mainline `1ebebea8e8` (2008-04-23) passes every one of those checks.
+- Nokia changed it (code compared with `1ebebea8e8` built the same way, function by function):
+  - **`struct ieee80211_conf` has a field more**, an int after `power_level` (so `channel` at 0x1c, the struct 0x3c,
+    `ieee80211_hw.wiphy` 0x3c, `.priv` 0x48, `.queues` 0x5c): the TX power fixed with SIOCSIWTXPOW (0: none).
+    `ieee80211_ioctl_siwtxpower` sets it (the value, or 0 for auto) and `ieee80211_hw_config` takes
+    `power_level = user ? min(user, chan->max_power) : chan->max_power`. `sulu_wlan` is built on that layout
+    (`sulu_wlan_80211_config` reads `conf->channel` at 0x1c and copies 0x3c bytes; its probe reads `hw->priv` at
+    0x48): a mac80211 for it needs the field.
+  - WPS: `ieee80211_sta_set_extra_ie` takes the WPS IE apart (`extra_ie %d: wps %d, extra %d`), and scan results
+    carry a custom event `wps_ie=` + hex (`ieee80211_sta_scan_results`).
+  - `ieee80211_sta_work` frees BSS entries not heard for a while (`expiring inactive BSS %s`); upstream only hid
+    them from scan results.
+  - Built with `CONFIG_MAC80211_IBSS_DEBUG` and `CONFIG_MAC80211_VERBOSE_PS_DEBUG` (their printks are in it).
+- Apart from that field the driver ABI is upstream's: `include/net/mac80211.h` is the same (blob `4a80d74975`) in
+  every candidate, `sulu_wlan_80211_ops` fills `ieee80211_ops` at the same indices (tx 0 ... set_key 10, get_stats
+  13, rts/frag/retry 15-17, conf_tx 19, beacon_update 23), and with the field added the functions that use
+  `ieee80211_hw`, `ieee80211_conf`, the RX and TX status (`ieee80211_rx_irqsafe`, `ieee80211_tx_status_irqsafe`:
+  0x40 bytes) and the queues read the offsets Nokia's do.
+- Element 51 (issue #11): in that source the drop of a beacon whose element 51 isn't 19 bytes long is all under
+  `#ifdef CONFIG_MAC80211_MESH` in `ieee80211_rx_bss_info` (`ieee80211_rx_mesh_bss_get/add`); built without mesh,
+  element 51 is parsed but never used. The kernel's `apply_relocate` takes R_ARM_ABS32, PC24, CALL and JUMP24 only
+  (no PREL31: no unwind tables in a module).
+- Built from that source with Nokia's field added and mesh off, the two load in place of Nokia's and run their
+  `sulu_wlan` on the unit [HW 2026-11-21]: `module/wifi/` (the image builds them since).
+
 ## 6. SuluDMA (`newdma_*`, exported)
 - Linux maps the controller at **0xB5000000, 64 KiB** (the cfg block live at 0xB5001000 = +0x1000).
 - Init writes 1 to +0x1C08, +0x1C28, +0x1C38 (group IRQ enables); old-DMA init writes +0x1C18.

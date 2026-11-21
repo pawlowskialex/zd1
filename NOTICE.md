@@ -14,6 +14,7 @@ which license, and where its source is.
 | AVR32 instruction encodings | `emu/renode/avr32/insn.decode`, and `Avr32Decoder.g.cs` generated from it | Florian Göhler and Johannes Willbold's QEMU AVR32 target (QEMU decodetree), with our fixes; LGPL-2.1-or-later |
 | FLAC test stream | `module/codecs/flac/rust/tests/data/music.flac`, `music.raw` | 0.25 s of music encoded with libFLAC 1.5.0 (`flac -8`) and its `flac -d` output; the recording's origin is not recorded |
 | B&W's DSP data | `mcu/src/dsp_data.c` | Bowers & Wilkins: the ADAU1445 program and parameters from the stock MCU firmware 2.04.05 |
+| Linux's wireless code (cfg80211, mac80211) | `module/wifi/` but `kernel.py` | the Linux authors (mainline `1ebebea8e8`, 2008), with our changes (`module/wifi/README.md`); GPL-2.0. Built into `cfg80211.ko` and `mac80211.ko` |
 | Vendor binaries | `blobs/` (provenance in `blobs/README.md`) | Bowers & Wilkins, BridgeCo and Atmel (the MCU firmware, the bootloaders, the module image); Nokia (the HD-1's Linux kernel, kernel modules and Wi-Fi firmware) |
 | Reverse-engineering material | `re/` | derived from the vendor firmware above: decompiler exports, disassembly, strings, dumps |
 | DM870 product information | `docs/hardware/ref/dm870db.pdf` | BridgeCo's 7-page "DM870 Networked Media Processor" product brief |
@@ -44,7 +45,8 @@ carries the same system as its rescue):
 |---|---|---|
 | boot stub, `zd1` (init, the link, the receivers), the Warp0 images | MIT, with shairplay-rust and the LGPL files above | this repo |
 | Linux 2.6.24.7 (`mach-sulu`), Nokia's build, unmodified | GPL-2.0 | Nokia's binary from the HD-1 (`blobs/nokia-hd1/kernel.bin`, provenance in `blobs/README.md`). This repo has no source for it |
-| Nokia's kernel modules and the Wi-Fi firmware (`module/os/os.toml` `[vendor]`) | Nokia's / BridgeCo's, binary | `blobs/nokia-hd1/rootfs/` |
+| `cfg80211.ko`, `mac80211.ko` (`module/os/os.toml` `[wifi]`) | GPL-2.0 | `module/wifi/` in this repo, built against linux-stable's v2.6.24.7 (`nix/module/wifi.nix`) |
+| Nokia's other kernel modules and the Wi-Fi firmware (`module/os/os.toml` `[vendor]`) | Nokia's / BridgeCo's, binary | `blobs/nokia-hd1/rootfs/` |
 | busybox 1.36.1 | GPL-2.0 | https://busybox.net/downloads/busybox-1.36.1.tar.bz2, configured by `module/os/busybox.config` and `os.toml` `[busybox]` |
 | alsa-lib 1.2.12 | LGPL-2.1-or-later | https://www.alsa-project.org/files/pub/lib/alsa-lib-1.2.12.tar.bz2 (linked statically into `zd1`) |
 | alsa-utils 1.2.12 (`aplay`, `amixer`, `speaker-test`) | GPL-2.0-or-later | https://www.alsa-project.org/files/pub/utils/alsa-utils-1.2.12.tar.bz2 |
