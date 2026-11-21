@@ -29,7 +29,13 @@
 #include <net/wireless.h>
 #include "core.h"
 
-static char *ieee80211_regdom = "US";
+/*
+ * zd1: Nokia's tables (their cfg80211.ko: the power their radio was certified at, 19 dBm in the US where upstream
+ * has 27; EU, US1 and US2 theirs), chosen with ieee80211_regdom= as theirs. The default is "world": channels 1-11
+ * at 19 dBm, 12 and 13 passive (heard, never probed: an access point there, where those channels are allowed, can
+ * still be found and joined), as Linux does today without a country.
+ */
+static char *ieee80211_regdom = "world";
 module_param(ieee80211_regdom, charp, 0444);
 MODULE_PARM_DESC(ieee80211_regdom, "IEEE 802.11 regulatory domain code");
 
@@ -50,24 +56,40 @@ struct ieee80211_regdomain {
 #define RANGE_PWR(_start, _end, _pwr, _ag, _flags)	\
 	{ _start, _end, _pwr, _ag, _flags }
 
+/* IEEE 802.11a as upstream, for the tables that have it */
+#define RANGES_11A_US							\
+	RANGE_PWR(5180, 5180, 23, 6, 0),				\
+	RANGE_PWR(5200, 5200, 23, 6, 0),				\
+	RANGE_PWR(5220, 5220, 23, 6, 0),				\
+	RANGE_PWR(5240, 5320, 23, 6, 0),				\
+	RANGE_PWR(5745, 5825, 30, 6, 0)
 
-/*
- * Ideally, in the future, these definitions will be loaded from a
- * userspace table via some daemon.
- */
+static const struct ieee80211_channel_range ieee80211_world_channels[] = {
+	/* IEEE 802.11b/g, channels 1..11 */
+	RANGE_PWR(2412, 2462, 19, 6, 0),
+	/* channels 12 and 13: only where an access point is heard */
+	RANGE_PWR(2467, 2472, 19, 6, IEEE80211_CHAN_PASSIVE_SCAN | IEEE80211_CHAN_NO_IBSS),
+};
+
 static const struct ieee80211_channel_range ieee80211_US_channels[] = {
 	/* IEEE 802.11b/g, channels 1..11 */
-	RANGE_PWR(2412, 2462, 27, 6, 0),
-	/* IEEE 802.11a, channel 36*/
-	RANGE_PWR(5180, 5180, 23, 6, 0),
-	/* IEEE 802.11a, channel 40*/
-	RANGE_PWR(5200, 5200, 23, 6, 0),
-	/* IEEE 802.11a, channel 44*/
-	RANGE_PWR(5220, 5220, 23, 6, 0),
-	/* IEEE 802.11a, channels 48..64 */
-	RANGE_PWR(5240, 5320, 23, 6, 0),
-	/* IEEE 802.11a, channels 149..165, outdoor */
-	RANGE_PWR(5745, 5825, 30, 6, 0),
+	RANGE_PWR(2412, 2462, 19, 6, 0),
+	RANGES_11A_US,
+};
+
+static const struct ieee80211_channel_range ieee80211_US1_channels[] = {
+	/* IEEE 802.11b/g, channels 2..10, then 1 and 11 lower */
+	RANGE_PWR(2417, 2457, 19, 6, 0),
+	RANGE_PWR(2412, 2412, 18, 6, 0),
+	RANGE_PWR(2462, 2462, 18, 6, 0),
+	RANGES_11A_US,
+};
+
+static const struct ieee80211_channel_range ieee80211_US2_channels[] = {
+	RANGE_PWR(2417, 2457, 17, 6, 0),
+	RANGE_PWR(2412, 2412, 14, 6, 0),
+	RANGE_PWR(2462, 2462, 14, 6, 0),
+	RANGES_11A_US,
 };
 
 static const struct ieee80211_channel_range ieee80211_JP_channels[] = {
@@ -80,6 +102,16 @@ static const struct ieee80211_channel_range ieee80211_JP_channels[] = {
 				     IEEE80211_CHAN_RADAR),
 };
 
+static const struct ieee80211_channel_range ieee80211_EU_channels[] = {
+	/* IEEE 802.11b/g, channels 1..13 */
+	RANGE_PWR(2412, 2472, 20, 6, 0),
+	RANGE_PWR(5180, 5180, 23, 6, 0),
+	RANGE_PWR(5200, 5200, 23, 6, 0),
+	RANGE_PWR(5220, 5220, 23, 6, 0),
+	RANGE_PWR(5240, 5320, 23, 6, 0),
+	RANGE_PWR(5500, 5700, 23, 6, 0),
+};
+
 #define REGDOM(_code)							\
 	{								\
 		.code = __stringify(_code),				\
@@ -88,26 +120,24 @@ static const struct ieee80211_channel_range ieee80211_JP_channels[] = {
 	}
 
 static const struct ieee80211_regdomain ieee80211_regdoms[] = {
+	REGDOM(world),
 	REGDOM(US),
+	REGDOM(US1),
+	REGDOM(US2),
 	REGDOM(JP),
+	REGDOM(EU),
 };
 
 
 static const struct ieee80211_regdomain *get_regdom(void)
 {
-	static const struct ieee80211_channel_range
-	ieee80211_world_channels[] = {
-		/* IEEE 802.11b/g, channels 1..11 */
-		RANGE_PWR(2412, 2462, 27, 6, 0),
-	};
-	static const struct ieee80211_regdomain regdom_world = REGDOM(world);
 	int i;
 
 	for (i = 0; i < ARRAY_SIZE(ieee80211_regdoms); i++)
 		if (strcmp(ieee80211_regdom, ieee80211_regdoms[i].code) == 0)
 			return &ieee80211_regdoms[i];
 
-	return &regdom_world;
+	return &ieee80211_regdoms[0];
 }
 
 
@@ -156,6 +186,7 @@ void wiphy_update_regulatory(struct wiphy *wiphy)
 	enum ieee80211_band band;
 	const struct ieee80211_regdomain *rd = get_regdom();
 
+	printk(KERN_DEBUG "%s: regulatory domain %s\n", wiphy_name(wiphy), rd->code);
 	for (band = 0; band < IEEE80211_NUM_BANDS; band++)
 		if (wiphy->bands[band])
 			handle_band(wiphy->bands[band], rd);

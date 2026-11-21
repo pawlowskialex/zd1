@@ -17,6 +17,11 @@ against their binary. Then our changes, in this repository's history:
 - `config.h`: this build's options. No mesh: the draft mesh code takes an element 51 (today the AP Channel Report)
   for its mesh configuration and drops the beacon of an AP that sends one (issue #11).
 - `include/net/compat.h` and an `#ifdef` in `wext.c`: what 2.6.24.7's wireless headers lack.
+- The regulatory tables (`net/wireless/reg.c`) are Nokia's: 19 dBm on 2.4 GHz in the US where upstream has 27
+  (the TX power `sulu_wlan` asks the radio for is the channel's maximum), their `EU` (channels 1-13), `US1`, `US2`,
+  `JP`, picked with `cfg80211`'s `ieee80211_regdom=`. The default is `world`, not their `US`: channels 1-11 at
+  19 dBm and 12-13 passive (listened to, never probed), so an access point on 12 or 13 is found and joined where it
+  may be there.
 - The join's log (`mlme.c`, `main.c`): each authentication attempt with the channel, the scan state, the TX queue and
   the beacons heard from the AP since the last one; each authentication, association and deauthentication frame
   with whether the AP acknowledged it (the firmware's status). For the rejoin problem (`docs/status.md`).
@@ -24,7 +29,7 @@ against their binary. Then our changes, in this repository's history:
   ours), served once joined, gets the last scan's results if that is less than 10 s old: a new one would take the
   radio off the AP's channel just after the join.
 
-Nokia's own two changes are not here: the WPS element in scan results (`wps_ie=`) and freeing BSS entries not heard
+Nokia's own two other changes are not here: the WPS element in scan results (`wps_ie=`) and freeing BSS entries not heard
 for a while. Nothing here uses the first.
 
 ## The build
