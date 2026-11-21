@@ -19,8 +19,9 @@ The images (emu/img/os/; docs/module/storage.md):
                             relay, BL2): the stub asks the MCU for a slot; with no slot that gets ready the system runs
                             from RAM, and with the slots empty (a first install) copies itself into one
                             (zd1-slot install-self)
-    os-zd1l.bcd             the same for the Zeppelin Air with Lightning (its HWID and CnE, no resources): the module
-                            part of its B&W .fw for BL2's web updater (`nix build .#zd1l-fw`)
+    os-zd1l.bcd, os-a7.bcd  the same for the Zeppelin Air with Lightning and the A7 (the model's HWID and CnE, no
+                            resources): the module part of its B&W .fw for BL2's web updater (`nix build .#zd1l-fw`,
+                            `.#a7-fw`)
     payload_debug.bin, os-debug.bcd   os.bcd with the debug services on by default (os.toml [image.debug])
     nand_os.bin             the emulator's test unit with os.bcd installed, slots empty (`zemu run os --nand --mcu`:
                             no boot image recorded in the run's EEPROM, so the rescue installs itself into slot A)
@@ -194,7 +195,7 @@ def payload(cfg, parts, initrd, out, cmdline_extra="", how="slots", system=None)
 
 # The models' .bcd parts besides the payload (blobs/README.md): HWID and factory CnE. B&W's preloader is common; the
 # resources (the stock app's web UI, which our OS doesn't read) are left empty: BL2 writes the partition empty.
-MODELS = {"zd1": 0xBD, "zd1l": 0xBE}
+MODELS = {"zd1": 0xBD, "zd1l": 0xBE, "a7": 0xA7}
 
 
 def bcd_image(payload_bin, out, model, built):
@@ -242,7 +243,8 @@ def assemble(cfg, parts, out, version, built, base_nand, mcu_app):
         initrd, system = os.path.join(out, "initramfs-full.cpio.gz"), os.path.join(out, "system.cpio.gz")
         payload(cfg, parts, initrd, p, cmdline, system=system)
         bcd_image(p, os.path.join(out, "os%s.bcd" % suffix), "zd1", built)
-    bcd_image(os.path.join(out, "payload.bin"), os.path.join(out, "os-zd1l.bcd"), "zd1l", built)
+    for model in ("zd1l", "a7"):  # the models whose BL2 takes a .fw: the module part of it (nix/bw-fw.nix)
+        bcd_image(os.path.join(out, "payload.bin"), os.path.join(out, "os-%s.bcd" % model), model, built)
     install(base_nand, os.path.join(out, "os.bcd"), os.path.join(out, "nand_os.bin"))
     log("system-debug")
     make_system(cfg, parts, sysroot, version, built, mcu_app, debug=True)

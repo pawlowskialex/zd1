@@ -58,8 +58,9 @@ pub fn image_json(path: &Path) -> Result<String> {
             j["built"] = built.into();
             j["stamp"] = stamp.into();
         }
-        Kind::Fw { bcd_ours, boot, mcu } => {
+        Kind::Fw { model, bcd_ours, boot, mcu } => {
             j["kind"] = "fw".into();
+            j["model"] = image::model_key(model).into();
             j["ours"] = (bcd_ours && mcu.is_some()).into();
             if !boot.is_empty() {
                 j["boot"] = boot.into();

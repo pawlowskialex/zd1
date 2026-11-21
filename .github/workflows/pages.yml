@@ -41,6 +41,7 @@ jobs:
           cp "$os/system.cpio.gz" "out/system-$v.cpio.gz"
           cp "$os/os.bcd" "out/os-$v.bcd"
           cp "$(nix build .#zd1l-fw --print-out-paths)/zd1l.fw" "out/zd1l-$v.fw"
+          cp "$(nix build .#a7-fw --print-out-paths)/a7.fw" "out/a7-$v.fw"
           if [ -n "$ZD1_RELEASE_KEY" ]; then
             key="$RUNNER_TEMP/release.key"
             (umask 077 && printf '%s\n' "$ZD1_RELEASE_KEY" > "$key")
@@ -89,7 +90,10 @@ jobs:
               notes = subprocess.check_output(["gh", "release", "view", tag, "--json", "body", "--jq", ".body"], text=True).strip()
               e = {"version": v, "date": r["publishedAt"][:10], "notes": notes}
               for line in open(os.path.join(d, "manifest.json")):
-                  j = json.loads(line); j["file"] = f"{v}/{j['file']}"; e[j.pop("kind")] = j
+                  j = json.loads(line); j["file"] = f"{v}/{j['file']}"; k = j.pop("kind")
+                  # the .fw by model (fw.zd1l, fw.a7); a release from before the field had the Lightning model's only
+                  if k == "fw": e.setdefault("fw", {})[j.get("model", "zd1l")] = j
+                  else: e[k] = j
               out.append(e)
           json.dump({"releases": out}, open("site/images/index.json", "w"), indent=1)
           print(json.dumps(out, indent=1))

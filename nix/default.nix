@@ -264,10 +264,21 @@ in
       ;
     mcu = stampMcu mcu.mcu-raw;
     mcu-emu = stampMcu mcu.mcu-emu-raw;
-    # both chips of a Zeppelin Air with Lightning in one B&W .fw, for its BL2 web updater (nix/zd1l-fw.nix)
-    zd1l-fw = pkgs.callPackage ./zd1l-fw.nix {
+    # both chips in one B&W .fw, for the model's BL2 web updater (nix/bw-fw.nix): the Zeppelin Air with Lightning's
+    zd1l-fw = pkgs.callPackage ./bw-fw.nix {
       inherit src os-image;
       mcu = stampMcu mcu.mcu-raw;
+      model = "zd1l";
+      dmb = "ZD1L_v2-04-35.dmb";
+      release = "2.04.35";
+    };
+    # ... and the A7's (docs/models/a7.md)
+    a7-fw = pkgs.callPackage ./bw-fw.nix {
+      inherit src os-image;
+      mcu = stampMcu mcu.mcu-raw;
+      model = "a7";
+      dmb = "AZ1_v2-04-77.dmb";
+      release = "2.04.77";
     };
   };
 
