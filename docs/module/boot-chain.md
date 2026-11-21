@@ -42,7 +42,7 @@ it. Whether it has any other boot source (UART, USB) with a blank NAND is unknow
 
 | Situation | Path |
 |---|---|
-| any image, BL1 intact | **`zd1 module esc`** (`Module ESC`, the MCU driving it): BL1's serial menu over the module console, option 4 [HW 2026-10-23, 2026-11-02 (MCU d865f5e); in the emulator `zemu run os --nand --real-bl1 --mcu --at-once --allow-panic --host 'zd1 module esc'` (the factory NAND's slots are empty, so the image panics where the MCU starts slot A: the escape doesn't need it)] |
+| any image, BL1 intact | **`zd1 module esc`** (`Module ESC`, the MCU driving it): BL1's serial menu over the module console, option 4 [HW 2026-10-23, 2026-11-02 (MCU d865f5e); in the emulator `zemu run os --nand --real-bl1 --mcu --at-once --allow-panic --host 'zd1 module esc'` (the escape happens before the image runs: it needs no image that boots)] |
 | the image answers SPI | HCR 0x21 (`zd1 module bl2`; `docs/protocol/sequences.md`): the image writes the mailbox, arms timer 0 as a watchdog (0xFFFF0200 = 0x80000001 + threshold 0xFFFF0220) and resets [HW: the stock app, our boot stub, `zd1-linkd`] |
 | JTAG attached | write the mailbox words to 0xB1005000, then a reset pulse on PA17 (not a power cycle: that clears the mailbox) [HW, `jtag.md`] |
 | app corrupt or erased | BL1 starts BL2 by itself [RE, EMU] |

@@ -6,7 +6,7 @@ alt="The web page's drawing of the speaker: its outline lit white while it plays
 The Bowers & Wilkins Zeppelin Air (2011, the one with the 30-pin iPod dock) is a very good speaker that B&W stopped
 updating long ago: AirPlay 1 only, on a network module from 2010. This project replaces the
 firmware on both of its boards, so the same speaker plays **AirPlay 2** (multi-room, in step with your other AirPlay
-speakers) and **Snapcast**, and is set up and updated from a computer over USB. Nothing to open, solder or
+speakers) and **Snapcast**, and is set up from a computer over USB and updated over USB or your network. Nothing to open, solder or
 take apart: everything goes in through the USB port on the back, and the stock firmware can go back on the same way.
 
 The [web page](https://pawlowskialex.github.io/zd1/) installs it and then shows the speaker as it is, above: its
@@ -23,9 +23,10 @@ It is a hobby project, reverse-engineered from the stock firmware and developed 
 - **Snapcast**: the speaker joins a snapserver on your network as a client (PCM and FLAC).
 - **USB audio** from a computer, as stock, and **AUX** (analog); the speaker picks the source that starts playing.
 - The amp sleeps after 5 minutes of silence and wakes with sound; the LED shows the source and whether it plays.
-- **Settings and updates over USB** from a web page (Chrome, Edge or Brave: WebUSB), or `zd1` on the command line. The
-  name, Wi-Fi, receivers, volume limit and both boards' firmware; updates fall back to the previous version by
-  themselves if the new one doesn't start.
+- **Settings and updates over USB or the network** from a web page (Chrome, Edge or Brave), or `zd1` on the command
+  line. The name, Wi-Fi, receivers, volume limit and both boards' firmware; updates fall back to the previous version
+  by themselves if the new one doesn't start. Over the network a computer is paired once by holding ON/OFF on the
+  speaker for 5 s, and only signed systems go on, each allowed by the same hold.
 
 The network module's own coprocessor decodes the audio (our AAC, ALAC, Vorbis and FLAC decoders), which leaves room
 on a 2010 ARM9 for all of this. What works and how it was checked: `docs/status.md`.
@@ -38,12 +39,13 @@ on a 2010 ARM9 for all of this. What works and how it was checked: `docs/status.
   the speaker through AirPlay meanwhile.
 - **Untested:** the IR remote (its decoder has run only in the emulator) and optical AUX (mini-TOSLINK). Analog AUX
   works.
-- **Windows.** The web page and the tools run on macOS and Linux; Windows can't open the speaker yet (the firmware
-  lacks WinUSB descriptors).
+- **Windows** is untried. Our firmware declares its own driver (WinUSB), so it should need nothing; B&W's
+  bootloader, which the install starts from, needs WinUSB installed once with Zadig (the page's Help says how).
 - **Setup from a phone.** B&W's app and its setup network are gone: Wi-Fi is set up from a computer over USB.
 - **5 GHz and newer Wi-Fi security.** The radio is 802.11b/g, 2.4 GHz only. WPA2 networks (and WPA3 transition
   ones) join; WPA3-only, WEP and enterprise networks can't. Wired Ethernet works.
-- **The Home app and HomeKit**, IPv6, and control over the network (settings and updates go over USB).
+- **The Home app and HomeKit**, and IPv6. Over the network the MCU's firmware follows the system, but the
+  network module's boot image goes over USB.
 
 ## Before you start: the risks
 - **This rewrites the firmware of both boards.** It is built so that you can always get back: the tools refuse to
@@ -51,32 +53,34 @@ on a 2010 ARM9 for all of this. What works and how it was checked: `docs/status.
   rollback` puts the stock firmware back on both boards. Holding ON/OFF while plugging the speaker in starts B&W's
   own bootloader whatever the firmware does. Still: a failure at the wrong moment, or a fault nobody has met yet,
   could leave the speaker needing more work to recover (`docs/recovery/factory-reset.md`). The install from a stock
-  speaker and the roll back have run on the development unit phase by phase, not yet as one flow, and the page's
-  Install and Roll back only against the emulator: the first installs are the test.
+  speaker (the page's) and from an earlier release (`zd1 install`), and `zd1 rollback`, have each run as one flow on
+  the development unit; the page's Roll back only in the emulator.
 - **The amp's power supply is the Zeppelin Air's weak spot.** On the development unit it failed once and was
   repaired. Our firmware keeps the stock protections, caps the volume (below, Living with it), backs the volume off when the board
   gets hot, and lets the amp sleep. `zd1 amp deny` locks the amp off, across restarts too.
 - **AirPlay is reverse-engineered**, not Apple's: an iOS or macOS update could break something.
-- **One unit tested**, a 30-pin Zeppelin Air. The **Zeppelin Air with Lightning connector** (2013) *might* work: B&W's
-  MCU firmware for it is a near-twin build of the 2.04.05 ours follows (which also runs as its board variant), with the
-  same network module (`docs/mcu/stock-firmware.md`). In the emulator our firmware handles it, but its MCU bootloader
-  is unknown and doesn't appear on USB when ON/OFF is held at power-up, as far as one owner found, so `zd1 install`
-  can't run on it as it is. Nobody has installed on one, and its dock is unsupported either way.
+- **One unit tested**, a 30-pin Zeppelin Air. The **Zeppelin Air with Lightning connector** (2013) installs
+  differently: its MCU bootloader has no USB, so both chips go on as one B&W `.fw` through its network module's
+  updater (ON/OFF held at power-up, an Ethernet cable to your router), from the page or `tools/zeppelin bl2web`.
+  Owners run an earlier build of ours on theirs; this one (the rescue and the slots) has run whole only in the
+  emulator. Its dock is unsupported either way.
   The **Zeppelin A7** runs another MCU build on other hardware: not without changes.
-- **On your network** the speaker runs an AirPlay receiver like any other AirPlay speaker. Its debug services
+- **On your network** the speaker runs an AirPlay receiver like any other AirPlay speaker, and answers our page and
+  `zd1` on port 80: only computers paired by holding ON/OFF 5 s, and only signed system updates. Its debug services
   (a shell and memory access) are off and can only be switched on over USB. Requests that change the speaker over
   USB (a flash, settings) need a press of ON/OFF on it first, so a web page you open can't change it on its own (below).
 - No warranty (MIT license, below). If it breaks your speaker, you keep both pieces.
 
 ## Installing
-**With the web page**: **https://pawlowskialex.github.io/zd1/**, in Chrome, Edge or Brave on a Mac or a Linux
-computer (WebUSB), with a USB cable to the speaker's rear USB-B port. It installs, updates, configures and rolls back,
+**With the web page**: **https://pawlowskialex.github.io/zd1/**, in Chrome, Edge or Brave (WebUSB; Windows untried),
+with a USB cable to the speaker's rear USB-B port (the Lightning model: an Ethernet cable, as the page's Install
+shows). It installs, updates, configures and rolls back,
 and needs nothing else on the computer.
 1. Unplug the speaker, then hold ON/OFF while plugging it back in: the speaker starts B&W's bootloader, which the
    page can talk to whatever firmware is on it.
 2. Open the page, **Connect**, pick the speaker, **Install**. It puts the network module's boot image on through the
    bootloader, then the MCU firmware (the page keeps a backup of what was there: a download and a copy in the
-   browser), lets the module boot, then installs the system: about 5 minutes, each phase shown.
+   browser); the module's first start then installs its system by itself: about 7 minutes, each phase shown.
 3. It lands on the network settings: join your Wi-Fi (the passphrase is turned into the key on your computer; only
    the key goes to the speaker), and rename the speaker if you like.
 
@@ -84,11 +88,14 @@ On Linux, the page shows a udev rule to copy first (your user's access to the US
 repository's releases (https://github.com/pawlowskialex/zd1/releases), built by GitHub Actions from the tagged
 source; the page fetches them from the same site when it installs, and lists earlier releases to go back to.
 
-**Updates**: connect, and Software offers the latest release; the system goes into the slot that doesn't run, and
-the speaker goes back to the other one if the new one doesn't start.
+**Updates**: connect (USB or the network), and the page offers the latest release: the system goes into the slot that
+doesn't run, and the speaker goes back to the other one if the new one doesn't start. Over the network someone holds
+ON/OFF 5 s on the speaker to allow it, and the main board takes the firmware the system brings; over USB the page
+also brings the boot image and the main board's firmware.
 
 **Back to stock**: in the bootloader view, **Roll back to B&W's software** (it takes B&W's images as files, the
-ones in `blobs/` here). The speaker comes up as from the factory. **When something goes wrong**: hold ON/OFF while
+ones in `blobs/` here). The speaker comes up as from the factory. The Lightning model: B&W's
+`blobs/zd1l/zd1lv20435.fw` through its updater, the way the install went. **When something goes wrong**: hold ON/OFF while
 plugging the speaker in, then connect: the page shows how far the last boot got and offers to install again or to
 restore a backup it kept. More: `docs/recovery/factory-reset.md`.
 

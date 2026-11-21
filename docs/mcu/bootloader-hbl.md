@@ -67,7 +67,7 @@ A bootloader quiet for 7 s mid-transfer gets the block again; 30 s ends it.
   status reads with 0x2000 while it waited for a slot answer that never came and then going quiet for the kernel's
   boot, sent the HBL into its dead end (waiting for a key) [EMU 2026-11-19]. The stub now keeps the link muted until
   our MCU knocks (`docs/module/storage.md`, the boot); the HBL never knocks, so under it the stub starts the rescue
-  without a word (on a ZD1L the full system) and the HBL's first contact is `zd1-linkd`.
+  (the release's whole system) without a word and the HBL's first contact is `zd1-linkd`.
 - **The staged image must be on the NAND before the MCU goes**: an image fetched seconds before lost its tail in the
   power cut on the MCU's way to its bootloader [EMU]; `mcu-update` syncs first.
 - **The ZD1L's first install, end to end** [EMU 2026-11-20, a stock ZD1L (`zd1lv20435.fw`'s module image on a ZD1L
@@ -88,16 +88,17 @@ A bootloader quiet for 7 s mid-transfer gets the block again; 30 s ends it.
   and by hand `zd1 allow` over USB first), and goes where it is taken
   (`mcu/src/mcufw.c`): our preloader on the ZD1 (GPLP0 bit 25, the good slot in GPLP1 for our boot stub, the module
   off, a watchdog reset), the HBL on the ZD1L (ISP_FORCE: `selfdfu_enter`). The image stays staged. The system
-  asks by itself when the MCU runs another version than the app it carries (`/usr/lib/zd1/mcu/zd1.dmb`, the same
+  asks by itself when the MCU runs another version than the app it carries (by content; neither a `-dirty` build) (`/usr/lib/zd1/mcu/zd1.dmb`, the same
   build's), at the MCU's hello on a confirmed slot, until the bootloader has taken that version twice: the MCU follows
   its OS (`docs/protocol/net.md`; `zd1-linkd`, `mcufw::follow`).
 - **Why a person confirms it**: neither bootloader checks more than a CRC, and the MCU's firmware is what keeps the amp
   safe (its heat trips, the volume cap). A module someone took over over the network (it parses what the network
-  sends, as root) could otherwise give the MCU a firmware without them. Both bootloaders start only when our app
-  sends the MCU there (or by hand: ON/OFF at power-up), so the app's wait covers the ZD1L's B&W bootloader too.
+  sends, as root) could otherwise give the MCU a firmware without them. Both take an app only when our app sends the
+  MCU there (the HBL also by hand: ON/OFF at power-up; the preloader also while it has no record of a good app), so
+  the app's wait covers the ZD1L's B&W bootloader too.
 
 ## Our ZD1 preloader [HW 2026-11-19]
-`mcu/preloader/preloader.c`, 0x80004000-0x80007DFF (7 KB), started by B&W's DFU bootloader where the app used to start;
+`mcu/preloader/preloader.c`, 0x80004000-0x80007DFF (15.5 KB; the build ~9 KB), started by B&W's DFU bootloader where the app used to start;
 the app moves to 0x80008000 on the ZD1 too (`mcu/Makefile`; one build for both models). Its record of the app is the
 page at 0x80007E00: the app's `.dmb` header, written after a transfer checks, erased before the first page of one.
 - No update asked (GPLP0) and a record: straight into the app, nothing touched (RC oscillator, the pins as reset left

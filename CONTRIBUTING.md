@@ -6,10 +6,10 @@ project is and how to install it: `README.md`. The documentation, with the evide
 agents: `AGENTS.md`.
 
 ## Ground rules
-- **The way back stays.** The MCU bootloader (0x80000000-0x80003FFF), the module's BL1 (NAND block 0) and BL2
+- **The way back stays.** The MCU bootloader (ZD1 0x80000000-0x80003FFF, ZD1L 0x80000000-0x80007FFF), the module's BL1 (NAND block 0) and BL2
   (0xA0000-0x1FFFFF) are how any unit recovers. The tools refuse to write them (BL2 only with an explicit flag);
   don't. Know the way back before you touch a unit: a DFU backup of the MCU (`zd1 dfu backup`, `mcu/flash.sh` takes
-  one), and `zd1 module esc` or JTAG for the module.
+  one; a ZD1L: B&W's `.fw` through its BL2), and `zd1 module esc` or JTAG for the module.
 - **Short amp tests.** The amp's power supply is the fragile part of a Zeppelin Air. Keep sound through the amp to
   a listening or probe test: no soak tests. `zd1 amp deny` locks the amp (at boot too) when heat or faults look
   wrong.
@@ -30,15 +30,15 @@ agents: `AGENTS.md`.
 
 | Path | What |
 |---|---|
-| `mcu/` | our MCU firmware (ASF; USB composite: audio, HID, the host link with the module's console): `mcu/README.md` |
+| `mcu/` | our MCU firmware (ASF; USB composite: audio, HID, the host link with the module's console) and the ZD1's preloader (`mcu/preloader/`: the app from the module): `mcu/README.md`, `docs/mcu/bootloader-hbl.md` |
 | `module/os/` | **the module OS**: our userspace (musl, busybox, Rust apps as one executable, our forks of the receiver libraries: `module/os/forks.md`) on the Nokia kernel; toolchain, build, rootfs |
-| `protocol/` | the MCU's two links as Rust specs: the SPI register protocol to the module, the host protocol over USB; they generate the MCU's C, its tests and the protocol references (`protocol/README.md`) |
+| `protocol/` | the MCU's two links as Rust specs: the SPI register protocol to the module, the host protocol over USB or the network; they generate the MCU's C, its tests and the protocol references (`protocol/README.md`) |
 | `module/link/` | the module side of the MCU link (`no_std` Rust library) |
 | `module/boot/` | bare-metal module images: the Linux boot stub, a minimal test image |
 | `module/warp0/`, `module/codecs/` | the Warp0 compute runtime (the DM870's MIPS core running our decoders), the AAC, Vorbis and FLAC decoders |
 | `stock-patch/` | patch the stock MCU firmware: the module's shell on telnet |
 | `emu/` | the emulator, a development and RE aid: the module and the main board in Renode (`emu/renode`), `zemu run` boots and drives an image (`emu/README.md`) |
-| `host/` | the computer's side of the speaker over USB, once (`host/core`): `zd1` (`host/cli`: state, controls, settings, updates of both boards, DFU) and the web page (`host/web`: the same over WebUSB; `docs/web.md`) |
+| `host/` | the computer's side of the speaker over USB or the network, once (`host/core`): `zd1` (`host/cli`: state, controls, settings, updates of both boards, DFU) and the web page (`host/web`: the same over WebUSB; `docs/web.md`) |
 | `tools/` | Python tools behind one command, `python3 tools/zeppelin --help`: the web page's server (`web`), KnOS shell/NAND, image formats, recovery, JTAG, Warp probes, lab probes |
 | `blobs/` | the vendor binaries everything needs (bootloaders, stock images, Nokia's kernel and drivers), with provenance (`blobs/README.md`) |
 | `re/` | reverse-engineering material: notes, raw dumps; the decompiler exports are regenerated (`re/README.md`) |
@@ -57,8 +57,8 @@ Nix builds everything (`flake.nix`, `nix/default.nix`), every toolchain pinned b
 its own inputs change. The module side cross-compiles with nixpkgs' LLVM toolchain (clang, lld, compiler-rt, static
 musl; `nix/armv5-compiler-rt.nix` fixes compiler-rt for the ARMv5TE target) and Rust through crane, and the module's
 image and every part of it (the module rows below, `boot` and `debug-tools` included) are built on Linux: on a Mac,
-`.#os-image` is the aarch64-linux one, so the same source gives the same bytes (macOS builds in a new directory every
-time, and the binaries follow it; `flake.nix`). The MCU needs Linux too: Microchip's AVR32 toolchain is an x86_64
+`.#os-image` is the aarch64-linux one, so the same source gives the same bytes (a Mac's C compiler builds the codecs
+differently), which the boot image's content IDs rely on (`flake.nix`). The MCU needs Linux too: Microchip's AVR32 toolchain is an x86_64
 Linux binary (LLVM has no AVR32). On a Mac nix hands both to a Linux builder (nix-darwin's `nix.linux-builder` or a
 remote one, aarch64 and x86_64). Nix sees the files git tracks: `git add` a new source file before building.
 
@@ -71,15 +71,15 @@ speaker without building it.
 
 | `nix build .#…` | What |
 |---|---|
-| `os-image` | the module OS images: `os.bcd`, `os-debug.bcd`, the system images, the emulator's payloads and NAND (`module/os/README.md`) |
-| `mcu`, `mcu-emu` | our MCU firmware (`mcu/Makefile`) with the commit stamped in (`mcu/stamp.py`; `mcu-raw` and `mcu-emu-raw` unstamped): `zd1.{bin,hex}` the ZD1's app region from 0x80004000 (the preloader, its record, the app at 0x80008000; `mcu/flash.sh` flashes it), `zd1.dmb` the app for the module to send the MCU's bootloader, `zd1app.bin` the app alone (`docs/mcu/bootloader-hbl.md`); the emulator's build (log and console on USART0 too) |
+| `os-image` | the module OS images: `os.bcd`, `os-zd1l.bcd`, `os-debug.bcd` (each with the system as the rescue), the system images, the emulator's payloads and NAND (`module/os/README.md`) |
+| `mcu`, `mcu-emu` | our MCU firmware (`mcu/Makefile`) with its version stamped in (the app's content: SHA-256's first 12 hex, `-dirty` with uncommitted changes; `mcu/stamp.py`; `mcu-raw` and `mcu-emu-raw` unstamped): `zd1.{bin,hex}` the ZD1's app region from 0x80004000 (the preloader, its record, the app at 0x80008000; `mcu/flash.sh` flashes it), `zd1.dmb` the app for the module to send the MCU's bootloader, `zd1app.bin` the app alone (`docs/mcu/bootloader-hbl.md`); the emulator's build (log and console on USART0 too) |
 | `zd1l-fw` | `zd1l.fw`, both chips of a Zeppelin Air with Lightning in one B&W `.fw` for its BL2 web updater (`os-zd1l.bcd` + `mcu`'s `zd1app.bin`; `docs/mcu/stock-firmware.md`) |
 | `avr32-toolchain` | Microchip's AVR32 GNU toolchain the MCU builds with (below) |
 | `test-unit` | the emulator's factory-fresh unit (MCU flash, EEPROM, NAND) from `blobs/` |
 | `module-os-parts`, `busybox` `alsa-lib` `alsa-utils` `wpa_supplicant` `apps` `apps-debug` `boot` `warp0-fw` | what the OS image is made of, together and one by one (`-debug`: the debug system's) |
 | `debug-tools` | tools to copy to the module: the probes in `module/os/debug` |
 | `telnet-hook` | the hook `stock-patch/patch.py` splices into the stock MCU firmware (`stock-patch/build.sh` refreshes the committed one) |
-| `zd1` `web` | the speaker over USB from a terminal (`nix run .#zd1 -- --help`; `nix develop` has `zd1` from the checkout), the web page as a directory (`python3 tools/zeppelin web` serves it) |
+| `zd1` `web` | the speaker over USB or the network from a terminal (`nix run .#zd1 -- --help`; `nix develop` has `zd1` from the checkout), the web page as a directory (`python3 tools/zeppelin web` serves it) |
 | `airplay2-rs` `llvm` | host tools: the AirPlay test sender (`nix run .#airplay2-rs`), the LLVM the Warp and bare-metal tools use |
 
 A variant through override: `boot.override { tag = "v2"; }` (`module/os/assemble.py mini v2`). All the Rust is one cargo
@@ -93,9 +93,10 @@ The AVR32 GNU toolchain (Microchip, an x86_64 Linux binary that Microchip no lon
 our copy on archive.org (`avr32-gnu-toolchain-3.4.2-linux-x86_64`, `nix/mcu/avr32-toolchain.nix`).
 
 The loop on a unit: `mcu/flash.sh` (build, the host link's Dfu -> DFU -> a backup -> flash + verify + start),
-`nix build -o emu/img/os .#os-image` then `zd1 update` for the module's system, `zd1 info|diag|log -f` and
-`zd1 console` to see what it does (`AGENTS.md` has the whole table). Commit before a flash, so the version stamps
-name a commit.
+`nix build -o emu/img/os .#os-image` then `zd1 update` for the module's system (`zd1 update emu/img/os/os.bcd` for its
+boot image; `zd1 --net HOST update --key KEY` over the network), `zd1 info|diag|log -f` and
+`zd1 console` to see what it does (`AGENTS.md` has the whole table). Commit before a flash: the system's version
+names the commit, and the MCU leaves a `-dirty` build alone when it follows its system.
 
 ## Formatting and checks
 `nix fmt` formats every language in the repo and runs the linters that work file by file (`nix/treefmt.nix`: rustfmt,

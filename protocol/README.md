@@ -11,7 +11,7 @@ a B&W `.dmb`, the firmware's identification block, the Lightning model's `.fw`, 
 | Crate | Link | Rust that uses it | Generated (`gen/`) |
 |---|---|---|---|
 | `spi/` (`zd1-spi`) | the MCU <-> the network module, SPI registers | `module/link` (on it `module/boot`, `zd1-linkd`) | `mcu/src/zd1link_gen.h` + its test, `docs/protocol/registers.md` |
-| `host/` (`zd1-hostlink`) | a computer <-> the MCU over USB (the host link) | `host/core` (the `zd1` command line, the web page) | `mcu/src/zd1host_gen.h` + its test, `docs/protocol/host.md`, `host/spec.lock` |
+| `host/` (`zd1-hostlink`) | a computer <-> the MCU over USB, or over the network through our OS (the host link) | `host/core` (the `zd1` command line, the web page); our OS's `zd1-netd`, `zd1-linkd`, `zd1-settings` | `mcu/src/zd1host_gen.h` + its test, `docs/protocol/host.md`, `host/spec.lock` |
 
 The DFU bootloader's protocol (B&W's, on the same USB port) is not ours to define: `host/core/src/dfu.rs` speaks it,
 checked frame by frame against the decompiled updater.
@@ -89,5 +89,6 @@ The host link only grows (`docs/protocol/host.md`, Compatibility): new requests 
 of a message, nothing reused or retyped. Add it to `host/src/lib.rs`, regenerate: `host/spec.lock` records every
 message and field there has been, and `gen` refuses a change that breaks the rules (a real break: bump `VERSION`,
 run `gen -- --break`; the tools refuse firmware with another version). Mark a request `gated` if it changes the
-speaker or reads its RAM. Then the handler in `mcu/src/hostif.c`, and what uses it in `host/core` or `host/cli`; in
+speaker or reads its RAM, `net` if a paired client may send it over the network (`docs/protocol/net.md`), `[module]`
+if our OS answers it itself. Then the handler in `mcu/src/hostif.c`, and what uses it in `host/core` or `host/cli`; in
 the emulator `zemu run --mcu --host 'zd1 ...'` (the gate is open there).

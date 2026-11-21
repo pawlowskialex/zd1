@@ -49,8 +49,8 @@ the `.fw` split by `bwfw.py`]:
 
 So the A7 payload is built, verified static, and verified to fire end-to-end up to the listening telnet port; a live
 interactive shell is unproven in the emulator (the ZD1L limitation above) and awaits an A7 unit (`docs/backlog.md`).
-Delivery is the other open part: what on a ZD1L or an A7 takes a `.fw`'s MCU part is unconfirmed
-(`docs/mcu/stock-firmware.md`), so these are the payload for that route, not proof the route exists.
+Delivery: on a ZD1L, BL2's web updater takes the whole `.fw` and sends the MCU part to its bootloader over SPI [HW
+2026-11-16]; on an A7 it is unconfirmed (`docs/mcu/stock-firmware.md`).
 
 How: the BcoWrapper tick calls `voTask` through a pointer literal; the patch points it at the hook in free flash at
 0x80038100, which runs a small state machine and then calls the real `voTask`. One byte of state at RAM `memend`
@@ -63,9 +63,9 @@ Back to stock: the same with `blobs/zd1/mcu/zd1-2.04.05.hex`.
 The hook blob (`telnet_hook.bin`) is committed; `build.sh` rebuilds it from the source (`nix build .#telnet-hook`)
 and shows a diff if anything changed.
 
-## Dumping BL2 from a ZD1L / A7
+## Dumping BL2 from an A7 (done for the ZD1L: `blobs/zd1l/module/bl2.bin`, `docs/module/boot-chain.md`, "The ZD1L BL2")
 
-The point of the hook on a stock ZD1L or A7 is a shell on a unit we don't have, to read its BL2 out — the one
+The point of the hook on a stock A7 is a shell on a unit we don't have, to read its BL2 out — the one
 build of the module's updater that differs from ours (`docs/module/boot-chain.md`, "BL2"; the Lightning model's is
 not ours, `docs/mcu/stock-firmware.md`). BL2 lives in NAND, so the running stock module app reaches it through its
 own NAND driver with `fburn`; the hook just puts that shell on the network. Reading never writes flash, so no
@@ -105,7 +105,7 @@ Steps (all on the owner's own unit, with their OK):
    = 1 for BL2, partitionLength, imageLength, …), then the boot header (`0xAAAA5555` at `+0x80`), stage 1 and
    stage 2 — the same layout as our `blobs/zd1/module/bl2.bin` (`docs/module/boot-chain.md`, "Partition header").
    Parse/verify it with `python3 tools/zeppelin bcd` on the carved image, and compare against `bl2.bin`
-   (build 2010-09-27) to see how far the Lightning model's updater has diverged.
+   (build 2010-09-27) to see how far the A7's updater has diverged (the ZD1L's: `docs/module/boot-chain.md`).
 
 Notes and caveats:
 

@@ -10,11 +10,12 @@ kernel's symbols: `tools/zeppelin/jtag/kallsyms.py`. Tags: `docs/README.md`.
 ```
 BL1 ──► stock preloader ──► our stage 2 at 0x60008000 = trampoline ──► boot stub (0x61F00000)
           (Fletcher check: a corrupt image still falls back to BL2)        │ pads, SPI link up (status 0x2000),
-                                                                             │ the MCU's answer on 0xC4: a slot or the rescue
+                                                                             │ after our MCU's knock, its answer on 0xC4: a slot,
+                                                                             │ the rescue, or the rescue to install itself
                                                                              └► kernel inflated → 0x60008000 (+ the rescue's
                                                                                 initramfs), ATAGs (machine 0x270F, ttyS1), jump
 ```
-The image is a normal `.bcd` (stock preloader, CnE and resources kept), so the MCU bootloader's relay and BL2's
+The image is a normal `.bcd` (B&W's preloader and the model's CnE and HWID, no resources), so the MCU bootloader's relay and BL2's
 web updater install it like any app and BL2 stays the way back: `zd1 module esc` reaches BL2 through BL1's
 serial menu whatever the image does, and `zd1-linkd` answers HCR 0x21 (`zd1 module bl2`) once Linux is up. The
 boot stub (`module/boot`) reports 0x2000 (booting) while it runs, so the stock MCU doesn't start its setup task until

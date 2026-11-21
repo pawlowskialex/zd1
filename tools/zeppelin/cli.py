@@ -26,7 +26,11 @@ TOOLS = [  # (name, script relative to the repo, summary)
     ("Network module (CR870 / KnOS)", None, None),
     ("knos", "tools/zeppelin/knos/knos.py", "[hw] commands on the KnOS shell over telnet (the client every tool uses)"),
     ("fburn", "tools/zeppelin/knos/fburn.py", "[hw] NAND over the shell: rd, wr (refuses BL1; BL2 needs a flag)"),
-    ("bl2web", "tools/zeppelin/knos/bl2web.py", "[hw] install a .bcd through BL2's web updater"),
+    (
+        "bl2web",
+        "tools/zeppelin/knos/bl2web.py",
+        "[hw] install a .bcd (a ZD1L: a .fw, both chips) through BL2's web updater",
+    ),
     ("kmsg", "tools/zeppelin/jtag/kmsg.py", "[hw] the running kernel's log over JTAG (J-Link, OpenOCD)"),
     ("kallsyms", "tools/zeppelin/jtag/kallsyms.py", "the Nokia kernel's symbols, from kernel.bin's own tables"),
     (

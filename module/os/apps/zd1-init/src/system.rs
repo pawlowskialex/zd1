@@ -180,8 +180,8 @@ fn switched_off(c: &Ctx, switch: &str, setting: &str) -> Option<String> {
 /// (docs/streaming.md).
 /// The rescue is the release's whole system (the boot image's initramfs, docs/module/storage.md). Booted as the rescue it
 /// copies itself into a slot, then the MCU starts that slot once (ready makes it the good one): when the slot an
-/// update would take holds no system (a first install with no host: the ZD1L's, from BL2), or when asked
-/// (`zd1.install`: the host's `Boot INSTALL` with a boot image, so that its system needs no second upload) into the
+/// update would take holds no system, or when asked (`zd1.install`: our MCU firmware on a boot image it hasn't
+/// recorded, or the host's `Boot INSTALL`, so that the boot image's system needs no second upload) into the
 /// slot that isn't the good one (the good one if that holds none); a slot holding this version already is started
 /// without a copy.
 fn self_install(c: &Ctx) -> Start {

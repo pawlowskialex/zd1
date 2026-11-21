@@ -2,7 +2,7 @@
 
 The main board is the system controller. Everything on it hangs off one **Atmel AT32UC3A1256** (AVR32 UC3A,
 32-bit, **big-endian**, 256 KB flash, 64 KB SRAM). Evidence: the stock firmware's code (`re/mcu/`), our firmware
-running on the unit, live register reads from its console. Tags: `docs/README.md`.
+running on the unit, live register reads over the host link (`zd1 peek`). Tags: `docs/README.md`.
 
 ## Chips
 
@@ -12,7 +12,7 @@ running on the unit, live register reads from its console. Tags: `docs/README.md
 | ADAU1445 DSP | TWI 0x38 (2-byte sub-address) | all audio processing: input routing, volume (software only), bass, driver EQ/limits |
 | AD193x codec (AD1937 assumed) | TWI 0x04 (1-byte) | DAC to the amps, ADC for AUX analog; S/PDIF receive for AUX optical |
 | CS2000-CP clock synthesiser | bit-banged I2C on PB13 SCL / PB14 SDA, 8-bit 0x9C | MCLK = 256·fs for USB/AUX sources, from a 12 MHz reference (GCLK2 on PB30) |
-| 24C02 EEPROM | TWI 0x50 | stock settings (A/B copies at 0x00/0x28), our settings at 0x80 |
+| 24C02 EEPROM | TWI 0x50 | stock settings (A/B copies at 0x00/0x28), our settings at 0x80-0x97 (three pages, `mcu/README.md`) |
 | Apple auth coprocessor 2.0B | TWI 0x10, reset PA02 | iPod dock (iAP) only; the network module has its own |
 | Class-D amp + its SMPS | PB09 supply enable, PB16 unmute | the power stage (see Power) |
 
@@ -21,7 +21,7 @@ GPIO numbering in our tools (`zd1 peek/poke`, the log): `pin = port·32 + bit` (
 
 | Pin | Function | Tag |
 |---|---|---|
-| PA00 / PA01 | USART0 RX/TX: stock debug log, 115200 | RE |
+| PA00 / PA01 | USART0 RX/TX: stock debug log, 115200; also our preloader's and the ZD1L bootloader's log | RE |
 | PA02 | auth chip nRESET (high = run) | RE |
 | PA03 | IR receiver (RC6), GPIO edge interrupt | RE |
 | PA04 | network module power (high = on) | HW |
@@ -59,7 +59,8 @@ pins through the GPIO controller [EMU: the MCU trace of `zemu run stock --mcu st
 ## Clocks
 - OSC0 = 12 MHz. Stock: PLL0 → **66 MHz** CPU and buses, flash 1 wait state. Ours: PLL0 → **48 MHz**,
   shared with USB (ASF). [HW]
-- The DFU bootloader hands the app over running on the ~115 kHz RC oscillator. [RE]
+- The DFU bootloader hands over (to our preloader, which passes it on untouched to the app) running on the ~115 kHz
+  RC oscillator. [RE]
 - A cold boot works only if the app sets its early pins on the RC clock first, then OSC0, then PLL0 (the order the
   bootloader and stock use; switching RC → PLL0 directly left the board dark on a plain power-up). [HW]
 - GCLK2 = OSC1/4 on PB30 is the CS2000 reference (stock's GCCTRL0 0x005, GCCTRL2 0x115). [HW]
@@ -140,8 +141,8 @@ An error mutes, drops PB09, blinks red and enters the ERROR mode. [RE]
 - **Device** (to a PC): stock = 19B5:0005 "Bowers & Wilkins / Zeppelin Air", UAC1 (feature unit 0..+16 dB, PCM16
   48/44.1/32 kHz, iso adaptive OUT EP 0x05) + HID consumer control [RE]. Ours = 03EB:2FE0 with stock's strings and
   serial "ZD1": UAC1 (with a status interrupt) + HID + a vendor interface (the host link, the module's console, the
-  bulk pipe) [HW];
-  layout in `mcu/README.md`, Design notes.
+  bulk pipe) [HW]; Microsoft OS 2.0 descriptors give that interface WinUSB on Windows without a driver install
+  (bcdUSB 2.10, bcdDevice 2.03, `mcu/src/msos.c`); layout in `mcu/README.md`, Design notes.
 - **Host** (to a docked iPod): iAP over USB HID, auth chip at TWI 0x10. Not implemented in our firmware.
 - Host vs device is **software-forced** with an external mux (stock `FUN_80013f98`) [RE logic]:
 

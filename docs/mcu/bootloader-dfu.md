@@ -32,7 +32,8 @@ else (BOD, other warm reset):
   runs until the page is rewritten.
 - DFU entry disables the watchdog first thing. There is no DFU idle timeout: the only ways out are the start-app
   commands.
-- The app starts at 0x80004000 with all registers zeroed, running on the RC oscillator (~115 kHz).
+- What sits at 0x80004000 starts with all registers zeroed, on the RC oscillator (~115 kHz): our preloader, which
+  passes that on to the app at 0x80008000 untouched (stock: a jump to 0x80008000).
 
 ## Ways into DFU
 1. **Hold ON/OFF while powering on** (needs a valid ISP word) [HW]. Let the caps drain (~10 s unplugged) before
@@ -72,7 +73,7 @@ GETSTATUS is the usual 6 bytes, with byte 5 (iString) reused as the coprocessor 
 1 module off, 2 powered, 0x03 the module's app ready, 0x11 HCR sent / starting BL2, **0x12 BL2 ready**, 0x13
 download active (also after the end of transfer).
 
-The user page is written with the flash controller's page buffer (CPB, fill, EUP, WUP); `dfu userpage-write` drives
+The user page is written with the flash controller's page buffer (CPB, fill, EUP, WUP); `zd1 dfu user-page` drives
 it and refuses an image without the factory ISP word unless `--force`.
 
 ## The module relay (`zd1 dfu relay`) [HW, RE, EMU]
@@ -95,8 +96,10 @@ BL2 then answers XModem 'C' on register 0x2C and the bootloader streams the imag
   2e20f8d on: 33.8 s); with the app partition invalid BL1 goes straight to BL2 (20 s). Then 0x400-byte blocks at
   22.7-23.4 KB/s (median 38 ms each, max 263 ms): a 9 MB image (8946 blocks) in 382 s with no retries, `os.bcd`
   (2 MB) in 85 s. BL2 burns and resets the module into the new image; the bootloader's coproc status stays 0x13
-  ("download-active") after the end of transfer, so it doesn't say when the module is done. Everything over USB:
-  `zd1 bootloader`, `zd1 dfu relay IMAGE.bcd --yes`, `zd1 dfu start`.
+  ("download-active") after the end of transfer, so it doesn't say when the module is done. The app's start cuts the
+  module's power: started right after the end, BL2 was left with "Application: invalid image" twice [HW 2026-11-20],
+  so every relay keeps the module powered 30 s after it (`Dfu::relay`, fa64bf7). Everything over USB: `zd1 update
+  IMAGE.bcd` (our firmware running), or `zd1 bootloader`, `zd1 dfu relay IMAGE.bcd --yes`, `zd1 dfu start`.
 - **BL2 erases and writes the app partition as the blocks arrive**: a transfer stopped after 500 blocks left
   "Application: invalid image" (BL2's menu 5), and BL1 starts BL2 at every boot until a complete image is installed
   [HW 2026-10-26].
@@ -117,5 +120,6 @@ BL2 then answers XModem 'C' on register 0x2C and the bootloader streams the imag
 - Every backup (`zd1 dfu backup`, and the one `zd1 flash`, the installs and the page take first) reads the bootloader
   region too, as `bootloader.bin` in the tar: for the record, since another unit's (B&W's other models) may differ
   from `blobs/zd1/mcu/bootloader.bin` and only JTAG could put one back [EMU: byte-identical to it].
-- After a `flash`, `restore` or `userpage-write`, the tool reads back and verifies.
-- A raw `.bin` app image is based at 0x80004000; a verify must read back independently of the map that wrote it.
+- After a `flash`, `dfu restore` or `dfu user-page`, the tool reads back and verifies.
+- A raw `.bin` is the region from 0x80004000 (preloader, record, app; `zd1app.bin`, the app alone for 0x80008000, is
+  for `bwfw.py --pack`, not DFU); a verify must read back independently of the map that wrote it.

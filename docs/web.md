@@ -34,9 +34,10 @@ images offered under `images/` instead (`index.json` names them). The three view
 - **Running**: what people reach for first. The top bar links to its panels. On top, under the speaker's drawing and
   name: Playing (the sources, volume, bass, the amp's sentence). A banner when a release is newer than what runs,
   naming what it updates (the main board's firmware, the module's system, its boot image, each with where it
-  stands), with its notes and one **Update** that brings what is behind to it: the system, the module's boot image (when the release's differs from
-  the one the module started from: the State record's `boot` against the `.bcd`'s `zd1.boot=`, both by content;
-  through the bootloader's relay, ~5 min), then the MCU; nothing when up to date, and the module not judged while it
+  stands), with its notes and one **Update** that brings what is behind to it: with the module's boot image behind (the
+  State record's `boot` against the `.bcd`'s `zd1.boot=`, both by content), the boot image and the MCU in one visit to
+  the bootloader (~7 min; the boot image alone ~6), the release's system then installing itself from it; else the
+  system, then the MCU; nothing when up to date, and the module not judged while it
   starts. Then
   Network (the Wi-Fi and Ethernet as sentences from the State record with the plain reason when it failed, the name,
   the known networks in their order with Prefer and Forget, Add a network from a scan or by hand, the radio's limits,
@@ -54,7 +55,8 @@ can be given up. An MCU install keeps its backup twice (host/core's tar, as `zd1
 (IndexedDB); the flash waits for both, and a browser that gives the page no storage asks whether to go on with the
 download alone. The page's WebAssembly ran against the emulator, firmware and
 bootloader [EMU 2026-11-01] (`host/web/test/emu.mjs`: the known networks, the actions, export and import, reset, the
-amp's idle time); against the unit in Brave on the Mac every view works [HW 2026-11-02].
+amp's idle time); against the unit in Brave on the Mac every view works [HW 2026-11-02, the views before the redesign of 87a3644,
+which ran in headless Chromium against the emulated speaker's replies].
 
 The look is a design system (below, Design system): black and white, a 2012 Apple product page made today, with
 the speaker drawn on top (`<zd-speaker>`): its outline and the line down its middle, reflected on the floor as
@@ -108,7 +110,7 @@ transit states inside a flow, each detected and each with its exit.
 
 | | Stock module app | Our app partition and slots |
 |---|---|---|
-| **Stock MCU app** | **stock speaker**: the rollback target, untouched by us | transit: the stub gets no answer on reg 0xC4 and boots the rescue, which speaks the BL2 subset of the SPI protocol (status booting, HCR 0x21 into BL2) and nothing more; no sound. Exit: DFU (key-hold) and the rollback or the install flow |
+| **Stock MCU app** | **stock speaker**: the rollback target, untouched by us | transit: no knock on reg 0xC4, so the stub boots the rescue (the release's system from RAM), which answers none of the stock MCU's checks (it takes HCR 0x21 into BL2); no sound. Exit: DFU (key-hold) and the rollback or the install flow |
 | **Our MCU firmware** | transit: the MCU reads the stock version string on reg 0x25 and reports state STOCK: the module is no source, the LED says attention, the page offers the two exits (install our module software; restore the MCU backup) | **the product** |
 | **DFU bootloader** | the relay's target | the relay's target; the stub boots the rescue meanwhile |
 
@@ -129,37 +131,39 @@ direction.
 
 ## Releases
 A release is built from one tag by CI (nix on Linux runners, with a binary cache: the MCU needs Microchip's x86_64
-toolchain, the OS image Linux): the MCU firmware (`zd1.hex`), the system image (`system.cpio.gz`, and signed for the
-network: `system.signed`), the `.bcd` (stub, kernel, rescue) and the Lightning model's `.fw`, with notes. Versions
+toolchain, the OS image Linux): the MCU firmware (`zd1-V.hex`), the system image (`system-V.cpio.gz`, and signed for
+the network: `system-V.signed`, when the repository has the release key), the `.bcd` (`os-V.bcd`: stub, kernel, the
+system as the rescue) and the Lightning model's `.fw` (`zd1l-V.fw`), with notes. Versions
 don't order: the page compares by position in the list, never by value. The system's version is its commit; the
 others' are their content, so a release whose part is the same as the speaker's leaves it alone. The MCU's: 12 hex
 digits of SHA-256 over its app (`mcu/stamp.py`; the same in every release until MCU code changes, so a system-only
 release over the network doesn't ask for the 5 s hold). The `.bcd`'s: `zd1.boot=` on its kernel command line, over
 the stub, the kernel and the command line (`module/os/assemble.py`, payload), not the rescue, which is the release's
 system and new every time: an older rescue is still the way back, and it is renewed with the stub or the kernel (over
-USB: the boot image never goes over the network).
+USB: the boot image never goes over the network). The whole image, rescue included, is `zd1.image=`: our MCU firmware
+records it and has a new one's rescue install itself into a slot (`docs/module/storage.md`).
 
 The Pages workflow (`.github/workflows/pages.yml`) attaches a tag's
-three images and their `manifest.json` (`zd1 image`) to the GitHub release, then builds the page, copies every
+images and their `manifest.json` (`zd1 image`) to the GitHub release, then builds the page, copies every
 release's images beside it and writes `images/index.json`: the releases newest
 first, each with its version, date, notes, and per image the file, size and SHA-256. Same origin: no GitHub API, no
-rate limit, no CORS, and the page fetches an image only when it installs it (today it downloads both to read their
-versions). The manifest keeps older releases, which is "install a previous version" for free. Stock images for the
+rate limit, no CORS, and the page fetches an image only when it installs it. The manifest keeps older releases, which is "install a previous version" for free. Stock images for the
 rollback are B&W's own update files; the page doesn't serve them (uploading them is not ours to decide: `AGENTS.md`):
 it takes them as a file, or fetches them from the archive.org items `downloads/manifest.json` lists if those answer
 cross-origin.
 
 ## The three views
-**Not connected** is a triage, not a button: the states a speaker can be in by its light and its behaviour, the
-key-hold into DFU, "Connect", and the requirements (Chrome, Edge, Brave, Opera, Android Chrome too; on Windows
-WinUSB by hand for B&W's bootloader; Linux's udev rule shown to copy). A stock speaker under its own firmware never
-shows up on the chooser: the triage says so and sends it into DFU.
+**Not connected** is three panels: Connect (USB, or an address), Install by model (the key-hold into DFU for the
+Zeppelin Air; BL2's web updater over Ethernet for the Lightning model), and Help (the requirements: Chrome, Edge,
+Brave, Opera, Android Chrome too; on Windows WinUSB by hand for B&W's bootloader; Linux's udev rule shown to copy; a
+stopped update, the light, the way back). A stock speaker under its own firmware never shows up on the chooser:
+Install and Help say so.
 
 **Bootloader** is the installer. From the boot log and the manifest it offers one primary action:
-- **Install** on an empty or stock speaker: one flow in `host/core`, `install`, ~5 minutes with named phases on one
-  progress strip. The relay of the `.bcd` (85 s, from the bootloader: nothing of the MCU app is needed), the MCU
-  firmware with its backup, start, our firmware answers, the module's first boot finds the slots empty and starts the
-  rescue (within the MCU's 180 s), the system update into slot A (~90 s), the trial, ready. It lands on the network
+- **Install** on an empty or stock speaker: one flow in `host/core`, `install`, ~7 minutes with named phases on one
+  progress strip. The relay of the `.bcd` (~5 min, from the bootloader: nothing of the MCU app is needed), the MCU
+  firmware with its backup, start; our firmware hasn't seen this boot image, so the module's first boot is the rescue
+  installing itself into a slot, which the MCU then starts once (the host only waits: `system_settled`). It lands on the network
   card: the user is at the computer and the speaker has no network yet.
 - **Repair** when ours is there but didn't start: the same firmware again, the boot log shown.
 - **Restore** from the backups this page kept: the tar as a download as now, and a copy in the browser's storage
@@ -171,11 +175,11 @@ shows up on the chooser: the triage says so and sends it into DFU.
 
 **Running** puts what people reach for first: what it plays (source, volume, bass) with the speaker on top, then
 **Network** and **Receivers** (below), **Behaviour** (the MCU's preferences: auto-switch to USB, the amp's policy and
-idle time), **Diagnostics** folded, with a "save a report" button (versions, diagnostics, both logs in one file).
-Software is upkeep: up to date, it waits near the end (versions of both boards, the latest release and the verdict,
+idle time, the volume cap). Software is upkeep: up to date, it waits near the end (versions of both boards, the latest release and the verdict,
 "back to slot X" and "restore the previous MCU firmware"); behind a release, a banner under the speaker says so with
-the notes and one Update button that brings both boards to the release (system, then MCU: either order works, this
-one keeps the page connected longest). An **Advanced** fold: the debug services, settings export and import, reset
+the notes and one Update button that brings both boards to the release (the system, then the MCU; with a new boot
+image, it and the MCU in one visit to the bootloader, its system installing itself). **Diagnostics** folded, with a
+"save a report" button (versions, diagnostics, both logs in one file). An **Advanced** fold: the debug services, settings export and import, reset
 to defaults, the module's console (its way back from a broken image without a terminal program).
 
 Throughout: one persistent job strip while anything runs, its phases named from the flow's events, stop where the
@@ -222,7 +226,7 @@ what it did last. The base layer makes every refusal a reported state with its e
 | a slot trial | only slots with a stamp are offered; a slot the updater didn't finish holds no system and the trial falls back by itself | page, MCU |
 | the boot image | a relay that stops after BL2 erased the app partition leaves the module in BL2 ("Application: invalid image"): the update starts our firmware again all the same and writes the image through BL2's XModem; a page that finds our firmware with the module in BL2 offers that write ("The module's boot image is missing"). BL2 acknowledges the EOT before it is done writing (its console then says `FirmwareUpdate::processResourceData() Success`, `doFirmwareUpdate() OK`): the module is restarted once BL2's console has been quiet for 10 s, and written once more if it is in BL2 again. The page asks to stay in front meanwhile: a background tab's timers are slowed, and the relay and XModem are paced by the page [HW 2026-11-03: the hosted page's relay stopped in a background tab, BL2 left with no image; the local page's write from BL2 with a restart right after the EOT left the image invalid; with the quiet wait it booted slot B (WebUSB, 2077 blocks in 632 s)] | `host/core`, page |
 | the gate | a press of ON/OFF, as now; unattended units open it for good | unchanged |
-| over the network | a press pairs the browser (`Pair`); only the spec's `net` requests travel, refused otherwise by our OS and the MCU; the system signed, no older than the running one; network settings kept once the page reaches the speaker again (`docs/protocol/net.md`) | module, MCU, page |
+| over the network | ON/OFF held 5 s pairs the browser (`Pair`); only the spec's `net` requests travel, refused otherwise by our OS and the MCU; the system signed, no older than the running one; network settings kept once the page reaches the speaker again (`docs/protocol/net.md`) | module, MCU, page |
 
 ## Order of work
 Done and seen on the unit: the stock dialect out, the module states, the State record, acknowledged V writes;
@@ -231,10 +235,9 @@ interface), the manifest and `zd1 image`; the Wi-Fi's status from the supplicant
 over, the slots' stamps; the snapservers and AirPlay's pairings as records, the receivers' options, the amp's idle
 time, the page's views [2026-11-02]. Left on the unit (`units/<unit>/hw-checks.md`): the known networks' failure
 cases (a wrong key, none in range, two networks). Next, in order:
-1. The rest of the unit's checks; the page's MCU install on the unit (its backup kept in the browser).
-2. `zd1 install` with the relay as one flow on the unit (`zd1 rollback` has run as one: 2026-11-03), then the
-   page's Install and Roll back on it.
-3. Later: a small HTTP API on the module for home automation serving `State` as JSON (`docs/backlog.md`).
+1. The rest of the unit's checks; the page's Roll back on the unit (`zd1 rollback` has run as one: 2026-11-03; the
+   page's Install and Update with the relay have: 2026-11-03, 2026-11-20/21).
+2. Later: a small HTTP API on the module for home automation serving `State` as JSON (`docs/backlog.md`).
 
 ## Working notes for the next agent
 - **The rules first** (`AGENTS.md`, and the local `CLAUDE.md` for the unit's own): a flash to the unit, a change of
@@ -252,13 +255,14 @@ cases (a wrong key, none in range, two networks). Next, in order:
   `zemu --host` fails with exit 127). Nix builds the files git tracks: `git add` new files. Commit before a flash so
   the stamps name a commit. After a spec edit, both specs, run `protocol/gen` (`cd protocol/gen && cargo run`): it
   writes the MCU's two headers, the two C tests, `docs/protocol/{host,registers}.md` and `spec.lock`. The module's
-  crates (`zd1-linkd`, `zd1-init`, `zd1-net`) don't compile on macOS (Linux ioctls): `nix build .#os-image`, on
+  crates (`zd1-linkd`, `zd1-init`) don't compile on macOS (Linux ioctls): `nix build .#os-image`, on
   the Linux builder, is their check; `cargo test -p zd1-settings -p zd1-hostlink -p zd1-link -p zd1-host` runs here.
 - **The emulator**: `zemu run --mcu -q --host 'zd1 state' ...` boots our OS with our MCU firmware and runs host
   commands (the gate open). Its dev boot has no slots: a slot trial (`zd1 update`'s last step, `install`) gets no
-  verdict there; slot work needs `--nand --allow-panic` (`docs/module/updater.md`, Working notes), e.g. the install
-  rehearsal: `zemu run --nand --mcu --allow-panic --timeout 1500 --until 'waiting for a system' --host 'zd1 bootloader'
-  --host 'zd1 install --no-bcd --yes --unit $RUN'`. `zemu run stock --mcu` is the stock module app under our MCU
+  verdict there; slot work needs `--nand --allow-panic` (`docs/module/updater.md`, Working notes), e.g. the repair
+  rehearsal: `zemu run --nand --mcu --allow-panic --timeout 1500 --until 'slot a: .* installed' --until '\[os\] up'
+  --host 'zd1 bootloader' --host 'zd1 install --no-bcd --yes --unit $RUN'` (the run's first boot installs slot A from
+  the rescue; `--no-bcd` is the repair path, the boot image's own install: `docs/module/storage.md`). `zemu run stock --mcu` is the stock module app under our MCU
   (state STOCK). The emulated module is never starved, so the link's resend never fires there.
 - **The link's lesson of 2026-10-31** (`docs/protocol/sequences.md`, Our OS, point 6): a V write to a busy module
   can arrive short and used to wedge the slave's parser for good; now the MCU waits for the write's echo and sends
@@ -275,9 +279,10 @@ cases (a wrong key, none in range, two networks). Next, in order:
   the State cache, `write_v_once`'s echo), `hostif.c`; the host `host/core/src/settings.rs` (`state`, `record`,
   `list_of`, `scan`, `networks`, `join` (`wifi.add`), `export` / `import`, `shown`), `speaker.rs` (the sentences, the play choices), `backup.rs`, `install.rs`; the
   page `host/web/src/lib.rs` (`state()`, `list(record)`, `exportSettings`, `Bootloader.install` / `rollback`,
-  `spec()`), `www/app.js` (the wiring) and its ES modules in `www/js/` (no build step): `connection.js` (`events`,
+  `Speaker.updateBoot` / `installFromRescue` / `updateBootInBl2`, `connectNet`, `spec()`), `www/app.js` (the wiring) and its ES modules in `www/js/` (no build step): `connection.js` (`events`,
   `connect`, `job`), `backups.js` (IndexedDB), `network.js` (`drawSettings`, `wifiStatus`), `receivers.js`,
-  `software.js` (`drawDfu`, `drawReleases`, `updateTo`), `speaker.js`, `hero.js` (the top: the drawing, the
+  `software.js` (`drawDfu`, `drawInstall`, `drawReleases`, `unfinished`, `updateTo`, `updateOverNetwork`), `console.js`
+  (the console pane), `zd1l.js` + `bl2.js` (the ZD1L's install through its BL2, no-cors), `speaker.js`, `hero.js` (the top: the drawing, the
   title, the status), `led.js`, `zd-speaker.js`, `diagnostics.js`, `ui.js`, `shared.js`, `design.js` (the catalogue);
   the local manifest
   `tools/zeppelin/web.py`; the workflow `.github/workflows/pages.yml`.

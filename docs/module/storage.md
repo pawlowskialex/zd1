@@ -24,7 +24,7 @@ Nothing of the vendor's chain reads them: BL2's updater erases and writes only i
 
 | | Size (gzip), and the room | |
 |---|---|---|
-| app partition: the boot stub, the kernel (deflated: the stub inflates it), the rescue | 6.6 MB: kernel 1.40, rescue 5.1, stub 0.02 (`os.bcd` and `os-zd1l.bcd` 6.6 MB with B&W's preloader and the model's CnE, no resources); the vendor's app slot is 10 MB (0x240000-0xC3FFFF, `boot-chain.md`) | the rescue: the release system as an initramfs (`/init` its init), 10 MB in RAM while it runs, which it does only when no slot gets ready |
+| app partition: the boot stub, the kernel (deflated: the stub inflates it), the rescue | 6.6 MB: kernel 1.40, rescue 5.1, stub 0.02 (`os.bcd` and `os-zd1l.bcd` 6.6 MB with B&W's preloader and the model's CnE, no resources); the vendor's app slot is 10 MB (0x240000-0xC3FFFF, `boot-chain.md`) | the rescue: the release system as an initramfs (`/init` its init), 10 MB in RAM while it runs, which it does when the MCU says so (a new boot image, to install itself; no slot ready; asked) or no MCU of ours knocks |
 | a system slot (`/`) | 5.1 MB (10.3 MB unpacked) of the slot's 32 MB | busybox (106 applets, `os.toml [busybox] applets`), the full `zd1` (`/usr/bin/zd1`: init and the core programs in `/bin`, the receivers, the self test, the Warp and memory probes in `/usr/bin`), `/etc` (`module/os/rootfs`), Nokia's kernel modules and Wi-Fi firmware, `wpa_supplicant`, ALSA's configuration and tools |
 | data partition (`/data`) | | `/data/zd1/settings` |
 
@@ -63,14 +63,15 @@ Updating the OS means writing the slot that doesn't run, from the running system
    clears the failures; at that ready the MCU also tells our OS the good slot (reg 0xC4 again: `zd1-linkd` keeps it in
    `/run/zd1/good`). A boot that doesn't get there fails: the stub asking again first (a root that doesn't mount
    panics, `panic=10` restarts the module), or no ready within 90 s (180 s for the rescue), when the MCU power-cycles
-   the module. So a bad slot costs one boot and the good one starts again; a speaker with both slots empty goes A,
-   B, then the rescue. A rescue that doesn't get ready is powered off.
+   the module. So a bad slot costs one boot and the good one starts again; a speaker with both slots empty and its
+   boot image recorded goes A, B, then the rescue. A rescue that doesn't get ready is powered off.
 
-`zd1 slot` shows the MCU's state; `zd1 slot try a|b|rescue`, `zd1 slot good a|b`, `zd1 slot clear`, with `--restart`
-to start it now (`BootState` / `Boot` in `docs/protocol/host.md`).
+`zd1 slot` shows the MCU's state; `zd1 slot try a|b|rescue`, `zd1 slot good a|b`, `zd1 slot clear`, `zd1 slot install` (`Boot
+INSTALL`: the rescue installs itself), with `--restart` to start it now (`BootState` / `Boot` in `docs/protocol/host.md`).
 
 **The rescue** is the system itself, from RAM: everything runs as from a slot (`zd1.rescue` on the command line, no
-`zd1.slot`). With the slot an update would take empty (a first install: the slots are new), init's `self-install` copies
+`zd1.slot`). With the slot an update would take empty (slots erased under a recorded boot image, or an older MCU firmware), init's
+`self-install` copies
 the running root into it (`zd1-slot install-self`: file by file, staying on the root's own file system, mount points
 empty, the two device nodes a slot has), stamps it with the version and asks the MCU to start that slot once
 (`zd1-slot install-self SLOT ID --start`: zd1-linkd's `try`, reg 0xD8); ready makes it the good slot, else the MCU
@@ -99,10 +100,11 @@ into slot B (v0.1.5's), B started and good, A kept; 7.2 min, the system 64 s of 
 It is as new as the app partition's last install (BL2, the relay); a speaker whose slots both fail still runs and
 plays, and takes an update as from a slot (`zd1 update` writes the good slot, `updater.md`).
 
-**`zd1-slot`** (Rust, `module/os/apps/zd1-slot`): `status` (what runs, the good
-slot, what each slot holds), `install SLOT ID` (a gzip'd newc cpio of a root on stdin: the partition erased as
+**`zd1-slot`** (Rust, `module/os/apps/zd1-slot`; what runs and what each slot holds: `zd1-ctl status`): `install SLOT
+ID` (a gzip'd newc cpio of a root on stdin: the partition erased as
 `flash_eraseall -j` does, with JFFS2 cleanmarkers, mounted, unpacked, the stamp `/.zd1-system` written last; never the
-running slot, nor the good one while another runs on trial), `install-self SLOT ID` (the system that runs from RAM), `mtd NAME` (its device nodes). A slot holds a system
+running slot, nor the good one while another runs on trial), `install-self SLOT ID [--start]` (the system that runs from RAM; `--start`: then the MCU starts that slot once),
+`erase system-a|system-b|data`, `mtd NAME` (its device nodes). A slot holds a system
 when it has `/sbin/init` and its stamp: an interrupted install leaves none. The install also records the stamp in
 `/data/zd1/stamp.SLOT` (empty from the erase until it ends): reading another slot's stamp needs no mount. A mount
 scans the slot's JFFS2 in the kernel for ~12 s, which this kernel doesn't preempt: `zd1-linkd` stopped draining the
@@ -136,7 +138,7 @@ took 85 s).
 ## On the unit [HW 2026-10-26 on]
 The stub's question and the MCU's answer, empty slots failing (`panic=10` restarts the module), the rescue, a slot
 installed and started on trial, confirmed by its ready; every update since into the slot that doesn't run (5 MB:
-82 s through the MCU). Not yet seen: a trial that fails and falls back.
+82 s through the MCU). A trial that fails and falls back [HW 2026-11-20: a network update whose init exits, back on the good slot in 55 s].
 
 ## Open
 - Bad blocks in the slots and `data`: JFFS2 skips the ones the kernel's scan finds; none have been seen on this chip

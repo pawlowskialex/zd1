@@ -73,7 +73,7 @@ for `--mcu`; `CONTRIBUTING.md`, Builds) and links them into `emu/img`.
 
 | IMAGE | |
 |---|---|
-| `os` (default) | our OS: the dev payload (the debug system as a plain initramfs, `zd1.selftest zd1.debug`: telnet shell on 2323, `zd1-memsh` on 23) straight into SDRAM; with `--nand` the flashable `os.bcd` from NAND through BL1 and the preloader, like the unit |
+| `os` (default) | our OS: the dev payload (the debug system as a plain initramfs, `zd1.selftest zd1.debug`: telnet shell on 2323, `zd1-memsh` on 23) straight into SDRAM; with `--nand` the flashable `os.bcd` from NAND through BL1 and B&W's module preloader, like the unit (empty slots: with `--mcu`, whose run EEPROM has no boot image recorded, the first boot is the rescue installing itself into slot A) |
 | `stock` | the stock KnOS app (its shell on the console) |
 | `none` | no module: the main board alone, with its built-in module stand-in on J2 |
 | a file | a `.bcd` (installed into the factory NAND like BL2 does, booted from NAND), a NAND image, or a stage 2 for 0x60008000 |
@@ -93,6 +93,7 @@ NAND with BL1, BL2 and PersParam, the MCU's flash, user page and EEPROM. Nothing
 | `--patch ADDR=WORD,...` | module RAM pokes at the first MMIO write |
 | `--fwd HOST:GUEST` | a TCP port forward to the module (repeatable) |
 | `--renode MACHINE:CMD` | any Renode monitor command after setup (below; repeatable) |
+| `--quantum-us N` | the global quantum: the J2 link's latency each way (default 200 with both boards, 1000 for one; `renode/README.md`) |
 | `--keep` | after the steps, stay up in real time until Ctrl-C (or `kill`): module console on 127.0.0.1:4555, MCU USB 4620 (`ZD1DFU_EMU=127.0.0.1:4620 zd1 ...`), ports 8080->80, 2323->23, 2324->2323 |
 | `-q` | no live console; print each `--sh` command's output instead |
 | `--timeout S` | per step (300 virtual seconds) |
@@ -130,7 +131,7 @@ The exit code is 1 if a wait timed out, a `--sh` or `--host` command failed, or 
 | `renode.log`, `renode_log.txt` | monitor commands and Renode's own log |
 
 From Python (a longer sequence, a loop): `emu/zemu/rig.py`, `Session` with `start()`, `wait()`, `sh()`, `send()`,
-`sleep()`, `spi()`, `host()`, `hold()`, `close()`; `cli.session_config()` builds its configuration.
+`sleep()`, `spi()`, `host()`, `hold()`, `press()`, `confirm()`, `close()`; `cli.session_config()` builds its configuration.
 
 ## Recipes
 - **What does a vendor driver do to the hardware?** Trace its block and load it:

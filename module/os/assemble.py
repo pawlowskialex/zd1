@@ -23,7 +23,7 @@ The images (emu/img/os/; docs/module/storage.md):
                             part of its B&W .fw for BL2's web updater (`nix build .#zd1l-fw`)
     payload_debug.bin, os-debug.bcd   os.bcd with the debug services on by default (os.toml [image.debug])
     nand_os.bin             the emulator's test unit with os.bcd installed, slots empty (`zemu run os --nand --mcu`:
-                            slot A and B fail, the system from RAM fills slot A)
+                            no boot image recorded in the run's EEPROM, so the rescue installs itself into slot A)
     payload_dev.bin         emulator dev boot (`zemu run os`): the debug system as one plain initramfs at
                             0x61000000, zd1.selftest zd1.debug
 """

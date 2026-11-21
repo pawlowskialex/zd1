@@ -6,8 +6,8 @@
 IMAGE: os (default), stock (KnOS), none (no module: the main board alone),
 or a file: a .bcd (installed into the factory NAND, booted through BL1), a NAND image, a stage 2 for 0x60008000.
 
-Steps (in order, all times virtual): --until RX, --wait STREAM RX, --sh CMD, --send TEXT, --sleep S, --spi CMDS,
---host CMD. They start once the image is up ([os] up, ...) unless the first one is a wait or --at-once
+Steps (in order, all times virtual): --until RX, --wait STREAM RX, --sh CMD, --send TEXT, --sleep S, --press S,
+--confirm S, --spi CMDS, --host CMD. They start once the image is up ([os] up, ...) unless the first one is a wait or --at-once
 is given. Output: emu/run/NAME/.
 Exit code 1 if a wait timed out, a --sh or --host command failed, or the guest panicked (unless --allow-panic). Nothing here touches hardware.
 """

@@ -57,15 +57,16 @@ settings, the Wi-Fi network and its key) stay on the NAND, unused by the stock a
 1. `zd1 slot try rescue --restart`: the rescue, the system from RAM: it mounts no slot.
 2. `zd1 console run 'umount /data' 'zd1-slot erase system-a' 'zd1-slot erase system-b' 'zd1-slot erase data'`: the
    three partitions erased (bad blocks left alone), as a stock NAND has them above 32 MB. A rescue older than
-   `zd1-slot erase` gets a new `os.bcd` first (`zd1 bootloader`, `zd1 dfu relay`, `zd1 dfu start`).
+   `zd1-slot erase` gets a new `os.bcd` first (`zd1 update os.bcd`).
 3. Our EEPROM block to the defaults a fresh install writes: `zd1 prefs --auto-switch on --amp-idle 5 --volume-cap 40`,
    `zd1 amp auto`, `zd1 volume 30`, `zd1 slot good a`, `zd1 slot clear`, last `zd1 gate lock`. The block itself (its
-   magic) stays: nothing on the host link erases the EEPROM.
+   magic) stays: nothing on the host link erases the EEPROM. So does the boot image our MCU firmware recorded (0x90): a
+   later install of the same `os.bcd` with our firmware tries the empty slots before the rescue fills one.
 4. `zd1 rollback ...` as above (with the gate locked, one press of ON/OFF lets it into DFU).
 
 **Installing the module image**, over USB only: the MCU bootloader's relay, what B&W's updater uses (`zd1
-dfu`, `zd1 dfu relay IMAGE.bcd --yes`, `zd1 dfu start`; ~6.5 min for the stock 9 MB, 85 s for our
-`os.bcd`, works with the app partition invalid: `docs/mcu/bootloader-dfu.md`) [HW 2026-10-26]; with our MCU app
+update IMAGE.bcd` from our firmware, or `zd1 bootloader`, `zd1 dfu relay IMAGE.bcd --yes`, `zd1 dfu start`; ~6.5 min
+for the stock 9 MB, ~5 min for our 6.6 MB `os.bcd`, works with the app partition invalid: `docs/mcu/bootloader-dfu.md`) [HW 2026-10-26]; with our MCU app
 running, `zd1 xmodem IMAGE.bcd` [HW]. Or BL2's web updater on the wired link
 (`python3 tools/zeppelin bl2web 169.254.1.1 IMAGE.bcd --yes --iface=en8`, after `zd1 module esc`) [HW]: BL2 tries DHCP
 first and answers at 169.254.1.1 only minutes later on a link without a DHCP server.

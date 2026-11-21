@@ -13,8 +13,8 @@ Variant 2 is almost certainly the Zeppelin Air with Lightning connector (ZD1L), 
 (March 2015, OTA `zd1lv20435.fw`, md5 d71a10be…, kept as `blobs/zd1l/zd1lv20435.fw`: `downloads/bw-zeppelin-air-software/zeppelin-air-lightning/
 SOURCES.md`). On variant 2 the binary reports model FP35548 and no video out over iAP (variant 1:
 FP30570, video on), and only variant 2 honours the module's request to enter DFU (`docs/protocol/spi-registers.md`,
-0x27). That doesn't bring the image over the network: the MCU then waits in USB DFU for a computer on the rear port
-(`docs/mcu/bootloader-dfu.md`). The ZD1L's MCU app 2.04.35 (`ZD1L_v2-04-35.dmb` in the `.fw`) is a near-twin of this
+0x27). Behind the ZD1's bootloader that doesn't bring the image over the network: the MCU then waits in USB DFU for a
+computer on the rear port (`docs/mcu/bootloader-dfu.md`); the ZD1L's (Net HBL) takes the app from BL2 instead. The ZD1L's MCU app 2.04.35 (`ZD1L_v2-04-35.dmb` in the `.fw`) is a near-twin of this
 binary, not the same bytes: the same size (0x80008000-0x800380F4), build date ("Dec 1 2014") and model strings, but
 39132 bytes differ, almost all by exactly -4, most of them in 0x80028000-0x80037FFF (a data offset moved by 4). The
 archive.org module NAND (item `20230115_20230115_1916`, a ZZ34088 board) fits this. Its module app and resources are
@@ -78,8 +78,8 @@ counts down 35 s and opens `http://IP/`, expecting BL2's web updater there. The 
 
 The ZD1's bootloader (0514, the one we have) then waits in USB DFU with the module off, so with it the LAN update
 ends there. The ZD1L's and A7's bootloaders, which no `.fw` carries, start the module into BL2 instead, and BL2
-flashes the MCU part back over SPI ("How the MCU part is delivered" below, and the key-hold report) [INF for the
-bootloader; HW for the BL2 side]; the A7's 2.00.28 was `a7v20028-bsl.fw` (not recovered). Each app writes its identity's version into the
+flashes the MCU part back over SPI ("How the MCU part is delivered" below, and the key-hold report) [RE and EMU for
+the ZD1L's (`docs/mcu/bootloader-hbl.md`), INF for the A7's; HW for the BL2 side]; the A7's 2.00.28 was `a7v20028-bsl.fw` (not recovered). Each app writes its identity's version into the
 EEPROM record (+6: 0x0005 for ZD1, 0x0035 for ZD1L, 0x0077 for the A7) and takes a record with another version as
 invalid (its defaults). The A7 app boots on the ZD1 board model ("PSS AZ1", DSP firmware v01.00, finds its DSP, codec
 and EEPROM, reaches RUN); the ZD1L app looks like 2.04.05 throughout (the -4 differences changed nothing seen).
@@ -112,15 +112,18 @@ got our preloader (`bootloader-hbl.md`): `nix build .#mcu` gives `zd1.dmb` and `
 
 **Our firmware for a ZD1L, both chips in one `.fw`**: `nix build .#zd1l-fw` (`result/zd1l.fw`, 6.9 MB; `nix/zd1l-fw.nix`).
 The module part is `os-zd1l.bcd`: the boot stub, the kernel and the whole release system as one initramfs in the
-rescue's place (the stub asks the MCU for a slot as on the ZD1; with both slots empty, on its first install, the
-system runs from RAM and copies itself into slot A: `docs/module/storage.md`, "The Lightning model's image"), built from its parts (`mkbcd`): B&W's preloader and the ZD1L's
+rescue's place (the stub asks the MCU for a slot as on the ZD1; on its first start our MCU firmware has no boot image
+recorded, so the rescue installs itself into slot A and the MCU starts it: `docs/module/storage.md`, The Lightning
+model), built from its parts (`mkbcd`): B&W's preloader and the ZD1L's
 factory CnE from `blobs/`, no resources (an empty section: the ZD1L's BL2 writes the partition empty, and our OS
 doesn't read it), HWID 0xBE, our build date. The MCU part is our app (`.#mcu`'s `zd1app.bin`) under B&W's name and
 version (`ZD1L_v2-04-35.dmb`, 2.04.35, release 20435), as the telnet-hook `.fw` the ZD1L's BL2 burned. It goes in
 through BL2's web updater from key-hold, with the expert confirm (`docs/module/boot-chain.md`, "The ZD1L BL2": BL2
-sends the MCU part first and needs the MCU's bootloader for it): `python3 tools/zeppelin bl2web IP zd1l.fw --yes`; the
-way back is the same with `blobs/zd1l/zd1lv20435.fw`. The image of 2026-11-17 (the system as the boot initramfs, no
-slots) runs on ZD1Ls [HW, the owners]; the one with the system in the rescue's place, emulator only so far.
+sends the MCU part first and needs the MCU's bootloader for it): the page's Install (Zeppelin Air with Lightning, a
+release's `zd1l-V.fw`) or `python3 tools/zeppelin bl2web IP zd1l.fw --yes`; the way back is the same with
+`blobs/zd1l/zd1lv20435.fw`. The image of 2026-11-17 (the system as the boot initramfs, no slots) runs on ZD1Ls [HW,
+the owners]; the one with the system in the rescue's place, from a stock ZD1L to slot A through the page's upload,
+in the emulator only [EMU 2026-11-21, `emu/tools/zd1lunit.py`].
 
 **A telnet hook on the stock 2.04.35, repacked as a `.fw`** (`stock-patch/`, `patch.py --fw`): a way to a shell on a
 stock ZD1L without replacing its firmware, e.g. to read BL2 out (`fburn rd`, the reverse-SPI code the relay needs). The

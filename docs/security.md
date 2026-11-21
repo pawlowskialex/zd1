@@ -47,7 +47,7 @@ the answers to its own requests (DHCP, DNS, NTP, Spotify's servers over TLS).
   unpaired session ends after 60 s, so nobody holds the four sessions without pairing.
 - **The receivers** (AirPlay, Spotify, Snapcast) are Rust (`shairplay` has no `unsafe`); what they hand to C is the
   audio decoders (`module/codecs`: AAC from AirPlay senders, FLAC from a Snapcast server, Vorbis from Spotify),
-  fuzzed under ASan/UBSan, coverage-guided (`check/libfuzz.c`) and with each one's own mutator (`check/*check.c
+  fuzzed under ASan/UBSan, coverage-guided (`module/codecs/*/check/libfuzz.c`) and with each one's own mutator (`check/*check.c
   fuzz`). The same C runs on Warp0, which has no MMU: a decoder bug there writes anywhere in SDRAM.
 - **The debug services** (a root shell on telnet 2323, raw memory on 23) are off in every published image and switched
   only from USB (`zd1 debug`, RAM only); `os-debug.bcd` has them on by default and is for development, never published.

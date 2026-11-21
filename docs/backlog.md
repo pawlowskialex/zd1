@@ -5,22 +5,18 @@ and what is known. What already works: `status.md`; checks that need a person at
 `units/<unit>/hw-checks.md` (not in git). Remove an entry when it is done (the topic doc gets the result).
 
 ## Updates and control over the network (`docs/protocol/net.md`, `docs/mcu/bootloader-hbl.md`)
-- **On the unit**: everything of the network link has run in the emulator only. Both boards need the new firmware
-  (the MCU: the tunnel, reg 0xD8/0xD9; the system: zd1-netd), with the owner's OK; then the pairing, the requests,
-  the provisional network settings and the signed update into the other slot, from `zd1 --net` and from the page.
+- **On the unit, what is left of the network link**: the pairing by the 5 s hold (6dbf94d); a provisional change that
+  cuts the link going back by itself; the hosted page over the network (below).
 - **The hosted page over the network in Chrome**: Local Network Access's permission and `ws://` to a private address
   from https://pawlowskialex.github.io (Chrome 154 on: WebSockets); what Chrome says when it is refused, and that the
   page's text matches. Then Edge, Brave, Opera.
 - **The release key**: the owner makes it (`zd1 keygen`), puts its secret half in the repository's secret
   `ZD1_RELEASE_KEY` and its public half at `module/os/rootfs/etc/zd1/keys/release.pub`; until then releases carry no
   signed image and speakers trust only keys put on them over USB.
-- **The MCU follows its OS on a clean build**: every emulator build here is `-dirty`, which the rule leaves alone;
-  a release's (or a temporary clean commit's) image in the emulator, then on the unit: the module serving the MCU's
-  app (ZD1L: B&W's bootloader; ZD1: our preloader, which first needs the new layout flashed over DFU, with the
-  owner's OK).
-- **The ZD1L's first install from the page** (`zd1l.js`, no-cors to BL2; whole in the emulator): a ZD1L owner in
-  Chrome; whether Chrome sends BL2 the requests from the hosted page (Local Network Access, mixed content); the
-  rescue's self-install and slot A's start on a real ZD1L.
+- **The MCU follows its OS on a ZD1L**: B&W's bootloader taking our app from our OS (emulator only,
+  `docs/mcu/bootloader-hbl.md`); needs a ZD1L owner.
+- **The ZD1L's first install from the page** (`zd1l.js`, no-cors to BL2; whole in the emulator): whether Chrome sends
+  BL2 the requests from the hosted page (Local Network Access, mixed content); the rest on a real ZD1L: Other models.
 - **A developer's key onto a speaker**: today `zd1 console run 'echo KEY > /data/zd1/keys/NAME.pub'` over USB; a
   request of its own (gated, USB only) would make it a step of the page.
 - **Discovery**: browsers can't browse mDNS, so the page asks for an address; `zd1 --net` could find speakers
@@ -30,8 +26,8 @@ and what is known. What already works: `status.md`; checks that need a person at
 
 ## Module OS
 - **The page and the protocol's last pieces, checked on the unit** (`docs/web.md`, Order of work): on the unit since
-  2026-11-01 (4f2215a), the Wi-Fi's status and the scan seen working; the page in a browser, the actions, the
-  receivers' options, the amp's idle time and the Wi-Fi's failures are the open checks on the unit.
+  2026-11-01 (4f2215a), the Wi-Fi's status and the scan seen working; open on the unit: the Wi-Fi's failure cases (a wrong key, none in
+  range, two networks).
 - **A small API on the module for home automation** (Home Assistant): the State record as JSON (the same schema,
   `docs/module/settings.md`), settings writes, play / pause / volume / source, with a credential of its own; the
   USB-only rule for settings relaxes then (`decisions.md`).
@@ -104,8 +100,8 @@ and what is known. What already works: `status.md`; checks that need a person at
   between builds (the serial number is fixed, "ZD1").
 - **The volume cap** (step 40 of 71, `mcu/src/usbaudio.c`, for USB and the module) stays until it is removed on
   purpose.
-- **The host link**: events as typed messages (source and module changes, keys) instead of only log text; a WinUSB
-  descriptor for Windows.
+- **The host link**: events as typed messages (source and module changes, keys) instead of only log text.
+- **Windows**: the WinUSB descriptors (bb0ea15) on a real Windows machine, and the page there.
 - **The transport keys after the CDC port went** (MCU feffd90; HID keeps play/pause, next, previous): not tried on
   the unit (a key starts Music on whatever the Mac plays to): the speaker's play/pause and next reaching the Mac.
 - **iPod dock** (USB host + iAP, `docs/mcu/stock-firmware.md`): not implemented.
@@ -115,10 +111,7 @@ and what is known. What already works: `status.md`; checks that need a person at
   (61 KB/s of ~95). Where the bytes go is unknown (the guess: the module's UART FIFO overruns while the NAND is
   written). Worth it only if updates must get faster: the driver's overrun bit, JTAG, or a larger frame window if the
   losses come in bursts (`module/updater.md`).
-- **The web page as the installer** (`docs/web.md`: the plan, in its order of work): `zd1 install` with the relay and
-  `zd1 rollback` on the unit as one flow (`install --no-bcd` has run there); the Pages workflow's first run on GitHub;
-  the page's three views (triage, installer, updater and configurator) with backups kept in the browser; interlocks
-  (`docs/web.md`, Interlocks).
+- **The page's Roll back on the unit** (`zd1 rollback` has run there as one flow, 2026-11-03).
 - **Rewriting BL2** from a running image: the stock app's `fburn ebin 0 0xA0000 <partitionLength>` (0x160000 on our
   ZD1, 0x1A0000 on the ZD1L) + XModem over the module console (`zd1 console`; its y/n confirm never sees an answer
   over telnet). Untested.
@@ -137,11 +130,10 @@ and what is known. What already works: `status.md`; checks that need a person at
   SPI XModem (`docs/protocol/sequences.md`, "MCU (host) firmware over SPI") — and a ZD1L owner drove it end-to-end to
   install the telnet hook [HW 2026-11-16]. So **our firmware on a ZD1L can go in the same way**: `nix build .#zd1l-fw`
   (`docs/mcu/stock-firmware.md`, "Our firmware as a `.dmb`") from key-hold through BL2's expert confirm
-  (`docs/module/boot-chain.md`, "The ZD1L BL2"), no USB DFU, no stock-MCU mode (`bl2web IP zd1l.fw --yes`). The way back is the stock `blobs/zd1l/zd1lv20435.fw` (HWID 0xBE). Still open: the ZD1L **MCU bootloader**
-  (who initiates the SPI DFU, and whether USB DFU exists at all) — once our firmware runs there and reaches USB, `zd1 peek 0x80000000 0x8000 --out
-  boot.bin` reads it and the stage at 0x80004000 (a `.dmb` leaves both in place), else a read-only UC3 JTAG dump (TMS
-  is TP88, the rest of TP88-91 inferred); `zd1l.fw` installed on a real ZD1L, and what of our MCU firmware works
-  on its board (variant 2: the Lightning dock and the USB mux are the ZD1's code); and an owner pursuing a module-OS-on-stock-MCU route (issue #1).
+  (`docs/module/boot-chain.md`, "The ZD1L BL2"), no USB DFU, no stock-MCU mode (`bl2web IP zd1l.fw --yes`). The way back is the stock `blobs/zd1l/zd1lv20435.fw` (HWID 0xBE). Its MCU bootloader is read (B&W's "Net HBL" 2.07, no USB:
+  `docs/mcu/bootloader-hbl.md`). Still open: the rescue/slots `zd1l.fw` on a real ZD1L, from the page (the
+  2026-11-17 image without slots runs there [HW, the owners]; the whole install in the emulator [EMU 2026-11-21]), and
+  what of our MCU firmware works on its board (variant 2: the Lightning dock and the USB mux are the ZD1's code); and an owner pursuing a module-OS-on-stock-MCU route (issue #1).
 - **The A7**: the module program is the Zeppelin's, its MCU app (`AZ1_v2-04-77.dmb`, booting on the ZD1 board model) is
   another build of the same code; a port means its pins, DSP, amp and keys from that binary, and an A7 to try it on.
   The telnet hook already ports to it: `stock-patch/patch.py --fw` handles A7 2.04.77 (`voTask`/`WRITEREG` unchanged,
@@ -182,6 +174,5 @@ Places where the emulator is known to differ from the unit; fix the model when o
 - **Stereo, level-calibrated probe**: `usprobe` uses the MacBook's single mic and can't run while other audio plays.
 - **`musictest.py sync`'s network-timeline figure** is off by the same ~0.5 s for both devices since senders may stream
   4 MB ahead (its reference assumes the first frame sent is the track's start).
-- Ideas: CI (build everything); `zemu run`'s
-  steps against the real speaker (host link + usprobe + module ping, with an amp-time budget); a
-  "porting to your CR870 device" page; tagged releases of the MCU `.hex` and the module image.
+- Ideas: `zemu run`'s steps against the real speaker (host link + usprobe + module ping, with an amp-time budget); a
+  "porting to your CR870 device" page.

@@ -78,7 +78,7 @@ its request list cut to what this link serves.
 | Over the network | Requests |
 |---|---|
 | paired clients (`net`) | `Hello`, `Info`, `Diag`, `BootState`, `ModRecord`, `GetSetting`, `SetSetting`, `Key`, `Select`, `Volume`, `Prefs`, `Pair`, `SystemUpdate` |
-| never (USB only) | `Dfu`, `Reboot`, `Module` (power, BL2, hold, BL1's menu), `Peek`, `Poke`, `ModRead`, `ModWrite`, `XmFrame`, `Pipe`, `PipeData`, `Update` (the UART path), `Boot` (the slots: an update over the network starts its own trial), `Console`, `ConsoleWrite`, `Debug` (a root shell), `Amp` (the interlock stays at the speaker), `Lock`, `Unlock` (`Pair` is the network's) |
+| never (USB only) | `Dfu`, `Reboot`, `Module` (power, BL2, hold, BL1's menu), `Peek`, `Poke`, `ModRead`, `ModWrite`, `XmFrame`, `Pipe`, `PipeData`, `Update` (the UART path), `Boot` (the slots: an update over the network starts its own trial), `Console`, `ConsoleWrite`, `Debug` (a root shell), `Amp` (the interlock stays at the speaker), `Lock`, `Unlock`, `Allow` (our OS asks it itself at an update's BEGIN; `zd1 allow` over USB), `UpdateStatus` (`Pair` is the network's) |
 
 **The tunnel** (SPI reg 0xD9 `HOST`, `registers.md`): `zd1-linkd` notifies `u16 seq` + a request, the MCU writes
 `u16 seq` + its reply back. One request at a time in the MCU, from either side: a network request waits while a USB
@@ -105,7 +105,7 @@ the 120 s; cleared the same way. A change that cuts the link not tried on the un
 `SystemUpdate` (`host.md`), answered by our OS:
 1. **BEGIN** carries the signed header (`protocol/release`): the image's version, build date, length, SHA-256, an
    Ed25519 signature over all of it. Refused unless a trusted key signed it (`/etc/zd1/keys/*.pub` in the image: the
-   release key, `module/os/rootfs/etc/zd1/keys/release.pub`, whose secret half CI signs with; `/data/zd1/keys/*.pub`:
+   release key, `module/os/rootfs/etc/zd1/keys/release.pub` once made (State, below), whose secret half CI signs with; `/data/zd1/keys/*.pub`:
    a developer's, put there over USB, `zd1 console run 'echo KEY > /data/zd1/keys/NAME.pub'`), unless it is at least
    as new as the running system (its build date: an older signed release can't be replayed onto the speaker; going
    back is the USB updater's), while another update runs (USB or network: one lock, `zd1_slot::update_lock`), or
@@ -206,14 +206,19 @@ a browser against a real BL2 yet.
   (`net.rs`: the browser's WebSocket; `Speaker.connectNet`, `reachAgain`; www: `connection.js` `connectNet`,
   `zd1l.js`; `test/net.mjs`).
 - The emulator: `zemu run --mcu --fwd 18080:80 --confirm 5 --host '...'` (`--confirm`: ON/OFF held 5 s, 5 s
-  later, for the pairing; `emu/README.md`).
+  later, for the pairing or an update's `Allow`; `emu/README.md`). The MCU's app from the module: SPI `MCU_FW` 0xD7,
+  `zd1-linkd/src/mcufw.rs` (it plays BL2), `mcu/src/mcufw.c` (the allowance).
 
 ## State
-On the unit [HW 2026-11-19, MCU and system 6512879, over Wi-Fi]: `zd1 --net` paired with a press, Info, the volume,
+On the unit [HW 2026-11-19, MCU and system 6512879, over Wi-Fi]: `zd1 --net` paired with a press (the build before the
+5 s hold), Info, the volume,
 the settings and the slots through the tunnel and our OS, Peek refused (by `zd1`: the Hello masks what doesn't
 travel), a provisional setting kept, the signed update into the other slot with its trial, an untrusted signature
-refused, the MCU following its OS through the preloader. In the emulator only [EMU]: the page's WebAssembly over the network (in node), a provisional change that
+refused, the MCU following its OS through the preloader. [HW 2026-11-20/21: releases over the network, each allowed by
+the hold (the pin driven by GPIO pokes), the MCU firmware they bring under it, DENIED with nobody holding, the
+allowance ending 60 s after the module's ready; the page's network update with a signed system, a person holding.]
+In the emulator only [EMU]: the pairing by the 5 s hold, the page's WebAssembly over the network (in node), a provisional change that
 cuts the link going back, the refusals of the module and the MCU themselves (an unpaired client, another key at an
 address, a request not marked `net` sent anyway). Not yet anywhere: Chrome's Local Network Access from the hosted
 page (the permission, `ws://` from HTTPS), the release key (the owner makes it: `zd1 keygen`, the secret in the
-repository, the public half in the image), the ZD1L's install from the page (`docs/backlog.md`, Updates over the network).
+repository, the public half in the image), the ZD1L's install from a browser (its code in node against the emulator's BL2 only: `docs/backlog.md`).

@@ -1,6 +1,7 @@
 # Our firmware for the Zeppelin Air with Lightning (ZD1L) as one B&W over-the-air .fw: both chips from one file through
-# the ZD1L's BL2 web updater (docs/mcu/stock-firmware.md). The module part is os-zd1l.bcd (the whole system as the boot
-# initramfs: no slots, no rescue; the ZD1L's HWID and CnE, no resources); the MCU part our app (at 0x80008000, as on
+# the ZD1L's BL2 web updater (docs/mcu/stock-firmware.md). The module part is os-zd1l.bcd (the stub, the kernel and the
+# whole system as the rescue, which installs itself into a slot at the first start; the ZD1L's HWID and CnE, no
+# resources); the MCU part our app (at 0x80008000, as on
 # every model: `mcu`'s zd1app.bin), under the name and version of B&W's last ZD1L release, which its BL2 took on a unit.
 {
   stdenvNoCC,
