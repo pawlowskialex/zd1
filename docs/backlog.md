@@ -10,9 +10,6 @@ and what is known. What already works: `status.md`; checks that need a person at
 - **The hosted page over the network in Chrome**: Local Network Access's permission and `ws://` to a private address
   from https://pawlowskialex.github.io (Chrome 154 on: WebSockets); what Chrome says when it is refused, and that the
   page's text matches. Then Edge, Brave, Opera.
-- **The release key**: the owner makes it (`zd1 keygen`), puts its secret half in the repository's secret
-  `ZD1_RELEASE_KEY` and its public half at `module/os/rootfs/etc/zd1/keys/release.pub`; until then releases carry no
-  signed image and speakers trust only keys put on them over USB.
 - **The MCU follows its OS on a ZD1L**: B&W's bootloader taking our app from our OS (emulator only,
   `docs/mcu/bootloader-hbl.md`); needs a ZD1L owner.
 - **The ZD1L's first install from the page** (`zd1l.js`, no-cors to BL2; whole in the emulator): whether Chrome sends

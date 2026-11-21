@@ -133,7 +133,7 @@ direction.
 ## Releases
 A release is built from one tag by CI (nix on Linux runners, with a binary cache: the MCU needs Microchip's x86_64
 toolchain, the OS image Linux): the MCU firmware (`zd1-V.hex`), the system image (`system-V.cpio.gz`, and signed for
-the network: `system-V.signed`, when the repository has the release key), the `.bcd` (`os-V.bcd`: stub, kernel, the
+the network: `system-V.signed`, signed with the release key), the `.bcd` (`os-V.bcd`: stub, kernel, the
 system as the rescue) and the Lightning model's `.fw` (`zd1l-V.fw`), with notes. Versions
 don't order: the page compares by position in the list, never by value. The system's version is its commit; the
 others' are their content, so a release whose part is the same as the speaker's leaves it alone. The MCU's: 12 hex

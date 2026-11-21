@@ -105,7 +105,7 @@ the 120 s; cleared the same way. A change that cuts the link not tried on the un
 `SystemUpdate` (`host.md`), answered by our OS:
 1. **BEGIN** carries the signed header (`protocol/release`): the image's version, build date, length, SHA-256, an
    Ed25519 signature over all of it. Refused unless a trusted key signed it (`/etc/zd1/keys/*.pub` in the image: the
-   release key, `module/os/rootfs/etc/zd1/keys/release.pub` once made (State, below), whose secret half CI signs with; `/data/zd1/keys/*.pub`:
+   release key, `module/os/rootfs/etc/zd1/keys/release.pub` (key a5a6c9e2), whose secret half CI signs with; `/data/zd1/keys/*.pub`:
    a developer's, put there over USB, `zd1 console run 'echo KEY > /data/zd1/keys/NAME.pub'`), unless it is at least
    as new as the running system (its build date: an older signed release can't be replayed onto the speaker; going
    back is the USB updater's), while another update runs (USB or network: one lock, `zd1_slot::update_lock`), or
@@ -130,8 +130,9 @@ ZD1L).
 
 Signing: `zd1 keygen KEY` (the secret half, and `KEY.pub`), `zd1 sign system.cpio.gz --key KEY` (a `.signed` file:
 the header, then the image), `zd1 --net HOST update [IMAGE] [--key KEY]` (signs on the way if given a plain image). A
-release gets `system-VERSION.signed` beside its other images when the repository has the secret `ZD1_RELEASE_KEY`
-(`.github/workflows/pages.yml`); `python3 tools/zeppelin web --key KEY` offers this checkout's build signed. Over USB
+release gets `system-VERSION.signed` beside its other images, signed with the release key: the secret
+`ZD1_RELEASE_KEY` of the repository's environment `release`, which only tags `v*` deploy from, so a pull request's
+workflow run never gets it (`.github/workflows/pages.yml`); `python3 tools/zeppelin web --key KEY` offers this checkout's build signed. Over USB
 `zd1 update` and the page take a signed image too (its header dropped: the USB path takes any image).
 [EMU 2026-11-19, `zemu run --nand --mcu --fwd 18080:80`, slot A holding this build: `zd1 --net update` of it signed
 with a key in `/data/zd1/keys` went into slot B (5.2 MB at ~131 KB/s through the emulator's network), slot B started
@@ -220,5 +221,4 @@ allowance ending 60 s after the module's ready; the page's network update with a
 In the emulator only [EMU]: the pairing by the 5 s hold, the page's WebAssembly over the network (in node), a provisional change that
 cuts the link going back, the refusals of the module and the MCU themselves (an unpaired client, another key at an
 address, a request not marked `net` sent anyway). Not yet anywhere: Chrome's Local Network Access from the hosted
-page (the permission, `ws://` from HTTPS), the release key (the owner makes it: `zd1 keygen`, the secret in the
-repository, the public half in the image), the ZD1L's install from a browser (its code in node against the emulator's BL2 only: `docs/backlog.md`).
+page (the permission, `ws://` from HTTPS), a release signed with the release key (the key is made: a5a6c9e2), the ZD1L's install from a browser (its code in node against the emulator's BL2 only: `docs/backlog.md`).

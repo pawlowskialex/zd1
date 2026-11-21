@@ -5,8 +5,8 @@
 #
 # A release (a tag v*, published on GitHub) gets its images and a `manifest.json` (from `zd1 image`) as assets: the MCU
 # firmware, the system, the boot image, the Lightning model's .fw (its first install, through its BL2), and the system
-# signed for the network update (docs/protocol/net.md) with the release key, the secret ZD1_RELEASE_KEY (`zd1 keygen`;
-# its public half is module/os/rootfs/etc/zd1/keys/release.pub, in the image); without the secret, no signed image. Then, and on every push to main, the site is rebuilt from EVERY published release: the page beside
+# signed for the network update (docs/protocol/net.md) with the release key, the secret ZD1_RELEASE_KEY of the environment
+# `release` (tags v* only; `zd1 keygen`; its public half is module/os/rootfs/etc/zd1/keys/release.pub, in the image); without the secret, no signed image. Then, and on every push to main, the site is rebuilt from EVERY published release: the page beside
 # images/<version>/... and images/index.json, newest release first. Same origin: the page fetches nothing from the
 # GitHub API and no image until it installs it.
 name: pages
@@ -21,6 +21,9 @@ jobs:
   assets:
     if: github.event_name == 'release'
     runs-on: ubuntu-latest
+    # the release key is the release environment's secret, which only tags v* may deploy from: a pull request's run
+    # (refs/pull/..., a fork's or a branch's, whatever its workflow says) never gets it
+    environment: release
     steps:
       - uses: actions/checkout@v4
       - uses: DeterminateSystems/nix-installer-action@v16
