@@ -6,12 +6,14 @@ import "./js/zd-speaker.js";
 import { act, connect, connectNet, op, reachAgain, show } from "./js/connection.js";
 import { consoleInit } from "./js/console.js";
 import { report } from "./js/diagnostics.js";
+import { host } from "./js/host.js";
 import { joinForm, joinWatch, scan } from "./js/network.js";
 import { app } from "./js/shared.js";
 import { drawInstall, installMcu, installSystem, loadReleases, rollback, startFirmware } from "./js/software.js";
 import { refresh } from "./js/speaker.js";
+import { watchSpeakers } from "./js/speakers.js";
 import { $, ask, download, fill, names, notice, readFile, stamp } from "./js/ui.js";
-import { installZd1l } from "./js/zd1l.js";
+import { findUpdater, installZd1l, lookHere } from "./js/zd1l.js";
 import init, { spec } from "./pkg/zd1_web.js";
 
 // ---- wiring -------------------------------------------------------------------------------------------------------
@@ -30,6 +32,13 @@ async function main() {
     e.preventDefault();
     installZd1l($("zd1l-addr").value);
   };
+  $("zd1l-file").onchange = async () => {
+    const f = await readFile($("zd1l-file"));
+    if (f) installZd1l($("zd1l-addr").value, f);
+  };
+  $("zd1l-addr").onchange = lookHere;
+  $("zd1l-find").onclick = findUpdater;
+  hostTexts();
   $("disconnect").onclick = () => {
     app.sp?.free();
     app.bl?.free();
@@ -44,7 +53,26 @@ async function main() {
   wire();
   consoleInit();
   loadReleases();
+  watchSpeakers();
   if (navigator.usb) await connect(false);
+}
+
+/// What the welcome says where the host does more than a browser (js/host.js): no chooser, the network reached
+/// directly, the updater looked for.
+function hostTexts() {
+  if (host.granted) {
+    $("usb-hint").textContent = "or just plug it in: it connects by itself";
+    $("dfu-step").textContent =
+      "It connects by itself (or Connect): the page installs from its bootloader, in about 7 minutes.";
+  }
+  if (host.lan)
+    $("net-how").textContent =
+      "The Network panel shows the speaker's address once connected over USB; one whose AirPlay is on is listed " +
+      "above by itself.";
+  if (host.networks) {
+    $("zd1l-find").hidden = false;
+    $("zd1l-step").textContent = "Find it (or the address from the router's list)";
+  }
 }
 
 /// The speaker coming and going on USB.

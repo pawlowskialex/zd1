@@ -65,7 +65,8 @@
          your network. The page talks to the speaker itself: no account, no cloud.</p>
       <p id="nousb" class="warn" hidden>This browser has no WebUSB: open the page in Chrome, Edge, Brave or Opera.</p>
       <div class="row"><button type="button" id="connect" class="primary">Connect over USB…</button>
-        <span class="small">pick “Zeppelin Air” in the browser's list</span></div>
+        <span id="usb-hint" class="small">pick “Zeppelin Air” in the browser's list</span></div>
+      <div id="net-list" class="list"></div>
       <form id="net-form" class="row">
         <label for="net-addr">On the network</label>
         <input id="net-addr" class="grow" autocomplete="off" spellcheck="false" placeholder="its address, or its name.local">
@@ -73,9 +74,9 @@
       </form>
       <details>
         <summary class="small">How the network connection works</summary>
-        <p class="small">The Network panel shows the speaker's address once connected over USB. The browser asks once to
-           let this page reach devices on your network; the speaker asks for ON/OFF held 5 s the first time, and knows
-           this browser from then on. Over the network the page does everything but the main board's firmware and the
+        <p class="small"><span id="net-how">The Network panel shows the speaker's address once connected over USB.
+           The browser asks once to let this page reach devices on your network.</span> The speaker asks for ON/OFF
+           held 5 s the first time, and knows this browser from then on. Over the network the page does everything but the main board's firmware and the
            module's boot image, which go over USB (the main board follows its system by itself).</p>
       </details>
     </div>
@@ -95,8 +96,8 @@
             <li>Plug it into this computer with a USB cable.</li>
             <li>Unplug its power, hold ON/OFF, and plug the power back in while holding it: it starts in its
                 bootloader.</li>
-            <li>Connect, and pick its bootloader in the browser's list: the page installs from there, in about 7
-                minutes.</li>
+            <li id="dfu-step">Connect, and pick its bootloader in the browser's list: the page installs from there, in
+                about 7 minutes.</li>
           </ol>
           <div class="row"><button type="button" id="connect-dfu">Connect to its bootloader…</button></div>
         </article>
@@ -109,15 +110,19 @@
             <li>Connect it to your router with an Ethernet cable.</li>
             <li>Unplug its power, hold ON/OFF, and plug the power back in while holding it: its light goes white and
                 it takes an address from your router (the router's list of devices shows it).</li>
-            <li>That address here, then Install: about 10 minutes, then the page connects to it.</li>
+            <li><span><span id="zd1l-step">That address here</span>, then Install: about 10 minutes, then the page
+                connects to it.</span></li>
           </ol>
-          <div class="stack">
-            <label class="check"><input id="zd1l-alpha" type="checkbox"> I'll try an alpha on my speaker</label>
-            <form id="zd1l-form" class="row">
+          <form id="zd1l-form" class="stack">
+            <div class="row">
               <input id="zd1l-addr" class="grow" autocomplete="off" spellcheck="false" placeholder="its address, 192.0.2.20" aria-label="Its address">
-              <button type="submit">Install…</button>
-            </form>
-          </div>
+              <button type="button" id="zd1l-find" hidden>Find it</button>
+            </div>
+            <p id="zd1l-seen" class="small" hidden></p>
+            <label class="check"><input id="zd1l-alpha" type="checkbox"> I'll try an alpha on my speaker</label>
+            <div class="row"><button type="submit" id="zd1l-install">Install…</button>
+              <label class="file button">B&amp;W's file (.fw)…<input id="zd1l-file" type="file" accept=".fw"></label></div>
+          </form>
         </article>
       </div>
       <p class="small">Both keep a way back to B&amp;W's software (Help, below).</p>
@@ -127,7 +132,7 @@
   <section id="help" class="panel">
     <h2>Help</h2>
     <div class="panel-body">
-      <details class="triage">
+      <details class="triage" id="help-usb">
         <summary>It doesn't appear in the browser's list</summary>
         <ul>
           <li>B&amp;W's software never appears: start the speaker in its bootloader (Install, above).</li>
@@ -166,8 +171,9 @@ sudo udevadm control --reload-rules</pre></li>
         <summary>Back to B&amp;W's software</summary>
         <p>The Zeppelin Air: connect to its bootloader (Install, above) and choose “Back to B&amp;W's software” there,
            with B&amp;W's update file and its main board's firmware, or a backup this page kept. The Lightning model:
-           B&amp;W's own file through its updater, the way the install went (<span class="data">zd1lv20435.fw</span>,
-           in the repository's <span class="data">blobs/zd1l</span>).</p>
+           B&amp;W's own file through its updater, the way the install went: “B&amp;W's file” on its card (Install,
+           above) with <span class="data">zd1lv20435.fw</span> (in the repository's
+           <span class="data">blobs/zd1l</span>).</p>
       </details>
     </div>
   </section>

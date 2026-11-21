@@ -185,7 +185,15 @@ the page sends `bl2web`'s sequence (`tools/zeppelin/knos/bl2web.py`, which ZD1L 
 answers (`no-cors`): the status page (only a network error says nothing is there), prepare, the upload (its 302 to the
 apply page, which the browser follows: it arms the confirm), the expert page, the expert confirm. Then it waits up to
 15 minutes for our OS's link to answer at the address and connects. A refused file (another model) or a new address
-shows only as no answer. Releases carry `zd1l-VERSION.fw` (`kind` fw in the manifest). The requests are `bl2web`'s,
+shows only as no answer. Where the answers can be read (zd1-app, `host/app`; node), `js/bl2.js` checks each step as
+`bl2web` does: which updater answers before anything is sent (the 2012 BL2's status page, its model and what it has
+installed; the 30-pin model's 2010 BL2 told apart and sent to USB), the upload's landing on the apply page and the
+apply page's body (empty: taken; `_HWID`: other hardware, nothing written), the confirm's landing on the status page,
+then the write on the status page to `<finished>` (`<module>` 1, the main board's part, then 2, the module's, each with
+its `<progress>`; `<success>` and `<success1>`). zd1-app also looks for BL2 itself (169.254.1.1, then each address of
+the computer's networks up to /22), and B&W's own `.fw` goes back the same way from a file [EMU 2026-11-21: `host/web/test/zd1l.mjs` with B&W's
+`zd1lv20435.fw` against a stock ZD1L's BL2: looked at (model, module 105.9112), each step checked, the write followed
+(part 1 to 99 %, part 2 to 100 %, finished, both successes) in 125 s; the MCU's bootloader took its part]. Releases carry `zd1l-VERSION.fw` (`kind` fw in the manifest). The requests are `bl2web`'s,
 field for field. [EMU 2026-11-20, a stock ZD1L (its BL2 and HWID, KnOS, B&W's bootloader and app) held at power-up,
 `bl2Upload` cut out of `zd1l.js` and run in node against BL2: every request answered 200, the upload's redirect to the
 apply page followed, the confirm redirected to the status page (armed); BL2 sent the MCU part to B&W's bootloader,
