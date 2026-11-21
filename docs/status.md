@@ -150,6 +150,10 @@ Work items: `backlog.md`. Checks that need a person at the unit: `units/<unit>/h
   (a wrong channel? the rate?) and why the scan stops is not understood. Init's health check of the `wifi` service
   starts it again after 5 min unjoined (`module/os/README.md`, Wi-Fi): with the supplicant held off the AP, init
   restarted it 5 min 4 s later and the module joined again within 2 s [HW 2026-11-17, this change before its commit: system 1cd511c-dirty].
+  A reload of the Wi-Fi modules does it too: after our own deauthentication (`zd1-ctl stop wifi`, `rmmod`/`insmod` of
+  `sulu_wlan` and `mac80211`, `zd1-ctl start wifi`) the authentication requests timed out for 2-4 min, then one got
+  through; the same with Nokia's mac80211 and with one built from source, so not that module's doing (once the
+  join came within 30 s) [HW 2026-11-21, system 4557b09].
 - `sulu_eth`'s `TX packets` counter climbs at ~400/s with nothing to send (RX and IRQ counts are sane): cosmetic.
 - The boot stub's own lines arrive garbled on the module console (BL1 leaves UART1 at another divisor); Linux's
   console is clean.

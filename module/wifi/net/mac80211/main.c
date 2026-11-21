@@ -1024,11 +1024,11 @@ int ieee80211_hw_config(struct ieee80211_local *local)
 
 	local->hw.conf.channel = chan;
 
-	if (!local->hw.conf.power_level)
+	if (!local->hw.conf.power_level || !local->hw.conf.user_power_level)
 		local->hw.conf.power_level = chan->max_power;
 	else
 		local->hw.conf.power_level = min(chan->max_power,
-					       local->hw.conf.power_level);
+					       local->hw.conf.user_power_level);
 
 	local->hw.conf.max_antenna_gain = chan->max_antenna_gain;
 

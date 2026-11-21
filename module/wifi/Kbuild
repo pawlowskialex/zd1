@@ -1,0 +1,2 @@
+# cfg80211 and mac80211 in one pass (modpost then knows what mac80211 takes from cfg80211)
+obj-y := net/wireless/ net/mac80211/
