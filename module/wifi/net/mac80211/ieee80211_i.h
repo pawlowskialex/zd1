@@ -320,6 +320,10 @@ struct ieee80211_if_sta {
 	struct work_struct work;
 	u8 bssid[ETH_ALEN], prev_bssid[ETH_ALEN];
 	u8 ssid[IEEE80211_MAX_SSID_LEN];
+	/* zd1: beacons from the BSSID we join or are joined to (the last one's level), reset by each attempt */
+	unsigned int beacons;
+	int beacon_dbm;
+	unsigned long beacon_at; /* the last one's time: a gap of more than 500 ms while joined is logged */
 	enum {
 		IEEE80211_DISABLED, IEEE80211_AUTHENTICATE,
 		IEEE80211_ASSOCIATE, IEEE80211_ASSOCIATED,
@@ -611,6 +615,8 @@ struct ieee80211_local {
 	struct timer_list sta_cleanup;
 
 	unsigned long state[NUM_TX_DATA_QUEUES_AMPDU];
+	/* zd1: when each queue was stopped (a stop longer than 300 ms is logged when it ends) */
+	unsigned long xoff_since[NUM_TX_DATA_QUEUES_AMPDU];
 	struct ieee80211_tx_stored_packet pending_packet[NUM_TX_DATA_QUEUES_AMPDU];
 	struct tasklet_struct tx_pending_tasklet;
 
@@ -648,6 +654,7 @@ struct ieee80211_local {
 
 	enum { SCAN_SET_CHANNEL, SCAN_SEND_PROBE } scan_state;
 	unsigned long last_scan_completed;
+	unsigned long scan_started; /* zd1: for the scan's log line */
 	struct delayed_work scan_work;
 	struct net_device *scan_dev;
 	struct ieee80211_channel *oper_channel, *scan_channel;

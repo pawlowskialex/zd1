@@ -1199,7 +1199,8 @@ ieee80211_data_to_8023(struct ieee80211_rx_data *rx)
 	if (unlikely(skb->len - hdrlen < 8)) {
 		if (net_ratelimit()) {
 			printk(KERN_DEBUG "%s: RX too short data frame "
-			       "payload\n", dev->name);
+			       "payload (fc %04x, %u bytes)\n", dev->name,
+			       fc, skb->len);
 		}
 		return -1;
 	}
