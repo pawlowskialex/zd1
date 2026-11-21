@@ -2841,9 +2841,18 @@ static void ieee80211_rx_mgmt_beacon(struct net_device *dev,
 
 		if ((ifsta->flags & IEEE80211_STA_ASSOCIATED) && ifsta->beacons && gap > 500 &&
 		    !local->sta_sw_scanning &&
-		    !time_after(local->last_scan_completed, ifsta->beacon_at))
-			printk(KERN_DEBUG "%s: no beacon from the AP for %u ms (now %d dBm)\n",
-			       dev->name, gap, rx_status->ssi);
+		    !time_after(local->last_scan_completed, ifsta->beacon_at)) {
+			ifsta->beacon_gaps++;
+			ifsta->beacon_gap_max = max(ifsta->beacon_gap_max, gap);
+		}
+		if (ifsta->beacon_gaps &&
+		    time_after(jiffies, ifsta->beacon_gaps_logged + 10 * HZ)) {
+			printk(KERN_DEBUG "%s: %u gaps of more than 500 ms in the AP's beacons"
+			       " (the longest %u ms; now %d dBm)\n", dev->name,
+			       ifsta->beacon_gaps, ifsta->beacon_gap_max, rx_status->ssi);
+			ifsta->beacon_gaps = ifsta->beacon_gap_max = 0;
+			ifsta->beacon_gaps_logged = jiffies;
+		}
 		ifsta->beacons++;
 		ifsta->beacon_dbm = rx_status->ssi;
 		ifsta->beacon_at = jiffies;
