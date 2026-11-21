@@ -52,7 +52,8 @@ images offered under `images/` instead (`index.json` names them). The three view
   restarted [HW 2026-11-02; `host/web/test/emu.mjs` opens it, sends a line, reads the answer]).
 One job strip (sticky) carries every long flow: its phases, progress, a stop where the flow allows it, the outcome,
 and on a lost connection what to do. Outcomes and errors are notices in the page, never `alert()`; the press dialog
-can be given up. An MCU install keeps its backup twice (host/core's tar, as `zd1` writes it): a download, and a copy in the browser
+says what the speaker waits for (host/core's `Confirm`: a press for the gate; ON/OFF held 5 s, past the standby at
+2 s, until the LED flashes green, for a pairing (purple) or a network update (amber)) and can be given up. An MCU install keeps its backup twice (host/core's tar, as `zd1` writes it): a download, and a copy in the browser
 (IndexedDB); the flash waits for both, and a browser that gives the page no storage asks whether to go on with the
 download alone. The page's WebAssembly ran against the emulator, firmware and
 bootloader [EMU 2026-11-01] (`host/web/test/emu.mjs`: the known networks, the actions, export and import, reset, the
@@ -63,8 +64,8 @@ The look is a design system (below, Design system): black and white, a 2012 Appl
 the speaker drawn on top (`<zd-speaker>`): its outline and the line down its middle, reflected on the floor as
 product pictures had them; running, its LED's look
 as a glow on the line, read from Diag's `led` with each refresh (`js/led.js`: the colours and animations of
-`mcu/src/led.c`), sound off both ends while it plays (as far as the volume), the gate's purple blink while the press
-dialog is open, a long job's progress round the outline. `design.html` shows the system without a speaker.
+`mcu/src/led.c`), sound off both ends while it plays (as far as the volume), the LED's blink while the press
+dialog is open (purple; amber for an update's hold), a long job's progress round the outline. `design.html` shows the system without a speaker.
 
 Windows: our firmware declares WinUSB for the host link's interface (Microsoft OS 2.0 descriptors, `mcu/src/msos.c`),
 so it needs no driver installed; B&W's DFU bootloader declares nothing and can't be changed (its region is

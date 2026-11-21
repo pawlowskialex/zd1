@@ -42,7 +42,8 @@ export function notice(text, kind = "info") {
 
 export function failed(e) {
   if (e?.code === "CANCELLED") return;
-  if (e?.code === "DENIED") return notice("Nobody pressed ON/OFF on the speaker in time: nothing changed.", "warn");
+  if (e?.code === "DENIED")
+    return notice("ON/OFF on the speaker wasn't pressed (or held) in time: nothing changed.", "warn");
   notice(e?.message ?? String(e), "warn");
 }
 export function ask(title, text, yes = "Go ahead") {

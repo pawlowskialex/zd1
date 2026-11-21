@@ -197,7 +197,8 @@ impl<L: Link> Mcu<L> {
         // stop it
         let (how, req) = self.link.unlock();
         loop {
-            self.ev.prompt(&if how == "Pair" {
+            let kind = if how == "Pair" { crate::Confirm::Pair } else { crate::Confirm::Press };
+            self.ev.prompt(kind, &if how == "Pair" {
                 "pair with the speaker: hold ON/OFF on it for 5 s within 30 s, while its LED flashes purple (it goes to standby at \
                  2 s: keep holding; a press wakes it again after)"
                     .to_string()

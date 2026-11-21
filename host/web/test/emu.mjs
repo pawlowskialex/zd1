@@ -167,7 +167,7 @@ wasm.initSync({ module: fs.readFileSync(path.join(dir, "pkg", "zd1_web_bg.wasm")
 const log = [];
 const events = {
   text: (s) => log.push(s),
-  prompt: (s) => console.log("prompt:", s),
+  prompt: (how, s) => console.log(`prompt (${how}):`, s),
   step: (s) => console.log("step:", s),
   phase: (n, of, w) => console.log(`phase ${n}/${of}:`, w),
   progress() {},

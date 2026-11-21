@@ -2,8 +2,8 @@
 //! this turns the core's types into JavaScript's and back.
 //!
 //! The page asks the browser for the speaker (navigator.usb.requestDevice: a click), then `Speaker.connect(events)`
-//! finds it among the devices it may use. `events` is the page's object: text(s) (the MCU's log), prompt(s) (press
-//! ON/OFF on the speaker), step(s), phase(n, of, what), progress(what, done, total), cancelled() -> bool, wantsDevice(vid, pid, what) (a
+//! finds it among the devices it may use. `events` is the page's object: text(s) (the MCU's log), prompt(how, s) (the
+//! speaker waits for a person at it: "press" ON/OFF, "pair" or "allow": ON/OFF held 5 s), step(s), phase(n, of, what), progress(what, done, total), cancelled() -> bool, wantsDevice(vid, pid, what) (a
 //! device to grant in the browser's chooser: the DFU bootloader during a firmware update), backup(tar, name, holds)
 //! (keep the MCU's backup, host/core's `backup`: awaited before anything is written; a rejection stops the flash).
 //!
@@ -36,7 +36,7 @@ extern "C" {
     #[wasm_bindgen(method)]
     fn text(this: &JsEvents, s: &str);
     #[wasm_bindgen(method)]
-    fn prompt(this: &JsEvents, s: &str);
+    fn prompt(this: &JsEvents, how: &str, s: &str);
     #[wasm_bindgen(method)]
     fn step(this: &JsEvents, s: &str);
     #[wasm_bindgen(method)]
@@ -71,8 +71,8 @@ impl Events for Ev {
     fn text(&self, b: &[u8]) {
         self.0.text(&String::from_utf8_lossy(b))
     }
-    fn prompt(&self, s: &str) {
-        self.0.prompt(s)
+    fn prompt(&self, how: zd1_host::Confirm, s: &str) {
+        self.0.prompt(how.as_str(), s)
     }
     fn step(&self, s: &str) {
         self.0.step(s)

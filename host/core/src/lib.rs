@@ -110,13 +110,36 @@ impl From<codec::Error> for Error {
 
 pub type Result<T> = std::result::Result<T, Error>;
 
+/// What the speaker waits for from a person at it ([`Events::prompt`]): each has its own gesture and LED, and the MCU
+/// flashes green for half a second once it has it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Confirm {
+    /// A press of ON/OFF, the LED flashing purple: the gate (`Unlock`, docs/protocol/host.md).
+    Press,
+    /// ON/OFF held 5 s, the LED flashing purple: a client pairing over the network (`Pair`, docs/protocol/net.md).
+    Pair,
+    /// ON/OFF held 5 s, the LED flashing amber: a system update over the network and the MCU firmware it brings
+    /// (`Allow`).
+    Allow,
+}
+
+impl Confirm {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Confirm::Press => "press",
+            Confirm::Pair => "pair",
+            Confirm::Allow => "allow",
+        }
+    }
+}
+
 /// What a flow tells the person in front of it, and asks them. Every method has a default: a front-end implements
 /// what it shows.
 pub trait Events {
     /// The MCU's log text (its prints, the module's console among them), as it comes.
     fn text(&self, _b: &[u8]) {}
-    /// The speaker wants a press of ON/OFF (the gate, docs/protocol/host.md): say so.
-    fn prompt(&self, _s: &str) {}
+    /// The speaker waits for a person at it (`how`), `s` says so in a line: show it until the next event.
+    fn prompt(&self, _how: Confirm, _s: &str) {}
     /// A line for the person: what a flow does now, or found.
     fn step(&self, _s: &str) {}
     /// A flow of several phases enters phase `n` of `of`, called `what` (the install: the relay, the firmware, ...).

@@ -17,8 +17,8 @@ wasm.initSync({ module: fs.readFileSync(path.join(dir, "pkg", "zd1_web_bg.wasm")
 let prompted = "";
 const events = {
   text() {},
-  prompt: (s) => {
-    prompted = s;
+  prompt: (how) => {
+    prompted = how;
   },
   step: (s) => console.log("step:", s),
   phase() {},
@@ -53,7 +53,7 @@ check(
 const h = sp.hello();
 check(typeof h.fw === "string" && h.requests.length === 32, `hello before pairing: ${h.fw}`);
 const info = await sp.call("Info", {});
-check(/pair/.test(prompted) && info.msg === "InfoReply", `paired with a press, then Info: module ${info.mod_os}`);
+check(prompted === "pair" && info.msg === "InfoReply", `paired with the hold, then Info: module ${info.mod_os}`);
 const st = await sp.state();
 check(st.msg === "State" && typeof st.name === "string", `state: ${st.os}, slot ${st.slot}`);
 const paired = await sp.list("Controllers");
@@ -86,7 +86,7 @@ await refused(
 );
 // another browser, nobody at the speaker: refused after the press's 30 s (asked once: it gives up then)
 const other = await wasm.Speaker.connectNet(addr, wasm.newIdentity(), key, { ...events, cancelled: () => true });
-await refused(() => other.call("BootState", {}), /stopped|nobody/i, "an unpaired browser: nothing without a press");
+await refused(() => other.call("BootState", {}), /stopped|nobody/i, "an unpaired browser: nothing without the hold");
 other.free();
 if (process.env.SIGNED) {
   const img = fs.readFileSync(process.env.SIGNED);

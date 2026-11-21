@@ -138,7 +138,7 @@
       <div class="stack" style="gap: var(--space-2)">
         <div class="notice"><span>The module restarts on slot A.</span><span class="grow"></span><button type="button" class="quiet">Dismiss</button></div>
         <div class="notice ok"><span>Everything is back to the defaults.</span><span class="grow"></span><button type="button" class="quiet">Dismiss</button></div>
-        <div class="notice warn"><span>Nobody pressed ON/OFF on the speaker in time: nothing changed.</span><span class="grow"></span><button type="button" class="quiet">Dismiss</button></div>
+        <div class="notice warn"><span>ON/OFF on the speaker wasn't pressed (or held) in time: nothing changed.</span><span class="grow"></span><button type="button" class="quiet">Dismiss</button></div>
       </div>
       <h3>The banner</h3>
       <section class="banner"><i class="lamp on"></i><div class="banner-text"><strong>Release 0.3.0 is available</strong>
@@ -177,6 +177,7 @@
         <figure><zd-speaker mode="app" led="red" look="error" flat></zd-speaker><figcaption>a protection tripped</figcaption></figure>
         <figure><zd-speaker mode="app" led="white" look="nonet" flat></zd-speaker><figcaption>no network</figcaption></figure>
         <figure><zd-speaker mode="app" led="white" look="ready" press flat></zd-speaker><figcaption>press wanted</figcaption></figure>
+        <figure><zd-speaker mode="app" led="white" look="ready" press="amber" flat></zd-speaker><figcaption>an update's hold wanted</figcaption></figure>
         <figure><zd-speaker mode="dfu" progress="0.6" flat></zd-speaker><figcaption>a job, 60 %</figcaption></figure>
         <figure><zd-speaker mode="app" led="snapcast" look="choosing" flat></zd-speaker><figcaption>choosing Snapcast</figcaption></figure>
       </div>

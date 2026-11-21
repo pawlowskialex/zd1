@@ -83,7 +83,7 @@ function wire() {
   $("press-giveup").onclick = () => {
     $("press").close();
     app.cancel = true; // the page asks again until a press, or this
-    notice("Gave up waiting for the press: the speaker refuses the change in a few seconds.");
+    notice("Gave up waiting for ON/OFF: the speaker refuses the change in a few seconds.");
   };
   $("job-cancel").onclick = () => {
     app.cancel = true;

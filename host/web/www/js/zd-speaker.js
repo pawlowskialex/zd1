@@ -5,7 +5,7 @@
 //                   while it plays (vol, 0..1: how far and how strong)
 //   led="usb"       the LED's colour, a name from tokens.css (--led-NAME)
 //   look="playing"  the LED's animation: playing ready asleep standby boot error nonet starting choosing (led.js)
-//   press           the gate's purple blink: a press of ON/OFF is wanted
+//   press           the gate's purple blink: a press of ON/OFF is wanted (press="amber": the update's hold)
 //   progress="0.4"  a job's progress, drawn round the outline (absent: no job)
 //   flat            without the reflection under it
 // Its colours are the page's tokens (they inherit into the shadow root); design.html shows every state.
@@ -57,6 +57,7 @@ template.innerHTML = `
   @keyframes breathe { from { opacity: var(--lo); } to { opacity: var(--hi); } }
   :host([look="error"]) .glow, :host([press]) .glow { animation: blink 0.2s steps(1) infinite; }
   :host([press]) { --led: var(--led-purple) !important; }
+  :host([press="amber"]) { --led: var(--led-amber) !important; }
   @keyframes blink { 50% { opacity: 0; } }
 
   /* playing: sound off both ends, as far and as strong as the volume */
