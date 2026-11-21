@@ -159,14 +159,19 @@ From Python (a longer sequence, a loop): `emu/zemu/rig.py`, `Session` with `star
   module resets its network settings, restarts into Wi-Fi and crashes). With AUX as the boot source it doesn't: copy
   a run's `eeprom.bin` (the app's own record), set the word at +0x18 to 2 in both copies (0x00, 0x28), the checksum at
   +0 = the sum of bytes 4..0x27, and `--renode "zd1:twi.eeprom File @THAT"` (the run writes into the file). The
-  record's +6 is the app's version by identity (0x0005 ZD1, 0x0035 ZD1L): a record from the other identity counts as
+  record's +6 is the app's version by identity (0x0005 ZD1, 0x0035 ZD1L, 0x0077 A7): a record from another identity counts as
   invalid. Board variant 2: `--renode 'zd1:board Adc "2:0x300"'`. The module's PersParam HWID (BL2's web updater
   checks it) is the 4 bytes after the reversed key "DIWH" in NAND block 1 of a `--nand-image`.
-- **A stock ZD1L** (`emu/tools/zd1lunit.py OUT`: the test unit's NAND with the ZD1L's HWID, BL2 and B&W's module
-  image, the MCU flash with its "Net HBL" bootloader and B&W's app): held at power-up it goes into BL2's web updater,
-  which takes a `.fw` for both chips (`bl2web.py`, or the page's code: `host/web/test/zd1l.mjs`), and after the burn
-  starts what it installed. `--renode 'zd1:flashc BootprotSize 0x8000' --renode 'zd1:board Adc "2:0x300"'`; the whole
-  first install of `zd1l.fw` is ~6 min (`docs/mcu/bootloader-hbl.md`).
+- **A stock ZD1L or A7** (`emu/tools/stockunit.py OUT [FILE.fw]`: the test unit's NAND with the model's HWID, the
+  ZD1L's BL2 and B&W's module image, the MCU flash with the "Net HBL" bootloader and B&W's app; the A7's BL2 and HBL
+  are stand-ins, the ZD1L's, the HBL with the A7's HWID): held at power-up it goes into BL2's web updater, which takes
+  a `.fw` for both chips (`bl2web.py`, or the page's code: `host/web/test/zd1l.mjs`), and after the burn starts what it
+  installed. `--renode 'zd1:flashc BootprotSize 0x8000' --renode 'zd1:board Adc "2:0x300"'`; the whole first install
+  of `zd1l.fw` is ~6 min (`docs/mcu/bootloader-hbl.md`); the A7's: `docs/models/a7.md`.
+- **Our MCU firmware as another model**: `--mcu ours-zd1l` / `--mcu ours-a7` puts the emulator build behind that
+  model's bootloader (the A7's stand-in), which it reads its model from (`mcu/src/model.c`): the A7's DSP setup, its
+  USB name. Record the DSP's writes with `--renode 'zd1:twi.dsp Record "FILE"'` and compare with
+  `re/scripts/dspcmp.py`.
 - **Where host time goes** (a slow boot): `ZEMU_SAMPLE=cr870 ZEMU_SAMPLE_STEP=0.01 zemu run ...`, then
   `emu/tools/prof_samples.py emu/run/NAME/samples.txt` (`ZEMU_SAMPLE_FROM=S` starts later, `ZEMU_SAMPLE_REGS=0,1`).
 - **Any other model knob** on the monitor: `core` (module: `Patch`, `TraceOnly`, `DelayLoops`, `TimerWaitPcs`, ...),
@@ -183,7 +188,7 @@ From Python (a longer sequence, a loop): `emu/zemu/rig.py`, `Session` with `star
 | `spiparse.py`, `spidiff.py` | the J2 SPI stream from the MCU trace: framing check; MCU side vs module RX FIFO (`--trace b1002e00`) |
 | `decode_i2c.py`, `decode_gpio_i2c.py` | bit-banged I2C from the MCU trace's PIN lines / the module trace's GPIO lines |
 | `bcdinstall.py` | a `.bcd` into a NAND image the way BL2 writes it (what `zemu run X.bcd` uses) |
-| `zd1lunit.py` | a stock ZD1L (NAND and MCU flash) from the test unit and B&W's ZD1L `.fw` |
+| `stockunit.py` | a stock ZD1L or A7 (NAND and MCU flash) from the test unit and B&W's `.fw` for it |
 | `prof_samples.py` | host-time profile from `ZEMU_SAMPLE` output |
 | `run.py` | a Renode `.resc` script through zemu's driver |
 | `gen_decoder.py` | regenerates the AVR32 decoder from `renode/avr32/insn.decode` |
