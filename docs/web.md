@@ -11,25 +11,30 @@ speaker in a state the tools understand. Tags: `docs/README.md`.
 no framework). `nix build .#web` is the page as a directory. It is hosted at https://pawlowskialex.github.io/zd1/ with the
 releases' images (below, Releases); `python3 tools/zeppelin web` serves it on localhost with this checkout's built
 images offered under `images/` instead (`index.json` names them). The three views below are built:
-- **Not connected**: Connect (the chooser filters on our firmware 03EB:2FE0 and the DFU bootloader 03EB:2FF8), or an
-  address to connect over the network (`docs/protocol/net.md`: the browser's Local Network Access, pairing with a
-  press the first time; `Speaker.connectNet`), and a triage by what the speaker does: our firmware by its light, B&W's
-  software (never in the list: the key-hold into DFU), the Lightning model's first install over the network (its
-  BL2's web updater, `zd1l.js`), a stopped update, and a speaker that isn't listed (cable, browsers, WinUSB on Windows for
-  B&W's bootloader, the Linux udev rule).
+- **Not connected**, three panels. Connect: over USB (the chooser filters on our firmware 03EB:2FE0 and the DFU
+  bootloader 03EB:2FF8), or an address over the network (`docs/protocol/net.md`: the browser's Local Network Access,
+  pairing with ON/OFF held the first time; `Speaker.connectNet`), how that works folded away. Install, for a speaker
+  on B&W's software, the two models side by side (the choice cards), each with its steps and its action: the
+  Zeppelin Air into its bootloader (the key-hold) and Connect, the page installing from there; the Lightning model
+  through its BL2's web updater over Ethernet (`zd1l.js`: its address and Install, offered when a release has its
+  `.fw`); the release it installs named above them. Help: a speaker that isn't listed (cable, browsers, WinUSB on
+  Windows for B&W's bootloader, the Linux udev rule), a stopped update, what its light says, the way back to B&W's
+  software for each model.
 - **Over the network** the app view is the same, less what is USB's (the MCU's firmware, the boot image, the console,
   the debug services, the gate, the amp's lock, the slots' way back: hidden, `body.net .usb-only`), plus the paired
   clients (Advanced) with Forget; the update installs the release's signed system (`system-VERSION.signed`) and the
   connection comes back by itself; a network change connects again to keep it (`reachAgain`). [EMU 2026-11-19: the
   page's WebAssembly over node's WebSocket, `host/web/test/net.mjs`; not yet in a browser.]
-- **Bootloader**: the boot log and the module's state, and one primary action from them: no boot of ours logged,
-  **Install** the latest release (`Bootloader.install`: host/core's `install`, the `.bcd` when the release has one);
-  ours ran, **Start**; ours stopped early, **Repair** (the release's MCU firmware again). Under it the backups this
-  browser kept (restore, download, delete), **Roll back to B&W's software** (`Bootloader.rollback`, the stock `.bcd`
-  and MCU image as files), and Advanced (start, an MCU file).
-- **Running**: what people reach for first. On top, under the speaker's drawing and name: Playing (the sources,
-  volume, bass, the amp's sentence). A banner when a release is newer than what runs, with its notes and one
-  **Update** that brings what is behind to it: the system, the module's boot image (when the release's differs from
+- **Bootloader**: a headline from the boot log, and the one primary action under it: no boot of ours logged ("Ready
+  for our firmware"), the install's three steps and **Install** the latest release (`Bootloader.install`: host/core's
+  `install`, the `.bcd` when the release has one); ours ran, **Start**; ours stopped early, **Repair** (the release's
+  MCU firmware again). Then the facts it was decided from (the last boot, the module), the backups this browser kept
+  when there are any (restore, download, delete), **Roll back to B&W's software** (`Bootloader.rollback`, the stock
+  `.bcd` and MCU image as files), and Advanced (start, an MCU file).
+- **Running**: what people reach for first. The top bar links to its panels. On top, under the speaker's drawing and
+  name: Playing (the sources, volume, bass, the amp's sentence). A banner when a release is newer than what runs,
+  naming what it updates (the main board's firmware, the module's system, its boot image, each with where it
+  stands), with its notes and one **Update** that brings what is behind to it: the system, the module's boot image (when the release's differs from
   the one the module started from: the State record's `boot` against the `.bcd`'s `zd1.boot=`, both by content;
   through the bootloader's relay, ~5 min), then the MCU; nothing when up to date, and the module not judged while it
   starts. Then
@@ -37,10 +42,10 @@ images offered under `images/` instead (`index.json` names them). The three view
   the known networks in their order with Prefer and Forget, Add a network from a scan or by hand, the radio's limits,
   each interface's addresses), Receivers (a row each: on/off, its status, its options: AirPlay's PIN and pairings,
   Spotify's bitrate, Snapcast's server from the servers found or by hand, its latency, a link to the snapserver's
-  web page), Behaviour (USB auto-switch, the amp's lock and idle time), Diagnostics (save a report: versions, state,
-  diagnostics, the log in one file), Software (both versions, the slots and what each holds, the latest release and
-  its verdict, earlier releases, back to the other slot when it holds a system, restore the MCU firmware from the
-  last backup kept, files), Advanced (the debug services, the gate, settings export and import, reset; the module's
+  web page), Behaviour (USB auto-switch, the amp's lock and idle time, the volume cap), Software (both versions, the
+  slots and what each holds, the latest release and its verdict, earlier releases, back to the other slot when it
+  holds a system, restore the MCU firmware from the last backup kept, files), Diagnostics (save a report: versions,
+  state, diagnostics, the log in one file), Advanced (the debug services, the gate, settings export and import, reset; the module's
   console: open while unfolded, a line at a time and Ctrl-C, into BL2 through BL1's menu (`Module ESC`), the module
   restarted [HW 2026-11-02; `host/web/test/emu.mjs` opens it, sends a line, reads the answer]).
 One job strip (sticky) carries every long flow: its phases, progress, a stop where the flow allows it, the outcome,
@@ -90,8 +95,8 @@ floor: the drawing stands on its reflection.
   a link; `select` and the file picker drawn the same), the segmented control and the switch
   (`button.switch[aria-pressed]`), filled when chosen (the sources in `--lamp`, the LED's colour for
   each: `led.js` `lampOf`; switches white), the checkbox, the lamp (`.lamp`, and the tags' and notices' own), fields, the slider, the panel (`section.panel` > `h2` +
-  `.panel-body`) and the facts table, lists and receivers, tags and signal bars, notices, the banner, progress, dialogs, terminal
-  panes, disclosures and the triage. `<zd-speaker>` (`js/zd-speaker.js`, a custom element: `mode`, `led`, `look`,
+  `.panel-body`) and the facts table, lists and receivers, tags and signal bars, notices, the banner, the choice cards (`.choices > .choice`, side by side, with numbered `.steps`), progress,
+  dialogs, terminal panes, disclosures and the triage. `<zd-speaker>` (`js/zd-speaker.js`, a custom element: `mode`, `led`, `look`,
   `vol`, `press`, `progress`) is the drawing.
 - **The catalogue** (`www/design.html`, linked from the footer): every token and component in each state, the speaker
   in every mode and look. A change to the system is checked there first; a new component gets a row there.

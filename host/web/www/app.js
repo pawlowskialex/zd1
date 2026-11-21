@@ -38,7 +38,7 @@ async function main() {
   if (navigator.usb) usbEvents();
   else {
     $("nousb").hidden = false;
-    $("connect").disabled = true;
+    $("connect").disabled = $("connect-dfu").disabled = true;
   }
   wire();
   consoleInit();
@@ -49,6 +49,7 @@ async function main() {
 /// The speaker coming and going on USB.
 function usbEvents() {
   $("connect").onclick = () => connect(true);
+  $("connect-dfu").onclick = () => connect(true);
   navigator.usb.addEventListener("connect", () => {
     if (!app.sp && !app.bl && !app.busy) connect(false);
   });

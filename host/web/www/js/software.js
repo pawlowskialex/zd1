@@ -18,68 +18,72 @@ export async function drawDfu() {
   const last = st.boot.at(-1);
   const lastOk = last?.stage === "main loop";
   $("dfu-boot").textContent = last
-    ? `our firmware's last boot (${last.boot}) reached “${last.stage}”${lastOk ? ": it ran" : ": it stopped there"}`
-    : "no boot of our firmware logged: B&W's firmware, an empty speaker, or an install erased the log";
+    ? `our firmware's boot ${last.boot} reached “${last.stage}”${lastOk ? "" : ": it stopped there"}`
+    : "none of our firmware logged: B&W's firmware, a new speaker, or an install erased the log";
   $("dfu-module").textContent = st.module;
   const rel = releases[0];
-  const p = $("dfu-primary");
-  p.replaceChildren();
   const btn = (label, primary, f) => {
     const b = el("button", { textContent: label, className: primary ? "primary" : "" });
     b.onclick = f;
     return b;
   };
+  const row = (...kids) => el("div", { className: "row" }, ...kids);
+  const small = (textContent) => el("p", { className: "small", textContent });
+  const noRelease = (what) =>
+    el("p", { className: "warn", textContent: `No release is offered to this page: ${what}.` });
+  let lead;
+  const p = [];
   if (!last) {
-    p.append(
-      el("p", {
-        textContent:
-          "Install puts our firmware on both boards: the module's boot image, the main board's " +
-          "firmware (a backup of what is there first), the module's first boot, its system. About 5 minutes; keep the " +
-          "speaker plugged in. The speaker ends up without a network: the page shows where to add one.",
-      }),
-    );
-    p.append(
+    lead = "Ready for our firmware.";
+    p.push(
+      el(
+        "ol",
+        { className: "steps" },
+        ...[
+          "The module's boot image, the release's system in it: about 6 minutes.",
+          "The main board's firmware, after a backup of what is there (a download, and a copy in this browser).",
+          "The module installs its system into a slot and starts it: about a minute.",
+        ].map((textContent) => el("li", { textContent })),
+      ),
+      small(
+        "Keep the speaker plugged in and this tab in front. It ends without a network: the page shows where to add one.",
+      ),
       rel?.mcu && rel?.system
-        ? el(
-            "div",
-            { className: "row" },
-            btn(`Install release ${rel.version}`, true, () => installAll(rel)),
-          )
-        : el("p", {
-            className: "warn",
-            textContent: "No release with both images is offered to this page: install from files under Advanced.",
-          }),
+        ? row(btn(`Install release ${rel.version}`, true, () => installAll(rel)))
+        : noRelease("install from files under Advanced"),
     );
   } else if (lastOk) {
-    p.append(
-      el("p", {
-        textContent: "Our firmware ran here: it was asked into the bootloader, or ON/OFF was held at power-up.",
-      }),
-      el(
-        "div",
-        { className: "row" },
+    lead = "Our firmware is installed, and waits here.";
+    p.push(
+      small("It was asked into the bootloader, or ON/OFF was held while it powered up."),
+      row(
         btn("Start the firmware", true, startFirmware),
         rel?.mcu ? btn(`Install release ${rel.version}'s firmware`, false, () => installRelease(rel, "mcu")) : null,
       ),
     );
   } else {
-    p.append(
-      el("p", {
-        textContent:
-          "Our firmware was here, but its last boot stopped before it ran. Repair writes the " +
-          "firmware again (a backup first); a backup below puts back what was there before.",
-      }),
-      el(
-        "div",
-        { className: "row" },
+    lead = `Our firmware's last start stopped early, at “${last.stage}”.`;
+    p.push(
+      small("Repair writes the firmware again (a backup first); a backup below puts back what was there before."),
+      row(
         rel?.mcu
           ? btn(`Repair: release ${rel.version}'s firmware`, true, () => installRelease(rel, "mcu"))
-          : el("span", { className: "warn", textContent: "No release offered: install from a file under Advanced." }),
-        btn("Start the firmware anyway", false, startFirmware),
+          : noRelease("install from a file under Advanced"),
+        btn("Start it anyway", false, startFirmware),
       ),
     );
   }
+  $("dfu-lead").textContent = lead;
+  $("dfu-primary").replaceChildren(...p);
   drawBackups($("dfu-backups"), restoreBackup);
+  // the backups only when there are some (or the browser keeps none: it says why)
+  backups()
+    .then((l) => {
+      $("dfu-kept").hidden = !l.length;
+    })
+    .catch(() => {
+      $("dfu-kept").hidden = false;
+    });
 }
 
 export async function startFirmware() {
@@ -97,7 +101,7 @@ export async function installAll(rel) {
     !(await ask(
       `Install release ${rel.version}?`,
       "Both boards get our firmware; what is on the main board is " +
-        "backed up first (a download, and a copy in this browser). About 5 minutes; the browser may ask once for the firmware.",
+        "backed up first (a download, and a copy in this browser). About 7 minutes; the browser may ask once for the firmware.",
       "Install",
     ))
   )
@@ -143,13 +147,15 @@ export function drawSoftware(b) {
     slot = names(app.S.Slot);
   const runs = slot[st.slot];
   const failed = ["A", "B", "the rescue"].filter((_, k) => (b.failed >> k) & 1);
+  // a slot's stamp is "VERSION [SHA LENGTH]": the version says it
   const line = (s, stampv) =>
-    `${s.toUpperCase()}: ${stampv || "no system"}${runs === s ? " (runs)" : ""}${slot[st.good] === s ? " (good)" : ""}`;
+    `${s.toUpperCase()}: ${stampv?.split(" ")[0] || "empty"}${runs === s ? ", running" : ""}${slot[st.good] === s ? ", the good one" : ""}`;
   $("slots").textContent =
-    [line("a", st.stamp_a), line("b", st.stamp_b)].join("; ") +
-    (runs === "none" ? "; the module runs its rescue" : "") +
-    (b.next ? `; the next boot tries ${slot[b.next].toUpperCase()}` : "") +
-    (failed.length ? `; failed: ${failed.join(", ")}` : "");
+    [line("a", st.stamp_a), line("b", st.stamp_b)].join(" · ") +
+    (runs === "none" ? " · the module runs its rescue" : "") +
+    (b.next ? ` · the next boot tries ${slot[b.next].toUpperCase()}` : "") +
+    (b.installing ? " · the rescue installs itself into a slot" : "") +
+    (failed.length ? ` · failed: ${failed.join(", ")}` : "");
   const back = $("ways-back");
   back.replaceChildren();
   const other = runs === "a" ? "b" : runs === "b" ? "a" : null;
@@ -201,8 +207,19 @@ export async function loadReleases() {
     releases = [];
   }
   app.drawnFor = "";
+  drawInstall();
   if (app.sp && app.info) drawReleases();
   if (app.bl) drawDfu();
+}
+
+/// The welcome view's Install: the release it puts on, and the Lightning model's form only when a release has its file.
+function drawInstall() {
+  const rel = releases[0],
+    fw = releases.find((r) => r.fw);
+  $("install-release").textContent = rel
+    ? `It installs release ${rel.version}${rel.date ? `, ${rel.date}` : ""}.${fw ? "" : " The Lightning model's file isn't in a release yet."}`
+    : "No release is offered to this page: the install needs one.";
+  for (const e of $("zd1l-form").elements) e.disabled = !fw;
 }
 
 /// A release's image, fetched and checked against the manifest's SHA-256.
@@ -357,14 +374,12 @@ export function drawReleases() {
     const [pm, ps] = [position(fw, "mcu"), position(os, "system")];
     // the module starting (after an update, a power-up): not judged until it is up
     const starting = ["off", "reset", "booting", "up"].includes(names(app.S.ModState)[app.info?.mod_state]);
-    const say = (p, what, running) =>
+    // what is behind, each with where it stands: "the main board's firmware (2 releases behind)"
+    const part = (p, what, running) =>
       p === 0
-        ? `${what} up to date`
-        : p > 0
-          ? `${what} ${p} release${p > 1 ? "s" : ""} behind`
-          : running
-            ? `${what} on ${running}, a build that isn't a release`
-            : `${what} without our software`;
+        ? null
+        : `${what} (${p > 0 ? `${p} release${p > 1 ? "s" : ""} behind` : running ? `${running}, not a release` : "not ours"})`;
+    const and = (l) => (l.length < 2 ? (l[0] ?? "") : `${l.slice(0, -1).join(", ")} and ${l.at(-1)}`);
     // the boot image: rewritten only when the release's stub or kernel differ from the ones the module started from
     // (bootBehind; module/os/assemble.py, payload)
     const boot = moduleBoot();
@@ -374,17 +389,22 @@ export function drawReleases() {
       behind && "boot",
       rel.mcu && pm !== 0 && "mcu",
     ].filter(Boolean);
-    const where =
-      `${say(pm, "main board", fw)}, ${starting ? "module starting" : say(ps, "module", os)}` +
-      `${behind ? `, its boot image ${boot ? "older" : "from before boot images had a version"}` : ""}.`;
+    const updates = and(
+      [
+        rel.mcu && part(pm, "the main board's firmware", fw),
+        rel.system && !starting && part(ps, "the module's system", os),
+        behind && `the module's boot image${boot ? "" : " (from before boot images had a version)"}`,
+      ].filter(Boolean),
+    );
+    const where = `It updates ${updates}.${starting ? " The module is starting: its system is checked once it is up." : ""}`;
     const named = `release ${rel.version}${rel.date ? ` (${rel.date})` : ""}`;
-    v.append(el("p", { textContent: needs.length ? `Latest ${named}: ${where}` : `Up to date: ${named}.` }));
+    v.append(el("p", { textContent: needs.length ? `Latest: ${named}. ${where}` : `Up to date: ${named}.` }));
     if (rel.notes) v.append(el("p", { className: "small notes", textContent: rel.notes }));
     // behind: the banner on top of the page says so, with the one button
     if (needs.length)
       banner(
         `Release ${rel.version} is available`,
-        where[0].toUpperCase() + where.slice(1),
+        where,
         `Update to ${rel.version}`,
         () => updateTo(rel, needs),
         rel.notes,

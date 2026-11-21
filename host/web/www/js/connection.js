@@ -174,10 +174,12 @@ export async function reachAgain(also) {
   }
 }
 
-/// "welcome", "app" (our firmware) or "dfu" (the bootloader). The release rows go with the view.
+/// "welcome" (with Install and Help), "app" (our firmware) or "dfu" (the bootloader). The release rows go with the
+/// view.
 export function show(what) {
   document.body.classList.toggle("net", what === "app" && app.sp?.link() === "net");
-  $("welcome").hidden = what !== "welcome";
+  for (const id of ["welcome", "install", "help"]) $(id).hidden = what !== "welcome";
+  $("nav-links").hidden = what !== "app";
   $("app").hidden = what !== "app";
   $("dfu").hidden = what !== "dfu";
   $("disconnect").hidden = what === "welcome";
