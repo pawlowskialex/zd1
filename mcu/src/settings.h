@@ -30,7 +30,7 @@ typedef struct {
 #define SETTINGS_AMP_IDLE_MIN     1
 #define SETTINGS_AMP_IDLE_MAX     30 /* the amp runs hot: never longer */
 
-#define SETTINGS_VOL_CAP_DEFAULT 40 /* the safety cap kept since the first firmware */
+#define SETTINGS_VOL_CAP_DEFAULT 71 /* stock's range, up to +10 dB; a speaker that kept another cap keeps it */
 
 #define SETTINGS_SAVE_DELAY_MS 3000
 #define SETTINGS_DEFAULT_VOL   30 /* DSP index 41 = -31 dB */

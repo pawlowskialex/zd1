@@ -243,7 +243,7 @@ that must be told apart (19.7; `mcu/tools/led_palette.py` with the measured mode
   DSP, so 16 bits carry the source at full scale); it goes over the network instead (`docs/streaming.md`, Formats). Host volume −60..+10 dB spans the steps 1..the volume cap, whole dB both ways (`src/hostvol.h`: the whole of the
   computer's slider does something, as the module's senders' 0..100 %); one
   limit holds on every source, whatever sets the volume (the keys, the remote, the host link, the computer, the
-  module's senders): the volume cap (`zd1 prefs --volume-cap N`, 1 to 71, 40 unless set, kept in the EEPROM's second
+  module's senders): the volume cap (`zd1 prefs --volume-cap N`, 1 to 71, 71 unless set, kept in the EEPROM's second
   page; a lower cap takes the volume down at once, and the module maps its senders' 0..100 % onto 0..the cap). The
   heat cap (step 50 while hot, `protect.c`) holds it lower on top.
 - **Audio engine**: iso packets → 1024-frame ring → PDCA ch0 blocks of 64 frames → SSC as stock (`ssc_i2s_init(.., 16,
@@ -251,6 +251,11 @@ that must be told apart (19.7; `mcu/tools/led_palette.py` with the measured mode
   silence on underrun. Rate: a PI loop on the ring fill trims the CS2000 ratio (~0.93 ppm per LSB) once a second.
 - **Silence pitfalls**: codec reg 4 bit 0 (DAC master mute) and PB27 (codec mute pin) both have to be
   cleared after the amp unmute, like stock. The DSP "soft mute" records are path selectors, not a mute.
+- **No click on a switch**: the amp's mute line clicks each time it changes, whatever plays [HW 2026-11-21], so a
+  switch between sources leaves the amp unmuted: the volume fades to mute (~30 ms), the DAC mutes, the input
+  switches, and 100 ms later (`SWITCH_SETTLE_MS`; stock holds 500 ms) the DAC unmutes and the volume ramps up, the
+  amp hearing digital silence meanwhile. Only standby and the amp's sleep mute the amp, after the fade; the click as
+  the amp comes on from silence is its unmute (jurajs5 found the switch's pops, in his fork).
 - **The watchdog**: ~2.3 s, fed once per main-loop pass (`src/selfdfu.c`); a loop that stops resets the MCU, which
   takes the amp down, and the next boot logs `[boot] the watchdog reset the MCU`. Every wait in the loop stays well
   inside it: an SPI read has 300 ms, a V write's three tries ~1 s, `XmFrame` waits 500 ms at most (the host asks

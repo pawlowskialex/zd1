@@ -85,7 +85,7 @@ enum Cmd {
         #[arg(long, value_parser = clap::value_parser!(u16).range(1..=30))]
         amp_idle: Option<u16>,
         /// The highest volume step on every source, whatever sets it (keys, remote, the computer, the network's
-        /// senders), 1 .. 71 (40 unless set); a lower cap takes the volume down to it.
+        /// senders), 1 .. 71 (71 unless set); a lower cap takes the volume down to it.
         #[arg(long, value_parser = clap::value_parser!(u8).range(1..=71))]
         volume_cap: Option<u8>,
     },
