@@ -8,8 +8,17 @@
 //   press           the gate's purple blink: a press of ON/OFF is wanted
 //   progress="0.4"  a job's progress, drawn round the outline (absent: no job)
 //   flat            without the reflection under it
+//   model="a7"      the A7's outline (a rounded box) instead of the Zeppelin's
 // Its colours are the page's tokens (they inherit into the shadow root); design.html shows every state.
 const SHAPE = "M40 118C40 82 170 32 340 32S640 82 640 118 510 204 340 204 40 154 40 118Z";
+// the A7: a box with rounded ends, its line down the middle from top to bottom
+const SHAPES = {
+  a7: {
+    d: "M150 40H530C590 40 620 70 620 118S590 196 530 196H150C90 196 60 166 60 118S90 40 150 40Z",
+    top: 40,
+    bottom: 196,
+  },
+};
 const WAVE_L = "M28 94Q14 118 28 142",
   WAVE_R = "M652 94Q666 118 652 142";
 
@@ -86,7 +95,7 @@ template.innerHTML = `
 </svg>`;
 
 class ZdSpeaker extends HTMLElement {
-  static observedAttributes = ["led", "vol", "progress"];
+  static observedAttributes = ["led", "vol", "progress", "model"];
   constructor() {
     super();
     this.attachShadow({ mode: "open" }).append(template.content.cloneNode(true));
@@ -94,6 +103,12 @@ class ZdSpeaker extends HTMLElement {
   attributeChangedCallback(name, _old, v) {
     if (name === "led") this.style.setProperty("--led", v ? `var(--led-${v})` : "transparent");
     if (name === "vol") this.style.setProperty("--vol", v ?? "0");
+    if (name === "model") {
+      const s = SHAPES[v],
+        root = this.shadowRoot;
+      root.querySelector("#shape").setAttribute("d", s ? s.d : SHAPE);
+      root.querySelector(".centre").setAttribute("d", s ? `M340 ${s.top}V${s.bottom}` : "M340 32V204");
+    }
     if (name === "progress")
       this.shadowRoot.querySelector(".progress").setAttribute("stroke-dasharray", `${(+v || 0) * 100} 100`);
   }

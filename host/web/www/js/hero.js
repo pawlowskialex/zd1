@@ -2,13 +2,15 @@
 // connection.js sets the view and a job's progress, speaker.js what the running speaker does.
 import { $ } from "./ui.js";
 
-/// The view ("welcome", "dfu", "app"), a title, a status line; `led` and `look` from led.js, `vol` 0..1 (app only).
-export function hero({ mode, title, status, led = null, look = null, vol = 0 }) {
+/// The view ("welcome", "dfu", "app"), a title, a status line; `led` and `look` from led.js, `vol` 0..1 (app only),
+/// `model` the speaker's (its outline: "a7"; null the Zeppelin's).
+export function hero({ mode, title, status, led = null, look = null, vol = 0, model = null }) {
   const a = $("art");
   if (a.getAttribute("mode") !== mode) a.setAttribute("mode", mode);
   for (const [k, v] of [
     ["led", led],
     ["look", look],
+    ["model", model],
   ])
     if (v === null) a.removeAttribute(k);
     else if (a.getAttribute(k) !== v) a.setAttribute(k, v);
