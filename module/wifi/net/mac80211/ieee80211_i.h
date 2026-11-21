@@ -323,7 +323,10 @@ struct ieee80211_if_sta {
 	/* zd1: beacons from the BSSID we join or are joined to (the last one's level), reset by each attempt */
 	unsigned int beacons;
 	int beacon_dbm;
-	unsigned long beacon_at; /* the last one's time: a gap of more than 500 ms while joined is logged */
+	unsigned long beacon_at; /* the last one's time */
+	/* gaps of more than 500 ms in them while joined: how many and the longest, logged every 10 s at most */
+	unsigned int beacon_gaps, beacon_gap_max;
+	unsigned long beacon_gaps_logged;
 	enum {
 		IEEE80211_DISABLED, IEEE80211_AUTHENTICATE,
 		IEEE80211_ASSOCIATE, IEEE80211_ASSOCIATED,

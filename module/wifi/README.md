@@ -23,8 +23,9 @@ against their binary. Then our changes, in this repository's history:
   19 dBm and 12-13 passive (listened to, never probed), so an access point on 12 or 13 is found and joined where it
   may be there.
 - The join's log (`mlme.c`, `main.c`): each authentication attempt with the channel, the scan state, the TX queue and
-  the beacons heard from the AP since the last one; each authentication, association and deauthentication frame
-  with whether the AP acknowledged it (the firmware's status). For the rejoin problem (`docs/status.md`).
+  the beacons heard from the AP since the last one, and gaps in them while joined (at most a line per 10 s); each
+  authentication, association and deauthentication frame with whether the AP acknowledged it (the firmware's status).
+  For the rejoin problem (`docs/status.md`).
 - A scan asked for while joining (the supplicant asks for one when the AP disassociates a stale association of
   ours), served once joined, gets the last scan's results if that is less than 10 s old: a new one would take the
   radio off the AP's channel just after the join.
