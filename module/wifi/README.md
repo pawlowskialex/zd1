@@ -17,6 +17,9 @@ against their binary. Then our changes, in this repository's history:
 - `config.h`: this build's options. No mesh: the draft mesh code takes an element 51 (today the AP Channel Report)
   for its mesh configuration and drops the beacon of an AP that sends one (issue #11).
 - `include/net/compat.h` and an `#ifdef` in `wext.c`: what 2.6.24.7's wireless headers lack.
+- The join's log (`mlme.c`, `main.c`): each authentication attempt with the channel, the scan state, the TX queue and
+  the beacons heard from the AP since the last one; each authentication, association and deauthentication frame
+  with whether the AP acknowledged it (the firmware's status). For the rejoin problem (`docs/status.md`).
 
 Nokia's own two changes are not here: the WPS element in scan results (`wps_ie=`) and freeing BSS entries not heard
 for a while. Nothing here uses the first.

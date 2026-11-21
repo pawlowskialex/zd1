@@ -1382,6 +1382,27 @@ void ieee80211_tx_status(struct ieee80211_hw *hw, struct sk_buff *skb,
 		return;
 	}
 
+	{
+		u16 fc = le16_to_cpu(hdr->frame_control);
+		u16 st = fc & IEEE80211_FCTL_STYPE;
+
+		if ((fc & IEEE80211_FCTL_FTYPE) == IEEE80211_FTYPE_MGMT &&
+		    (st == IEEE80211_STYPE_AUTH || st == IEEE80211_STYPE_ASSOC_REQ ||
+		     st == IEEE80211_STYPE_REASSOC_REQ || st == IEEE80211_STYPE_DEAUTH ||
+		     st == IEEE80211_STYPE_DISASSOC)) {
+			DECLARE_MAC_BUF(mac);
+
+			printk(KERN_DEBUG "%s: TX %s to %s: %s, %d retries\n",
+			       wiphy_name(local->hw.wiphy),
+			       st == IEEE80211_STYPE_AUTH ? "auth" :
+			       st == IEEE80211_STYPE_DEAUTH ? "deauth" :
+			       st == IEEE80211_STYPE_DISASSOC ? "disassoc" : "assoc",
+			       print_mac(mac, hdr->addr1),
+			       status->flags & IEEE80211_TX_STATUS_ACK ? "acked" : "not acked",
+			       status->retry_count);
+		}
+	}
+
 	rcu_read_lock();
 
 	if (status->excessive_retries) {

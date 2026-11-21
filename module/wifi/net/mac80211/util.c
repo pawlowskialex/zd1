@@ -327,6 +327,11 @@ void ieee80211_wake_queue(struct ieee80211_hw *hw, int queue)
 
 	if (test_and_clear_bit(IEEE80211_LINK_STATE_XOFF,
 			       &local->state[queue])) {
+		unsigned int ms = jiffies_to_msecs(jiffies - local->xoff_since[queue]);
+
+		if (ms > 300)
+			printk(KERN_DEBUG "%s: TX queue %d was stopped for %u ms\n",
+			       wiphy_name(hw->wiphy), queue, ms);
 		if (test_bit(IEEE80211_LINK_STATE_PENDING,
 			     &local->state[queue]))
 			tasklet_schedule(&local->tx_pending_tasklet);
@@ -346,7 +351,8 @@ void ieee80211_stop_queue(struct ieee80211_hw *hw, int queue)
 
 	if (!ieee80211_qdisc_installed(local->mdev) && queue == 0)
 		netif_stop_queue(local->mdev);
-	set_bit(IEEE80211_LINK_STATE_XOFF, &local->state[queue]);
+	if (!test_and_set_bit(IEEE80211_LINK_STATE_XOFF, &local->state[queue]))
+		local->xoff_since[queue] = jiffies;
 }
 EXPORT_SYMBOL(ieee80211_stop_queue);
 

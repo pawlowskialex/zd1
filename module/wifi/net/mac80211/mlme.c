@@ -657,8 +657,20 @@ static void ieee80211_authenticate(struct net_device *dev,
 	}
 
 	ifsta->state = IEEE80211_AUTHENTICATE;
-	printk(KERN_DEBUG "%s: authenticate with AP %s\n",
-	       dev->name, print_mac(mac, ifsta->bssid));
+	{
+		struct ieee80211_local *local = wdev_priv(dev->ieee80211_ptr);
+		struct ieee80211_channel *ch = local->hw.conf.channel;
+
+		printk(KERN_DEBUG "%s: authenticate with AP %s (try %d: %d MHz,"
+		       " %s, queue %s, %u beacons from it since, last %d dBm)\n",
+		       dev->name, print_mac(mac, ifsta->bssid),
+		       ifsta->auth_tries, ch ? ch->center_freq : 0,
+		       local->sta_sw_scanning || local->sta_hw_scanning ?
+		       "scanning" : "not scanning",
+		       netif_queue_stopped(local->mdev) ? "stopped" : "open",
+		       ifsta->beacons, ifsta->beacon_dbm);
+		ifsta->beacons = 0;
+	}
 
 	ieee80211_send_auth(dev, ifsta, 1, NULL, 0, 0);
 
@@ -2824,6 +2836,17 @@ static void ieee80211_rx_mgmt_beacon(struct net_device *dev,
 	if (sdata->vif.type != IEEE80211_IF_TYPE_STA)
 		return;
 	ifsta = &sdata->u.sta;
+	if (memcmp(ifsta->bssid, mgmt->bssid, ETH_ALEN) == 0) {
+		unsigned int gap = jiffies_to_msecs(jiffies - ifsta->beacon_at);
+
+		if ((ifsta->flags & IEEE80211_STA_ASSOCIATED) && ifsta->beacons && gap > 500 &&
+		    !local->sta_sw_scanning)
+			printk(KERN_DEBUG "%s: no beacon from the AP for %u ms (now %d dBm)\n",
+			       dev->name, gap, rx_status->ssi);
+		ifsta->beacons++;
+		ifsta->beacon_dbm = rx_status->ssi;
+		ifsta->beacon_at = jiffies;
+	}
 
 	if (!(ifsta->flags & IEEE80211_STA_ASSOCIATED) ||
 	    memcmp(ifsta->bssid, mgmt->bssid, ETH_ALEN) != 0)
@@ -3739,6 +3762,8 @@ void ieee80211_scan_completed(struct ieee80211_hw *hw)
 	union iwreq_data wrqu;
 
 	local->last_scan_completed = jiffies;
+	printk(KERN_DEBUG "%s: scan done in %u ms\n", dev->name,
+	       jiffies_to_msecs(jiffies - local->scan_started));
 	memset(&wrqu, 0, sizeof(wrqu));
 	wireless_send_event(dev, SIOCGIWSCAN, &wrqu, NULL);
 
@@ -3941,6 +3966,9 @@ static int ieee80211_sta_start_scan(struct net_device *dev,
 	}
 
 	local->sta_sw_scanning = 1;
+	local->scan_started = jiffies;
+	printk(KERN_DEBUG "%s: scan%s (%s)\n", dev->name,
+	       ssid ? " for one SSID" : "", current->comm);
 
 	rcu_read_lock();
 	list_for_each_entry_rcu(sdata, &local->interfaces, list) {
