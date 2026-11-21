@@ -93,7 +93,9 @@ rescue installing itself, then slot A, no empty slot tried; the same image again
 image recorded with slot A holding another system: the rescue into slot B, B started and good, A left as it was;
 `zd1 slot install`: the rescue, slot B holding the version, B started.] [HW 2026-11-21, a17a268 from v0.1.5 with
 `zd1 install`: after the MCU flash "[boot] a boot image not seen before", the rescue into slot A, A started and good,
-the host sending nothing; the module restarted: "[boot] starting slot A".]
+the host sending nothing; the module restarted: "[boot] starting slot A". Then `zd1 update os.bcd` of 6ff19c2 (the
+same stub and kernel, another rescue: a new `zd1.image`), the record set: "a boot image not seen before", the rescue
+into slot B (v0.1.5's), B started and good, A kept; 7.2 min, the system 64 s of it.]
 It is as new as the app partition's last install (BL2, the relay); a speaker whose slots both fail still runs and
 plays, and takes an update as from a slot (`zd1 update` writes the good slot, `updater.md`).
 
