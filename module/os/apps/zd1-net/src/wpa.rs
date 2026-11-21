@@ -1,9 +1,11 @@
 //! The Wi-Fi supplicant's control socket (wpa_supplicant's `ctrl_interface`, what `wpa_cli` speaks): a datagram
 //! socket of our own, a request one datagram, its reply one back; after `ATTACH` the supplicant's events come on the
 //! same socket, each prefixed with its level, `<N>`. [`Watch`] turns what the supplicant says into the State
-//! record's Wi-Fi fields (`docs/module/settings.md`), and answers a scan.
-//! Under Wireless Extensions the supplicant's `SIGNAL_POLL` says -80 dBm whatever the level: the signal is the BSS
-//! table's (`BSS BSSID`, its `level`), which the scan before the association filled in [HW 2026-10-24].
+//! record's Wi-Fi fields (`docs/module/settings.md`), answers a scan, and looks for a better access point of the
+//! joined network when the signal is weak ([`Roam`]).
+//! The signal is the supplicant's `SIGNAL_POLL` (the kernel's wireless statistics: the last frame from the AP); with
+//! Nokia's mac80211 that said -80 dBm whatever the level [HW 2026-10-24], so the BSS table's (`BSS BSSID`, its
+//! `level`, from the last scan) stays the fallback.
 
 use std::io::{self, ErrorKind};
 use std::os::unix::net::UnixDatagram;
@@ -90,6 +92,11 @@ impl Wpa {
     pub fn scan(&mut self) -> io::Result<()> {
         self.request("SCAN").map(|_| ())
     }
+
+    /// The level of the joined AP's frames now (`SIGNAL_POLL`'s RSSI), None if the supplicant has none.
+    pub fn signal(&mut self) -> io::Result<Option<i32>> {
+        Ok(parse_signal_poll(&self.request("SIGNAL_POLL")?))
+    }
 }
 
 impl Drop for Wpa {
@@ -125,6 +132,12 @@ pub fn parse_status(s: &str) -> Status {
         }
     }
     st
+}
+
+/// `SIGNAL_POLL`'s `RSSI=` when it is a level (the supplicant's "invalid" is -9999).
+pub fn parse_signal_poll(s: &str) -> Option<i32> {
+    let rssi: i32 = s.lines().find_map(|l| l.strip_prefix("RSSI=")?.trim().parse().ok())?;
+    (-120..0).contains(&rssi).then_some(rssi)
 }
 
 /// A network from `SCAN_RESULTS`.
@@ -251,6 +264,7 @@ pub struct Watch {
     pub bssid: String,
     /// -dBm (0: unknown).
     pub signal: u8,
+    roam: Roam,
 }
 
 impl Watch {
@@ -264,6 +278,7 @@ impl Watch {
             keyed: false,
             bssid: String::new(),
             signal: 0,
+            roam: Roam::default(),
         }
     }
 
@@ -311,11 +326,21 @@ impl Watch {
         self.ssid = if joining { String::from_utf8_lossy(&st.ssid).into_owned() } else { String::new() };
         self.keyed = joining && st.key_mgmt.contains("PSK");
         self.bssid = if state == WifiState::Connected { st.bssid } else { String::new() };
-        self.signal = if state == WifiState::Connected {
-            w.level(&self.bssid).ok().flatten().map(|l| (-l).clamp(0, 255) as u8).unwrap_or(0)
+        let level = if state == WifiState::Connected {
+            w.signal().ok().flatten().or_else(|| w.level(&self.bssid).ok().flatten())
         } else {
-            0
+            None
         };
+        self.signal = level.map(|l| (-l).clamp(0, 255) as u8).unwrap_or(0);
+        if self.roam.weak(Instant::now(), level) {
+            // another access point of this network in the last scan: a new scan lets the supplicant move to it
+            let ssid = st.ssid.clone();
+            let others = w.scan_results().is_ok_and(|n| n.iter().any(|n| n.ssid == ssid && n.bssid != self.bssid));
+            if others {
+                zd1_sys::kmsg("[wifi]", &format!("{} dBm: a scan for a better access point", level.unwrap_or(0)));
+                let _ = w.scan();
+            }
+        }
     }
 
     fn off(&mut self) {
@@ -337,6 +362,37 @@ impl Watch {
         if let Some(w) = self.wpa.as_mut() {
             let _ = w.scan();
         }
+    }
+}
+
+/// When to look for a better access point of the joined network: the AP's frames below `ROAM_BELOW` for `ROAM_AFTER`,
+/// then again every `ROAM_EVERY` while they stay there. A scan takes the radio off the AP's channel for ~0.7 s (the
+/// kernel's log has each), so none while the signal is good; the supplicant (built with roaming) moves to another AP
+/// of the network that its scan finds stronger.
+#[derive(Default)]
+pub struct Roam {
+    /// Weak since then (None: not joined, or good).
+    since: Option<Instant>,
+    last: Option<Instant>,
+}
+
+pub const ROAM_BELOW: i32 = -70;
+pub const ROAM_AFTER: Duration = Duration::from_secs(10);
+pub const ROAM_EVERY: Duration = Duration::from_secs(120);
+
+impl Roam {
+    /// With each poll: the joined AP's level (None: not joined); true when it is time for a scan.
+    pub fn weak(&mut self, now: Instant, level: Option<i32>) -> bool {
+        if !level.is_some_and(|l| l < ROAM_BELOW) {
+            *self = Roam::default();
+            return false;
+        }
+        let since = *self.since.get_or_insert(now);
+        if now.duration_since(since) < ROAM_AFTER || self.last.is_some_and(|t| now.duration_since(t) < ROAM_EVERY) {
+            return false;
+        }
+        self.last = Some(now);
+        true
     }
 }
 
@@ -455,6 +511,31 @@ mod tests {
             "CTRL-EVENT-CONNECTED - Connection to 02:00:00:00:00:0a completed"
         );
         assert_eq!(event("OK\n"), None);
+    }
+
+    #[test]
+    fn signal_poll() {
+        assert_eq!(parse_signal_poll("RSSI=-63\nLINKSPEED=0\nNOISE=-256\nFREQUENCY=0\n"), Some(-63));
+        assert_eq!(parse_signal_poll("RSSI=-9999\nLINKSPEED=0\n"), None);
+        assert_eq!(parse_signal_poll("FAIL\n"), None);
+    }
+
+    #[test]
+    fn roam() {
+        let t0 = Instant::now();
+        let at = |s: u64| t0 + Duration::from_secs(s);
+        let mut r = Roam::default();
+        assert!(!r.weak(at(0), Some(-60)), "good: no scan");
+        assert!(!r.weak(at(1), Some(-75)), "weak, not for long yet");
+        assert!(!r.weak(at(10), Some(-75)));
+        assert!(r.weak(at(11), Some(-75)), "weak for 10 s: a scan");
+        assert!(!r.weak(at(12), Some(-75)), "then not again at once");
+        assert!(!r.weak(at(130), Some(-75)));
+        assert!(r.weak(at(131), Some(-75)), "every 2 min while weak");
+        assert!(!r.weak(at(132), Some(-65)), "good again: the wait starts over");
+        assert!(!r.weak(at(133), Some(-75)));
+        assert!(r.weak(at(143), Some(-75)));
+        assert!(!r.weak(at(150), None), "not joined");
     }
 
     #[test]
