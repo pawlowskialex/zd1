@@ -20,6 +20,9 @@ against their binary. Then our changes, in this repository's history:
 - The join's log (`mlme.c`, `main.c`): each authentication attempt with the channel, the scan state, the TX queue and
   the beacons heard from the AP since the last one; each authentication, association and deauthentication frame
   with whether the AP acknowledged it (the firmware's status). For the rejoin problem (`docs/status.md`).
+- A scan asked for while joining (the supplicant asks for one when the AP disassociates a stale association of
+  ours), served once joined, gets the last scan's results if that is less than 10 s old: a new one would take the
+  radio off the AP's channel just after the join.
 
 Nokia's own two changes are not here: the WPS element in scan results (`wps_ie=`) and freeing BSS entries not heard
 for a while. Nothing here uses the first.
