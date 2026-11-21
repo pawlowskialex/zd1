@@ -100,7 +100,7 @@ late frame or an xrun; on the ARM its decode takes 3.4 ms of wall time per 7.3 m
 
 **Volume.** A sender asks for the receiver's volume (GET /info `initialVolume`, AirPlay 1 GET_PARAMETER) before it
 sets its own: it is told the speaker's level (zd1-linkd's last `volume`, as AirPlay dB: 0-100 % -> -30..0 dB of the
-range up to the MCU's cap, step 40 of 71). A Mac's system output starts at it; a Mac's Music sets the volume it
+range up to the MCU's cap: step 71 unless set lower). A Mac's system output starts at it; a Mac's Music sets the volume it
 remembers for the speaker at the first play anyway [2026-10-28]. Every volume a sender sets is logged (`sender's
 volume`). Samples go out at full scale; the speaker's DSP sets the level.
 

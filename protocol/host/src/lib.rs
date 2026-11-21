@@ -1064,7 +1064,7 @@ messages! {
         amp_idle_s: u16,
         /// the highest volume step (1 .. 71) on every source, whatever sets it: the speaker's keys, the remote, this
         /// link's `Volume`, the computer's volume (USB), the network's senders (their whole range maps onto 0 .. this).
-        /// A lower cap takes the volume down to it at once. 40 unless set; the heat cap holds it lower while hot
+        /// A lower cap takes the volume down to it at once. 71 unless set; the heat cap holds it lower while hot
         volume_cap: u8,
     }
     0x5C PrefsReply {

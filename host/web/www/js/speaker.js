@@ -130,11 +130,11 @@ export function drawBehaviour() {
   if ($("vol-cap").options.length === 0) {
     $("vol-cap").replaceChildren(
       ...Array.from({ length: 71 }, (_, k) =>
-        el("option", { value: k + 1, textContent: `${k + 1} of 71${k + 1 === 40 ? " (the default)" : ""}` }),
+        el("option", { value: k + 1, textContent: `${k + 1} of 71${k + 1 === 71 ? " (the default)" : ""}` }),
       ),
     );
   }
-  if (document.activeElement !== $("vol-cap")) $("vol-cap").value = i.volume_cap || 40;
+  if (document.activeElement !== $("vol-cap")) $("vol-cap").value = i.volume_cap || 71;
 }
 
 export function drawAdvanced() {

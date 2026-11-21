@@ -1,3 +1,4 @@
+#include <delay.h>
 #include "log.h"
 #include "tick.h"
 #include "inputs.h"
@@ -23,8 +24,15 @@ static uint32_t source_amp_idle_ms(void) { return (uint32_t)g_settings.amp_idle_
 #define RAMP_FAST_MS    40   /* around a USB stream's (re)start */
 #define CYCLE_COMMIT_MS 1000 /* stock timer 0x1a: switch 1 s after the last short ON/OFF press */
 /* ours */
-#define AMP_HOLD_MS   30000 /* standby: the supply stays on (muted) this long, so a quick wake doesn't cycle it */
-#define USER_GUARD_MS 8000  /* after a source picked by hand, nothing switches by itself */
+#define AMP_HOLD_MS 30000 /* standby: the supply stays on (muted) this long, so a quick wake doesn't cycle it */
+/* After a source switch the DAC stays muted this long before its unmute, so the input switch's glitch dies out in
+ * silence. Stock holds 500 ms; the transients are over well before that. */
+#define SWITCH_SETTLE_MS 100
+/* Before a source change or standby the volume fades to mute in this many steps (the DSP's index is ~1 dB a step), so
+ * what plays fades out instead of being cut: a cut is a click */
+#define FADE_STEPS    8
+#define FADE_STEP_MS  4
+#define USER_GUARD_MS 8000 /* after a source picked by hand, nothing switches by itself */
 /* a USB stream takes the speaker (or wakes it) after sounding this long without a break, so that a system sound
  * doesn't (an alert lasts up to ~1.4 s [HW 2026-10-27]) */
 #define USB_TAKE_MS    3000
@@ -171,6 +179,16 @@ static void set_vol(unsigned idx) {
     applied = idx;
     dsp_set_volume_index(idx);
 }
+/* the volume from where it is down to mute in FADE_STEPS (~30 ms, blocking): then the amp and the DAC mute in silence */
+static void fade_out(void) {
+    unsigned from = applied;
+    if (from >= DSP_VOL_MUTE)
+        return;
+    for (unsigned i = 1; i <= FADE_STEPS; i++) {
+        set_vol(from + (DSP_VOL_MUTE - from) * i / FADE_STEPS);
+        delay_ms(FADE_STEP_MS);
+    }
+}
 /* May the amp be on? Every supply-on and unmute asks: allowed (the interlock: Amp deny), no protection tripped (ERROR
  * waits for ON/OFF), a source running and not asleep for silence (the idle rule) */
 static bool amp_may_run(void) { return amp_allowed && state == SYS_RUN && phase != RUN_ASLEEP; }
@@ -238,6 +256,8 @@ static void announce(void) {
     log_putc('\n');
 }
 static void enter_standby(void) {
+    fade_out(); /* what plays fades out, then the output stage mutes in silence: no cut, no click */
+    amp_mute();
     if (cur == SRC_WIFI)
         wifi_leave();     /* stock: DE + E1 */
     codec_dac_mute(true); /* stock FUN_800138f0 */
@@ -256,12 +276,15 @@ static void enter_run(source_t s, uint32_t now) {
         enter_standby();
         return;
     }
+    /* A switch between sources leaves the amp as it is: its mute line clicks each way, whatever plays. What plays
+     * fades out, the DAC mutes, the input switches, and the amp hears digital silence meanwhile; from standby the amp
+     * is muted already. */
+    fade_out();
     if (cur == SRC_WIFI && s != SRC_WIFI && state == SYS_RUN)
         wifi_leave(); /* stock: DE + E1 */
     bool to_wifi = s == SRC_WIFI && !(cur == SRC_WIFI && state == SYS_RUN);
     codec_dac_mute(true); /* stock FUN_800138f0 on every source switch */
     set_vol(DSP_VOL_MUTE);
-    amp_mute();
     route(s);
     cur = s;
     state = SYS_RUN;
@@ -396,7 +419,7 @@ void source_init(void) {
 }
 
 /* Every volume change comes here: the keys, the remote, the host link, the USB host, the module. The volume cap
- * (Prefs, 40 unless set) is the one limit on all of them; the heat cap (protect.c) holds the volume lower while hot.
+ * (Prefs, 71 unless set) is the one limit on all of them; the heat cap (protect.c) holds the volume lower while hot.
  * flash: LED feedback (keys, IR, the host link's Key; not the USB host or AirPlay). */
 static void volume_step(int delta, bool flash) {
     int v = (int)g_settings.vol_step + delta, max = g_settings.vol_cap;
@@ -789,6 +812,8 @@ void source_poll(uint32_t now) {
         switch (phase) {
         case RUN_SOFTSTART: { /* unmute once amp.c's soft start allows it (asked every pass until it does) */
             bool may = amp_may_run();
+            if (may && !tick_after(now, t_phase + SWITCH_SETTLE_MS))
+                break; /* the switch's transients die out while the DAC is muted first */
             if (may && !amp_unmute())
                 break;
             if (may)
