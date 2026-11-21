@@ -646,7 +646,7 @@ static void req_boot(bool set) {
         if (q.boot.restart)
             dm870_op(ZD1H_MOD_OP_RESTART, 0);
     }
-    modboot_state(&r.boot.good, &r.boot.next, &r.boot.last, &r.boot.trial, &r.boot.failed);
+    modboot_state(&r.boot.good, &r.boot.next, &r.boot.last, &r.boot.trial, &r.boot.failed, &r.boot.installing);
     reply(&ZD1H_BOOT_REPLY, &r.boot);
 }
 

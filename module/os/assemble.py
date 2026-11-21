@@ -166,7 +166,9 @@ def payload(cfg, parts, initrd, out, cmdline_extra="", how="slots"):
     it), so a commit that changes none of them builds the same one. The OS reports it (the State record's `boot`),
     `zd1 image` reads it from a .bcd, and the page rewrites the app partition only when they differ. The initramfs
     isn't in it: it is the release's system (the rescue), new in every release, and a rescue older than the slots is
-    still the way back (it runs, plays and takes updates); it is renewed whenever the stub or the kernel are."""
+    still the way back (it runs, plays and takes updates); it is renewed whenever the stub or the kernel are.
+    Then `zd1.image=ID`, the whole image's identity (the same with the initramfs): the stub tells it to our MCU, which
+    keeps the last one and starts a new image's rescue to install itself into a slot (mcu/src/modboot.c)."""
     k = cfg["kernel"]
     args = {"slots": ["--slots"], "dev": ["--initrd-at", "0x61000000"]}[how] + ["--deflate-kernel"]
     files = [os.path.join(parts, "boot", "linuxboot.bin"), os.path.join(REPO, k["image"]), initrd]
@@ -175,7 +177,9 @@ def payload(cfg, parts, initrd, out, cmdline_extra="", how="slots"):
         for n, p in zip(("stub", "kernel"), files):
             shutil.copyfile(p, os.path.join(d, n))
         open(os.path.join(d, "how"), "w").write(" ".join(args) + "\n" + cmdline + "\n")
-        cmdline += " zd1.boot=" + content_id(d)
+        boot = content_id(d)
+        shutil.copyfile(initrd, os.path.join(d, "initramfs"))
+        cmdline += " zd1.boot=" + boot + " zd1.image=" + content_id(d)
     sh(PY + [os.path.join(HERE, "mkpayload.py")] + files + [out] + args + ["--cmdline", cmdline])
 
 

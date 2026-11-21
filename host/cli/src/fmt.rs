@@ -207,7 +207,13 @@ pub fn boot(r: &msg::BootReply) -> String {
         slot(r.good),
         if r.next != Slot::None { format!("{} (once)", slot(r.next)) } else { "the good one, unless it failed".into() },
         if r.last != Slot::None { slot(r.last) } else { "none asked since the MCU started" },
-        if r.trial { ", not ready yet" } else { "" },
+        if r.installing {
+            ", installing itself into a slot"
+        } else if r.trial {
+            ", not ready yet"
+        } else {
+            ""
+        },
         if failed.is_empty() { "none since the last ready".into() } else { failed.join(", ") }
     )
 }

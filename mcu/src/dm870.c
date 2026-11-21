@@ -266,8 +266,22 @@ bool dm870_reg_read_v(uint8_t reg, uint8_t *buf, uint16_t max, uint16_t *len) {
     return ok;
 }
 
-/* Status booting from our boot stub (reg 0x25 "zd1-boot"): it waits for which system slot to start (reg 0xC4, 0
- * until answered; modboot.c). Answered once per boot of the stub; true if answered now. */
+/* Status booting from our boot stub (reg 0x25 "zd1-boot ID", ID its image's: 12 hex digits, the first 8 kept): it
+ * waits for which system slot to start (reg 0xC4, 0 until answered; modboot.c). Answered once per boot of the stub;
+ * true if answered now. */
+static uint32_t stub_image(uint16_t n) {
+    uint32_t id = 0;
+    unsigned p = sizeof ZD1_BOOT_IDENT - 1, k = 0;
+    if (n <= p || nbuf[p] != ' ')
+        return 0;
+    for (p++; p < n && k < 8; p++, k++) {
+        uint8_t c = nbuf[p], d = c >= '0' && c <= '9' ? c - '0' : c >= 'a' && c <= 'f' ? c - 'a' + 10 : 0xFF;
+        if (d == 0xFF)
+            break;
+        id = id << 4 | d;
+    }
+    return k == 8 ? (id ? id : 1) : 0;
+}
 static uint32_t bu_t, bu_deadline;
 static bool stub_check(uint16_t st) {
     uint16_t n = 0, v = 0xFFFF;
@@ -276,9 +290,10 @@ static bool stub_check(uint16_t st) {
     if (!dm870_reg_read_v(ZD1_REG_VERSION_IMAGE, nbuf, sizeof nbuf, &n) || n < sizeof ZD1_BOOT_IDENT - 1 ||
         memcmp(nbuf, ZD1_BOOT_IDENT, sizeof ZD1_BOOT_IDENT - 1))
         return false;
+    uint32_t image = stub_image(n);
     if (!dm870_reg_read(ZD1_REG_BOOT, &v) || v != 0)
         return false;
-    uint16_t a = modboot_answer();
+    uint16_t a = modboot_answer(image);
     dm870_reg_write(ZD1_REG_BOOT, (uint8_t)(a >> 8), (uint8_t)a);
     bu_deadline = tick_ms() + modboot_deadline_ms();
     return true;

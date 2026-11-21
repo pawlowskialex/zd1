@@ -1123,7 +1123,7 @@ messages! {
     /// Change which slot the module starts (`BootOp`); `restart`: power-cycle the module now so it does.
     0x18 Boot -> BootReply [gated, 1000 ms] {
         op: BootOp,
-        /// TRY: A, B or RESCUE; GOOD: A or B; INSTALL: none
+        /// TRY: A, B or RESCUE; GOOD: A or B; INSTALL: none (a boot image the MCU hasn't seen does it by itself)
         slot: Slot,
         /// restart the module now (as `Module RESTART`)
         restart: bool,
@@ -1192,6 +1192,9 @@ messages! {
         trial: bool,
         /// the slots that didn't get ready since the last ready: bit 0 A, 1 B, 2 the rescue
         failed: u8,
+        /// `last` is the rescue, told to install itself into a slot (a boot image the MCU hadn't seen, or `Boot
+        /// INSTALL`): the slot it fills is tried next
+        installing: bool,
     }
     /// The speaker's behaviour, kept in the EEPROM: switching to a USB stream by itself, how long a silent source
     /// keeps the amp on, the highest volume on every source. `change` says which fields to set

@@ -224,6 +224,7 @@ field 0x57 1 enum:Slot next
 field 0x57 2 enum:Slot last
 field 0x57 3 bool trial
 field 0x57 4 u8 failed
+field 0x57 5 bool installing
 msg 0x1C request Prefs
 field 0x1C 0 u8 change
 field 0x1C 1 bool auto_switch

@@ -347,10 +347,11 @@ consts! {
         SLOT_B: u8 = 2,
         /// The rescue initramfs in the app partition.
         RESCUE: u8 = 3,
-        /// The rescue, to install the system it is into a slot and start that slot once (host `Boot INSTALL`): the
-        /// stub adds `zd1.install` (docs/module/storage.md, The rescue).
+        /// The rescue, to install the system it is into a slot and start that slot once (a boot image the MCU hasn't
+        /// seen, or host `Boot INSTALL`): the stub adds `zd1.install` (docs/module/storage.md, The rescue).
         INSTALL: u8 = 4,
-        /// What the stub calls itself on 0x25 (the MCU answers only it).
+        /// What the stub calls itself on 0x25 (the MCU answers only it), then a space and its image's identity
+        /// (`zd1.image=`, 12 hex digits; none from a stub before it): a new one makes the answer INSTALL, once.
         IDENT: &str = "zd1-boot",
         /// The whole 0xC4 word our MCU writes while it waits for the module after powering it (its knock): the stub
         /// stays silent on the link until it hears it. B&W's bootloaders never knock, and to the ZD1L's a module that

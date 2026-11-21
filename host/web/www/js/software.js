@@ -420,9 +420,9 @@ export function drawReleases() {
 }
 
 /// The speaker to a release, each part only if it isn't there already. With a boot image to write: the boot image
-/// and the MCU firmware in one visit to the bootloader (host/core's `install`), else the boot image alone, then the
-/// release's system from it (its rescue installs itself into a slot: no second upload); without one: the system into
-/// a slot, then the MCU firmware.
+/// and the MCU firmware in one visit to the bootloader (host/core's `install`), else the boot image alone; either
+/// way the release's system comes from it (the MCU has a boot image it hasn't seen install its rescue into a slot: no
+/// second upload); without one: the system into a slot, then the MCU firmware.
 export async function updateTo(rel, needs, finishing = false) {
   if (app.sp.link() === "net") return updateOverNetwork(rel, needs);
   const has = (k) => needs.includes(k);
@@ -430,10 +430,10 @@ export async function updateTo(rel, needs, finishing = false) {
     ? needs
     : has("mcu")
       ? ["boot+mcu"] // `install`: both from the bootloader, then the system from the rescue
-      : ["boot", has("system") && "rescue"].filter(Boolean);
+      : ["boot"]; // the system from its rescue as well
   const parts = {
     system: "the module's system goes into the slot that doesn't run (the old one stays as the way back)",
-    boot: "the module's boot image (its start-up, and the release's system as its rescue) is rewritten through the bootloader, about 6 minutes (keep this tab in front: a browser slows a tab in the background)",
+    boot: "the module's boot image (its start-up, and the release's system as its rescue) is rewritten through the bootloader, about 6 minutes (keep this tab in front: a browser slows a tab in the background); then the release's system goes from it into the slot that doesn't run (the old one stays as the way back)",
     mcu: "the main board's firmware (a backup of it first: a download, and a copy in this browser)",
     "boot+mcu":
       "the module's boot image (its start-up, and the release's system as its rescue) and the main board's firmware (a backup of it first: a download, and a copy in this browser) go on from the bootloader, about 7 minutes (keep this tab in front: a browser slows a tab in the background); then the release's system goes from the boot image into the slot that doesn't run (the old one stays as the way back)",
@@ -484,8 +484,12 @@ export async function updateTo(rel, needs, finishing = false) {
         const bcd = await fetchImage(rel.bcd);
         const sp = app.sp;
         app.sp = null; // through the bootloader: this connection ends
-        await sp.updateBoot(bcd);
-        said.push(`boot image ${rel.bcd.version}`);
+        const r = await sp.updateBoot(bcd);
+        if (r.outcome === "fellBack")
+          throw new Error(
+            `The boot image went on, but its system in slot ${r.slot.toUpperCase()} didn't come up: the module is back on slot ${r.now.toUpperCase()}.`,
+          );
+        said.push(`boot image ${rel.bcd.version}, system ${r.os.split(" ")[1]} in slot ${r.now.toUpperCase()}`);
         if (more) await again("its boot image");
       } else if (k === "mcu") {
         events.phase(++n, steps.length, "the main board's firmware");

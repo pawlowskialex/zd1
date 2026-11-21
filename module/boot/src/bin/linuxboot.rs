@@ -11,7 +11,8 @@
 //!      it writes while it waits for the module): B&W's bootloaders never knock, and to the ZD1L's a module that
 //!      answers and then goes quiet for the kernel's boot is lost (docs/mcu/bootloader-hbl.md);
 //!   2. with the slots flag (header +0x2C bit 0: the module OS's image, docs/module/storage.md): ask the MCU what to
-//!      start, if it knocked within 3 s. We say "zd1-boot" on reg 0x25 and wait up to 5 s for its answer on reg 0xC4
+//!      start, if it knocked within 3 s. We say "zd1-boot ID" on reg 0x25 (ID: `zd1.image=` from our command line,
+//!      the whole image's identity: a new one is installed from the rescue) and wait up to 5 s for its answer on reg 0xC4
 //!      (b0: slot A, slot B, the rescue, or the rescue to install itself into a slot: `zd1.install`; b1: the good
 //!      slot; our MCU firmware, mcu/src/modboot.c). A slot is the root file system (JFFS2 on its
 //!      MTD partition, read-only: the initramfs is left out), the rescue is the initramfs. No answer (the MCU's
@@ -46,6 +47,24 @@ const KNOCK_US: u32 = 3_000_000; // our MCU knocks every 200 ms while it waits
 /// The slots' MTD partitions (module/os/os.toml mtdparts: mtd1 system-a, mtd2 system-b).
 const ROOT_A: &[u8] = b" root=/dev/mtdblock1 rootfstype=jffs2 ro zd1.slot=a";
 const ROOT_B: &[u8] = b" root=/dev/mtdblock2 rootfstype=jffs2 ro zd1.slot=b";
+
+/// "zd1-boot ID\0", ID the image's identity from our command line (`zd1.image=`, module/os/assemble.py); without one
+/// "zd1-boot\0". Read before anything overwrites the header.
+fn ident() -> [u8; 32] {
+    const KEY: &[u8] = b"zd1.image=";
+    let mut v = [0u8; 32];
+    v[..boot::IDENT.len()].copy_from_slice(boot::IDENT.as_bytes());
+    let line = unsafe { core::slice::from_raw_parts((HDR + 0x40) as *const u8, 383) };
+    let line = &line[..line.iter().position(|&b| b == 0).unwrap_or(line.len())];
+    if let Some(at) = line.windows(KEY.len()).position(|w| w == KEY) {
+        let id = &line[at + KEY.len()..];
+        let n = id.iter().take(12).take_while(|b| b.is_ascii_hexdigit()).count();
+        let p = boot::IDENT.len();
+        v[p] = b' ';
+        v[p + 1..p + 1 + n].copy_from_slice(&id[..n]);
+    }
+    v
+}
 
 fn hdr(off: usize) -> u32 {
     unsafe { read_volatile((HDR + off) as *const u32) }
@@ -151,7 +170,9 @@ fn main() -> ! {
     }
     let mut link = zd1_boot::link_up();
     link.set_muted(true);
-    link.set_value(reg::VERSION_IMAGE, b"zd1-boot\0");
+    let id = ident();
+    let n = id.iter().position(|&b| b == 0).unwrap_or(id.len() - 1) + 1; // with its NUL, as before
+    link.set_value(reg::VERSION_IMAGE, &id[..n]);
     link.set_status(zd1_link::spi::spec::status::BOOTING);
     say(&mut link, "\n[linuxboot] zd1 Linux boot stub\n");
     if hdr(0) != MAGIC {

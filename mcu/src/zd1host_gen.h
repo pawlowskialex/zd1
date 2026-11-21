@@ -311,7 +311,7 @@ typedef struct { bool open; uint16_t taken; uint32_t lost; } zd1h_console_reply_
 /* PipeData: Data into the bulk pipe as if it came on the bulk endpoint: the emulator's build only (its USB carries EP0 only). `Error BUSY` while both buffers are full: send it again. */
 typedef struct { uint16_t data_len; uint8_t data[240]; } zd1h_pipe_data_t;
 /* BootReply */
-typedef struct { uint8_t good; uint8_t next; uint8_t last; bool trial; uint8_t failed; } zd1h_boot_reply_t;
+typedef struct { uint8_t good; uint8_t next; uint8_t last; bool trial; uint8_t failed; bool installing; } zd1h_boot_reply_t;
 /* Prefs: The speaker's behaviour, kept in the EEPROM: switching to a USB stream by itself, how long a silent source keeps the amp on, the highest volume on every source. `change` says which fields to set (0: only read them). The amp's lock is `Amp`. */
 typedef struct { uint8_t change; bool auto_switch; uint16_t amp_idle_s; uint8_t volume_cap; } zd1h_prefs_t;
 /* PrefsReply */
@@ -466,8 +466,8 @@ static const zd1h_field_t zd1h_console_reply_fields[] = { { ZD1H_T_BOOL, 0, offs
 static const zd1h_msg_t ZD1H_CONSOLE_REPLY = { 0x5D, 3, zd1h_console_reply_fields, sizeof(zd1h_console_reply_t) };
 static const zd1h_field_t zd1h_pipe_data_fields[] = { { ZD1H_T_BYTES, 240, offsetof(zd1h_pipe_data_t, data), offsetof(zd1h_pipe_data_t, data_len) } };
 static const zd1h_msg_t ZD1H_PIPE_DATA = { 0x1B, 1, zd1h_pipe_data_fields, sizeof(zd1h_pipe_data_t) };
-static const zd1h_field_t zd1h_boot_reply_fields[] = { { ZD1H_T_U8, 0, offsetof(zd1h_boot_reply_t, good), 0 }, { ZD1H_T_U8, 0, offsetof(zd1h_boot_reply_t, next), 0 }, { ZD1H_T_U8, 0, offsetof(zd1h_boot_reply_t, last), 0 }, { ZD1H_T_BOOL, 0, offsetof(zd1h_boot_reply_t, trial), 0 }, { ZD1H_T_U8, 0, offsetof(zd1h_boot_reply_t, failed), 0 } };
-static const zd1h_msg_t ZD1H_BOOT_REPLY = { 0x57, 5, zd1h_boot_reply_fields, sizeof(zd1h_boot_reply_t) };
+static const zd1h_field_t zd1h_boot_reply_fields[] = { { ZD1H_T_U8, 0, offsetof(zd1h_boot_reply_t, good), 0 }, { ZD1H_T_U8, 0, offsetof(zd1h_boot_reply_t, next), 0 }, { ZD1H_T_U8, 0, offsetof(zd1h_boot_reply_t, last), 0 }, { ZD1H_T_BOOL, 0, offsetof(zd1h_boot_reply_t, trial), 0 }, { ZD1H_T_U8, 0, offsetof(zd1h_boot_reply_t, failed), 0 }, { ZD1H_T_BOOL, 0, offsetof(zd1h_boot_reply_t, installing), 0 } };
+static const zd1h_msg_t ZD1H_BOOT_REPLY = { 0x57, 6, zd1h_boot_reply_fields, sizeof(zd1h_boot_reply_t) };
 static const zd1h_field_t zd1h_prefs_fields[] = { { ZD1H_T_U8, 0, offsetof(zd1h_prefs_t, change), 0 }, { ZD1H_T_BOOL, 0, offsetof(zd1h_prefs_t, auto_switch), 0 }, { ZD1H_T_U16, 0, offsetof(zd1h_prefs_t, amp_idle_s), 0 }, { ZD1H_T_U8, 0, offsetof(zd1h_prefs_t, volume_cap), 0 } };
 static const zd1h_msg_t ZD1H_PREFS = { 0x1C, 4, zd1h_prefs_fields, sizeof(zd1h_prefs_t) };
 static const zd1h_field_t zd1h_prefs_reply_fields[] = { { ZD1H_T_BOOL, 0, offsetof(zd1h_prefs_reply_t, auto_switch), 0 }, { ZD1H_T_BOOL, 0, offsetof(zd1h_prefs_reply_t, amp_auto), 0 }, { ZD1H_T_U16, 0, offsetof(zd1h_prefs_reply_t, amp_idle_s), 0 }, { ZD1H_T_U8, 0, offsetof(zd1h_prefs_reply_t, volume_cap), 0 } };

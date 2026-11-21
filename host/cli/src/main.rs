@@ -655,15 +655,14 @@ async fn run<B: Bus>(bus: &B, cli: Cli) -> Result<i32> {
             }
             if image.starts_with(b"bCoD") {
                 let mut m = open(false).await?;
-                // a module in BL2 with no image to start (a boot image update that stopped): BL2's XModem, no relay
-                if m.call(&msg::Info).await?.mod_state == zd1_host::spec::ModState::Bl2 {
-                    install::boot_image_in_bl2(&mut m, &image).await?;
+                // a module in BL2 with no image to start (a boot image update that stopped): BL2's XModem, no relay;
+                // either way the MCU then has the boot image's system (its rescue) install itself into a slot
+                let done = if m.call(&msg::Info).await?.mod_state == zd1_host::spec::ModState::Bl2 {
+                    install::boot_image_in_bl2(&mut m, &image).await?
                 } else {
-                    install::boot_image(bus, Some(m), &image, ev.clone()).await?;
-                    m = open(false).await?;
-                }
-                // its system, which the boot image carries as the rescue, into a slot
-                return Ok(match install::system_from_rescue(&mut m).await? {
+                    install::boot_image(bus, Some(m), &image, ev.clone()).await?
+                };
+                return Ok(match done.outcome {
                     update::Outcome::FellBack { .. } => 1,
                     _ => 0,
                 });

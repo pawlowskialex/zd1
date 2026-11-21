@@ -150,6 +150,19 @@ fn set(o: &Object, k: &str, v: impl Into<JsValue>) {
     let _ = Reflect::set(o, &k.into(), &v.into());
 }
 
+/// How a system went into a slot: { outcome: "running" | "fellBack", slot, now } (`now`: the slot the module runs).
+fn outcome(o: &update::Outcome) -> Object {
+    let (outcome, slot, now) = match *o {
+        update::Outcome::FellBack { slot, now } => ("fellBack", slot, now),
+        update::Outcome::Running(s) | update::Outcome::Installed(s) => ("running", s, s),
+    };
+    let r = Object::new();
+    set(&r, "outcome", outcome);
+    set(&r, "slot", slot.to_string());
+    set(&r, "now", now.to_string());
+    r
+}
+
 /// A message as a JavaScript object: its fields, and `msg` its name. Enums as their values (the page has the names:
 /// `spec()`).
 fn to_js(m: &Msg) -> JsValue {
@@ -651,47 +664,40 @@ impl Speaker {
     }
 
     /// The module's boot image (our .bcd: stub, kernel, rescue) through the bootloader's relay, then our firmware
-    /// started again and the module up on its good slot (`install::boot_image`). This connection ends: connect again
-    /// afterwards. { os }: what the module runs. USB only.
+    /// started again, which has the new boot image's rescue install itself into a slot (`install::boot_image`). This
+    /// connection ends: connect again afterwards. { os, outcome, slot, now } ([`outcome`]). USB only.
     #[wasm_bindgen(js_name = updateBoot)]
     pub async fn update_boot(&self, bcd: Vec<u8>) -> Result<JsValue, JsValue> {
         let m = self.usb().await?; // it asks for DFU and leaves USB: this connection ends
         self.closed.set(true);
-        let i = install::boot_image(&NusbBus, Some(m), &bcd, self.ev.clone()).await.map_err(js_err)?;
-        let o = Object::new();
-        set(&o, "os", i.mod_os);
+        let d = install::boot_image(&NusbBus, Some(m), &bcd, self.ev.clone()).await.map_err(js_err)?;
+        let o = outcome(&d.outcome);
+        set(&o, "os", d.info.mod_os);
         Ok(o.into())
     }
 
-    /// The boot image's system into a slot, after a boot image (`install::system_from_rescue`): the rescue started
-    /// once installs itself into the slot that isn't the good one, which then starts once. { outcome: "running" |
-    /// "fellBack", slot, now }. USB only; our MCU firmware of the same release.
+    /// The boot image's system into a slot, asked for (`install::system_from_rescue`, a rescue with no system in a
+    /// slot): the rescue started once installs itself into the slot that isn't the good one, which then starts once.
+    /// { outcome, slot, now } ([`outcome`]). USB only.
     #[wasm_bindgen(js_name = installFromRescue)]
     pub async fn install_from_rescue(&self) -> Result<JsValue, JsValue> {
         let mut m = self.usb().await?;
         let r = install::system_from_rescue(&mut m).await;
         self.put(Conn::Usb(m));
-        let o = Object::new();
-        let (outcome, slot, now) = match r.map_err(js_err)? {
-            update::Outcome::FellBack { slot, now } => ("fellBack", slot, now),
-            update::Outcome::Running(s) | update::Outcome::Installed(s) => ("running", s, s),
-        };
-        set(&o, "outcome", outcome);
-        set(&o, "slot", slot.to_string());
-        set(&o, "now", now.to_string());
-        Ok(o.into())
+        Ok(outcome(&r.map_err(js_err)?).into())
     }
 
     /// The module's boot image (our .bcd) through BL2's XModem, for a module in BL2 with no image to start (a boot
-    /// image update that stopped: `install::boot_image_in_bl2`); then the module up on its good slot. The connection
-    /// stays. { os }: what the module runs. USB only.
+    /// image update that stopped: `install::boot_image_in_bl2`); then its system from the rescue, as after the relay.
+    /// The connection stays. { os, outcome, slot, now } ([`outcome`]). USB only.
     #[wasm_bindgen(js_name = updateBootInBl2)]
     pub async fn update_boot_in_bl2(&self, bcd: Vec<u8>) -> Result<JsValue, JsValue> {
         let mut m = self.usb().await?;
         let r = install::boot_image_in_bl2(&mut m, &bcd).await;
         self.put(Conn::Usb(m));
-        let o = Object::new();
-        set(&o, "os", r.map_err(js_err)?.mod_os);
+        let d = r.map_err(js_err)?;
+        let o = outcome(&d.outcome);
+        set(&o, "os", d.info.mod_os);
         Ok(o.into())
     }
 
