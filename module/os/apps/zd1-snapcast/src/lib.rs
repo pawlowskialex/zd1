@@ -400,6 +400,8 @@ fn session(
     let wired = on_wired(host);
     let (vol_tx, vol_rx) = mpsc::channel::<String>();
     let client_info = |v: u32| format!(r#"{{"volume":{v},"muted":false}}"#);
+    // the speaker's volume went to the server before its first ServerSettings could be read
+    let mut told_server = false;
     {
         let mut st = shared.lock().unwrap();
         st.wired = wired;
@@ -419,6 +421,7 @@ fn session(
         if let Some(v) = st.speaker.level() {
             st.volume = Some(v);
             let _ = vol_tx.send(client_info(v));
+            told_server = true;
         }
     }
     let mac = mac();
@@ -469,7 +472,14 @@ fn session(
                 st.latency_ms = (num("latency").unwrap_or(0) + o.latency_ms).clamp(0, st.buffer_ms);
                 st.muted = proto::json_field(&j, "muted") == Some("true");
                 let v = num("volume").unwrap_or(100).clamp(0, 100) as u32;
-                if st.volume != Some(v) {
+                if std::mem::take(&mut told_server) {
+                    // the answer to the hello: the volume the server had stored for this client (100 for a new
+                    // one), sent before it read our ClientInfo with the speaker's. The speaker's stays, and the
+                    // server takes it from the ClientInfo
+                    if st.volume != Some(v) {
+                        tracing::info!(server = v, speaker = st.volume, "the speaker's volume kept");
+                    }
+                } else if st.volume != Some(v) {
                     // the server's volume -> the speaker
                     st.volume = Some(v);
                     st.speaker.send(&format!("volume {v}"));
