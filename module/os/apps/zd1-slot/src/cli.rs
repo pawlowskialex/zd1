@@ -1,8 +1,9 @@
 //! zd1-slot: the system slots (docs/module/storage.md; the library has how they work). What they hold: `zd1-ctl status`.
 //!   zd1-slot mtd NAME           the MTD number of partition NAME (system-a, system-b, data, vendor), its nodes made
 //!   zd1-slot install SLOT ID    a gzip'd cpio of a root on stdin into SLOT (a, b), stamped ID
-//!   zd1-slot install-self SLOT ID [--start]   the system that runs from RAM (the rescue) into SLOT, unless it holds
-//!                               ID already; --start: then the MCU starts SLOT once (zd1-linkd's `try`)
+//!   zd1-slot install-self SLOT ID [--start]   the system that runs from RAM (the rescue) into SLOT, stamped ID,
+//!                               unless its stamp is ID already; --start: then the MCU starts SLOT once (zd1-linkd's
+//!                               `try`)
 //!   zd1-slot erase NAME         partition NAME (system-a, system-b, data) erased as from the factory, but for the
 //!                               cleanmarkers (bad blocks left alone); refused while it is mounted. The vendor's: never
 //! Which slot starts is the MCU's (`zd1 slot`).
@@ -28,7 +29,7 @@ pub fn main() {
         }
         ["install-self", s, id, rest @ ..] if matches!(rest, [] | ["--start"]) => {
             let Some(s) = Slot::parse(s) else { die("SLOT: a or b") };
-            if stamp(s).and_then(|st| st.split(' ').next().map(str::to_string)).as_deref() == Some(*id) {
+            if stamp(s).as_deref() == Some(*id) {
                 println!("slot {}: holds {id} already", s.name());
             } else {
                 match install_running(s, id) {

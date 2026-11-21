@@ -182,17 +182,18 @@ fn switched_off(c: &Ctx, switch: &str, setting: &str) -> Option<String> {
 /// copies itself into a slot, then the MCU starts that slot once (ready makes it the good one): when the slot an
 /// update would take holds no system, or when asked (`zd1.install`: our MCU firmware on a boot image it hasn't
 /// recorded, or the host's `Boot INSTALL`, so that the boot image's system needs no second upload) into the
-/// slot that isn't the good one (the good one if that holds none); a slot holding this version already is started
-/// without a copy.
+/// slot that isn't the good one (the good one if that holds none); a slot holding this system already is started
+/// without a copy. Which system: its stamp, the one an update of the release's system.cpio.gz gives (the bytes, not
+/// only the version's name: two builds of one commit differ; `zd1.system=` on the command line).
 fn self_install(c: &Ctx) -> Start {
     let b = zd1_slot::boot();
     if !c.boot.switch("zd1.rescue") || b.running.is_some() {
         return Start::Off("not the full system booted as the rescue".into());
     }
-    let id = zd1_sys::OsRelease::read("/etc/os-release").get("VERSION_ID").to_string();
+    let id = b.rescue_stamp(zd1_sys::OsRelease::read("/etc/os-release").get("VERSION_ID"));
     if c.boot.switch("zd1.install") {
         let good = b.target();
-        let holds = |s: zd1_slot::Slot| zd1_slot::stamp(s).is_some_and(|st| st.split(' ').next() == Some(&id));
+        let holds = |s: zd1_slot::Slot| zd1_slot::stamp(s).as_deref() == Some(id.as_str());
         let to = match [good.other(), good].into_iter().find(|&s| holds(s)) {
             Some(s) => s,
             None if zd1_slot::stamp(good).is_none() => good,

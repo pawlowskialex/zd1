@@ -73,7 +73,7 @@ INSTALL`: the rescue installs itself), with `--restart` to start it now (`BootSt
 `zd1.slot`). With the slot an update would take empty (slots erased under a recorded boot image, or an older MCU firmware), init's
 `self-install` copies
 the running root into it (`zd1-slot install-self`: file by file, staying on the root's own file system, mount points
-empty, the two device nodes a slot has), stamps it with the version and asks the MCU to start that slot once
+empty, the two device nodes a slot has), stamps it as an update of the release's `system.cpio.gz` would (below) and asks the MCU to start that slot once
 (`zd1-slot install-self SLOT ID --start`: zd1-linkd's `try`, reg 0xD8); ready makes it the good slot, else the MCU
 goes back to the rescue. That is a speaker whose MCU firmware didn't send it to install itself (below) and whose
 slots are empty [HW 2026-11-19 without the start,
@@ -84,7 +84,7 @@ installed (10161 KB of files, 8660 KB of the partition used)" 29 s into its star
 image identity the stub last named (`zd1.image`'s first 8 hex digits, the EEPROM's third settings page,
 `mcu/src/modboot.c`). A stub naming another one, or none recorded (a speaker new to our firmware, or from a release
 before this), gets `boot::INSTALL` once: the rescue with `zd1.install`, which copies itself into the slot that isn't
-the good one (the good one if that holds none; none if a slot holds its version already), then asks the MCU to start
+the good one (the good one if that holds none; none if a slot holds this system already: its stamp), then asks the MCU to start
 that slot once (`zd1-slot install-self SLOT ID --start`: zd1-linkd's `try`, reg 0xD8); ready makes it the good slot,
 else the MCU goes back. The record is kept from then on, so the MCU's own updates (from the module, over DFU), which
 leave the boot image as it was, don't install its rescue over a newer system. The host only waits for it
@@ -97,6 +97,16 @@ image recorded with slot A holding another system: the rescue into slot B, B sta
 the host sending nothing; the module restarted: "[boot] starting slot A". Then `zd1 update os.bcd` of 6ff19c2 (the
 same stub and kernel, another rescue: a new `zd1.image`), the record set: "a boot image not seen before", the rescue
 into slot B (v0.1.5's), B started and good, A kept; 7.2 min, the system 64 s of it.]
+**Which system a slot holds** is its stamp, the same whichever way it came: "VERSION SHA LENGTH", the version and the
+SHA-256 (12 hex digits) and length of the release's `system.cpio.gz`. A USB or network update stamps the image it
+got; the rescue, the one its boot image names (`zd1.system=SHA:LENGTH` on the command line, `module/os/assemble.py`).
+So the rescue skips the copy only into a slot holding these bytes, not another build of the same commit (CI builds
+on x86_64-linux, a developer's Mac on aarch64-linux: same version, other bytes) [HW 2026-11-21: v0.2.0 from the public
+page found slot A stamped `f0d93af` by an earlier rescue of a local build and only started it, before stamps carried
+the bytes] [EMU 2026-11-21: a fresh speaker's rescue stamped slot A "f0d93af-dirty c76c4086b9f4 5242844", the stamp
+`zd1 image` gives that build's system.cpio.gz; the same image again: "holds ... already", A started; slot A's record
+set to the version alone: the rescue into slot B, B started and good]. A rescue from before `zd1.system` stamps the
+version alone.
 It is as new as the app partition's last install (BL2, the relay); a speaker whose slots both fail still runs and
 plays, and takes an update as from a slot (`zd1 update` writes the good slot, `updater.md`).
 

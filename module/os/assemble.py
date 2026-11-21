@@ -30,6 +30,7 @@ The images (emu/img/os/; docs/module/storage.md):
 
 import argparse
 import gzip
+import hashlib
 import os
 import shutil
 import subprocess
@@ -159,10 +160,10 @@ def cpio(root, out, name, slot=False):
     log("  %s %d B (%d B gzip)" % (name, len(raw), os.path.getsize(c + ".gz")))
 
 
-def payload(cfg, parts, initrd, out, cmdline_extra="", how="slots"):
+def payload(cfg, parts, initrd, out, cmdline_extra="", how="slots", system=None):
     """The stub + kernel + initramfs as one app payload (mkpayload.py). `how`: "slots", the stub asking the MCU what to
     start, a system slot or the initramfs (--slots); "dev", the emulator's direct boot, the initramfs started as it is,
-    a plain one loaded lower.
+    a plain one loaded lower. `system`: the system.cpio.gz the initramfs is the same system as.
     The kernel goes in deflated (half the size): the stub inflates it. The command line ends in `zd1.boot=ID`, the boot
     image's identity: the content_id of the stub, the kernel and how they start (the arguments, the command line before
     it), so a commit that changes none of them builds the same one. The OS reports it (the State record's `boot`),
@@ -170,7 +171,10 @@ def payload(cfg, parts, initrd, out, cmdline_extra="", how="slots"):
     isn't in it: it is the release's system (the rescue), new in every release, and a rescue older than the slots is
     still the way back (it runs, plays and takes updates); it is renewed whenever the stub or the kernel are.
     Then `zd1.image=ID`, the whole image's identity (the same with the initramfs): the stub tells it to our MCU, which
-    keeps the last one and starts a new image's rescue to install itself into a slot (mcu/src/modboot.c)."""
+    keeps the last one and starts a new image's rescue to install itself into a slot (mcu/src/modboot.c).
+    Then `zd1.system=SHA:LENGTH`, the release's system.cpio.gz (SHA-256, 12 hex digits): the rescue stamps the slot
+    it copies itself into as an update of that image would be ("VERSION SHA LENGTH", zd1-slot), so a slot holds
+    this system only if it holds these bytes, whatever the version is called (two builds of a commit differ)."""
     k = cfg["kernel"]
     args = {"slots": ["--slots"], "dev": ["--initrd-at", "0x61000000"]}[how] + ["--deflate-kernel"]
     files = [os.path.join(parts, "boot", "linuxboot.bin"), os.path.join(REPO, k["image"]), initrd]
@@ -182,6 +186,9 @@ def payload(cfg, parts, initrd, out, cmdline_extra="", how="slots"):
         boot = content_id(d)
         shutil.copyfile(initrd, os.path.join(d, "initramfs"))
         cmdline += " zd1.boot=" + boot + " zd1.image=" + content_id(d)
+    if system:
+        data = open(system, "rb").read()
+        cmdline += " zd1.system=%s:%d" % (hashlib.sha256(data).hexdigest()[:12], len(data))
     sh(PY + [os.path.join(HERE, "mkpayload.py")] + files + [out] + args + ["--cmdline", cmdline])
 
 
@@ -232,7 +239,8 @@ def assemble(cfg, parts, out, version, built, base_nand, mcu_app):
         variants.append(("-debug", img["debug"]["cmdline"]))
     for suffix, cmdline in variants:
         p = os.path.join(out, "payload%s.bin" % suffix.replace("-", "_"))
-        payload(cfg, parts, os.path.join(out, "initramfs-full.cpio.gz"), p, cmdline)
+        initrd, system = os.path.join(out, "initramfs-full.cpio.gz"), os.path.join(out, "system.cpio.gz")
+        payload(cfg, parts, initrd, p, cmdline, system=system)
         bcd_image(p, os.path.join(out, "os%s.bcd" % suffix), "zd1", built)
     bcd_image(os.path.join(out, "payload.bin"), os.path.join(out, "os-zd1l.bcd"), "zd1l", built)
     install(base_nand, os.path.join(out, "os.bcd"), os.path.join(out, "nand_os.bin"))
