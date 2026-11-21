@@ -2840,7 +2840,8 @@ static void ieee80211_rx_mgmt_beacon(struct net_device *dev,
 		unsigned int gap = jiffies_to_msecs(jiffies - ifsta->beacon_at);
 
 		if ((ifsta->flags & IEEE80211_STA_ASSOCIATED) && ifsta->beacons && gap > 500 &&
-		    !local->sta_sw_scanning)
+		    !local->sta_sw_scanning &&
+		    !time_after(local->last_scan_completed, ifsta->beacon_at))
 			printk(KERN_DEBUG "%s: no beacon from the AP for %u ms (now %d dBm)\n",
 			       dev->name, gap, rx_status->ssi);
 		ifsta->beacons++;
@@ -3294,6 +3295,21 @@ void ieee80211_sta_work(struct work_struct *work)
 	if (ifsta->state != IEEE80211_AUTHENTICATE &&
 	    ifsta->state != IEEE80211_ASSOCIATE &&
 	    test_and_clear_bit(IEEE80211_STA_REQ_SCAN, &ifsta->request)) {
+		/*
+		 * zd1: a scan asked for while joining, served once joined, would take the radio off the AP's channel
+		 * for most of a second just after the join (wpa_supplicant asks for one when the AP disassociates a
+		 * stale association of ours). With a scan less than 10 s old the request gets those results.
+		 */
+		if (ifsta->state == IEEE80211_ASSOCIATED && local->last_scan_completed &&
+		    time_before(jiffies, local->last_scan_completed + 10 * HZ)) {
+			union iwreq_data wrqu;
+
+			printk(KERN_DEBUG "%s: scan asked for while joining: "
+			       "answered with the last one's results\n", dev->name);
+			memset(&wrqu, 0, sizeof(wrqu));
+			wireless_send_event(dev, SIOCGIWSCAN, &wrqu, NULL);
+			return;
+		}
 		if (ifsta->scan_ssid_len)
 			ieee80211_sta_start_scan(dev, ifsta->scan_ssid, ifsta->scan_ssid_len);
 		else
