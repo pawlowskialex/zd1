@@ -32,7 +32,7 @@ export async function installZd1l(addr) {
   if (
     !(await ask(
       `Install ${rel.version} on the Lightning model?`,
-      `An alpha: this release has run on a Lightning model only in the emulator. The release's file goes to the ` +
+      `The release's file goes to the ` +
         `speaker's updater at ${addr}, which installs it on both of its chips and restarts it with our software: about ` +
         "ten minutes. Keep its power and its cable in meanwhile. If it doesn't come up, B&W's own file goes back on " +
         "the same way.",

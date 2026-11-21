@@ -17,8 +17,7 @@ images offered under `images/` instead (`index.json` names them). The three view
   on B&W's software, the two models side by side (the choice cards), each with its steps and its action: the
   Zeppelin Air into its bootloader (the key-hold) and Connect, the page installing from there; the Lightning model
   through its BL2's web updater over Ethernet (`zd1l.js`: its address and Install, offered when a release has its
-  `.fw`; an alpha until this image has run on a real one: the card says so, and Install waits for a tick that the
-  person will try one); the release it installs named above them. Help: a speaker that isn't listed (cable, browsers, WinUSB on
+  `.fw`); the release it installs named above them. Help: a speaker that isn't listed (cable, browsers, WinUSB on
   Windows for B&W's bootloader, the Linux udev rule), a stopped update, what its light says, the way back to B&W's
   software for each model.
 - **Over the network** the app view is the same, less what is USB's (the MCU's firmware, the boot image, the console,
