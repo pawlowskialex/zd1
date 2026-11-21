@@ -1,12 +1,12 @@
-// The Lightning model's first install from the page (docs/protocol/net.md, The ZD1L's first install): the release's
-// .fw to the updater its network module runs from key-hold (BL2's web updater), with the requests bl2web sends
-// (tools/zeppelin/knos/bl2web.py, seen working on ZD1Ls). BL2 sends no CORS headers, so the browser lets the page send
-// them but read none of the answers ("no-cors"): no progress, no refusal. The page then waits for our software to
-// answer at the address.
+// The first install on a model whose BL2 takes a B&W .fw, from the page (docs/protocol/net.md, The first install on a
+// ZD1L or an A7): the release's .fw for that model to the updater its network module runs from key-hold (BL2's web
+// updater), with the requests bl2web sends (tools/zeppelin/knos/bl2web.py, seen working on ZD1Ls). BL2 sends no CORS
+// headers, so the browser lets the page send them but read none of the answers ("no-cors"): no progress, no refusal.
+// The page then waits for our software to answer at the address.
 import { newIdentity, Speaker } from "../pkg/zd1_web.js";
 import { bl2Upload } from "./bl2.js";
 import { connectNet, events, job } from "./connection.js";
-import { fetchImage, releases } from "./software.js";
+import { FW_MODELS, fetchImage, fwRelease } from "./software.js";
 import { ask, notice } from "./ui.js";
 
 /// Our software at `addr`: its network link answers the session's handshake.
@@ -24,28 +24,30 @@ async function ours(addr) {
   }
 }
 
-export async function installZd1l(addr) {
+export async function installFw(model, addr) {
   addr = addr.trim();
   if (!addr) return;
-  const rel = releases.find((r) => r.fw);
-  if (!rel) return notice("No release offers the Lightning model's file to this page.", "warn");
+  const m = FW_MODELS[model],
+    found = fwRelease(model);
+  if (!found) return notice(`No release offers ${m.name}'s file to this page.`, "warn");
+  const { rel, img } = found;
   if (
     !(await ask(
-      `Install ${rel.version} on the Lightning model?`,
-      `An alpha: this release has run on a Lightning model only in the emulator. The release's file goes to the ` +
-        `speaker's updater at ${addr}, which installs it on both of its chips and restarts it with our software: about ` +
-        "ten minutes. Keep its power and its cable in meanwhile. If it doesn't come up, B&W's own file goes back on " +
-        "the same way.",
+      `Install ${rel.version} on ${m.name}?`,
+      `${m.status} The release's file goes to the speaker's updater at ${addr}, which installs it on both of its ` +
+        "chips and restarts it with our software: about ten minutes. Keep its power and its cable in meanwhile. If " +
+        `it doesn't come up, B&W's own file (${m.stock}) goes back on the same way.`,
       "Install",
     ))
   )
     return;
-  const done = await job(`The Lightning model: ${rel.version}`, false, async () => {
+  const title = m.name[0].toUpperCase() + m.name.slice(1);
+  const done = await job(`${title}: ${rel.version}`, false, async () => {
     events.phase(1, 3, "the release's file");
-    const fw = await fetchImage(rel.fw);
+    const fw = await fetchImage(img);
     events.phase(2, 3, `to the speaker's updater at ${addr}`);
     try {
-      await bl2Upload(addr, fw, rel.fw.file.split("/").pop());
+      await bl2Upload(addr, fw, img.file.split("/").pop());
     } catch {
       throw new Error(
         `Nothing answers at ${addr}: is the speaker's light white (its updater), its cable in, and the address the one ` +

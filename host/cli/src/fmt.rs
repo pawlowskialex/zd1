@@ -1,6 +1,6 @@
 //! What the MCU's replies say, for a person.
 
-use zd1_host::spec::{Player, Slot, WifiSecurity};
+use zd1_host::spec::{Model, Player, Slot, WifiSecurity};
 use zd1_host::{msg, speaker};
 
 fn yn(b: bool) -> &'static str {
@@ -8,6 +8,20 @@ fn yn(b: bool) -> &'static str {
 }
 
 const RECEIVERS: [Player; 3] = [Player::Airplay, Player::Spotify, Player::Snapcast];
+
+/// Which speaker, as the MCU firmware tells it (from its bootloader: mcu/src/model.c).
+pub fn model(r: &msg::InfoReply) -> String {
+    match r.model {
+        Model::Zd1 => "Zeppelin Air".into(),
+        Model::Zd1l => "Zeppelin Air with Lightning".into(),
+        Model::A7 => "A7".into(),
+        _ if r.hbl_hwid != 0 => format!(
+            "unknown: B&W's bootloader says HWID 0x{:02X}; the DSP is not set up and the amp stays off",
+            r.hbl_hwid
+        ),
+        _ => "not reported (an older MCU firmware)".into(),
+    }
+}
 
 pub fn info(r: &msg::InfoReply) -> String {
     let up = r.uptime_ms / 1000;
@@ -21,6 +35,7 @@ pub fn info(r: &msg::InfoReply) -> String {
             up % 60,
             r.rcause
         ),
+        format!("model    {}", model(r)),
         format!(
             "speaker  {}, source {}, volume {}/71, bass {}, amp {}",
             r.state,

@@ -41,7 +41,7 @@ int audio_init(void) {
     if (rc)
         worst = rc;
     rc = dsp_init();
-    rc_line("DSP download (24 steps)", rc);
+    rc_line("DSP download", rc);
     if (rc && !worst)
         worst = rc;
     rc = codec_init();

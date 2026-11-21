@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Flash an image through a DM870 BL2's web updater (the module must be in BL2: `zd1 module esc`, or a ZD1L's key-hold).
 
-Two BL2s, told apart by /1000/firmware_status.asp (only the 2012 one has it):
+Two kinds of BL2, told apart by /1000/firmware_status.asp (only the later ones have it):
 
 Our ZD1's (2010): a .bcd. POST multipart/form-data, file field `appFirmware`, to /goform/formPostHandler -> BL2 checks
 the .bcd (CRCs, HWID, version) and shows bl_confirm_download.asp -> GET /goform/formDownloadConfirmationHandler?button=
@@ -14,6 +14,11 @@ the confirm's button and pages; an empty body = accepted, `_HWID` = the wrong ha
 expert confirm (/goform/formExpertDownloadConfirmationHandler: a modified image burns only through it), then
 firmware_status.asp until <finished>: the MCU part first (to the MCU's bootloader: from key-hold only), then the
 module. A plain power cycle afterwards starts the new firmware if BL2 doesn't reset by itself.
+
+The A7's (web version 1.16.1.2, between the two; docs/models/a7.md) has firmware_status.asp too, without <Model>, and
+its own page confirms through the plain formDownloadConfirmationHandler: whether it has the expert confirm is not
+known. So before any upload this reads the web version (scripts/firmware.js) and asks for firmware_expert.asp, and
+stops if that page isn't there: nothing is uploaded or written. The dry run (no --yes) reports both.
 
 The user settings are erased by BL2 like any update.
 
@@ -115,11 +120,22 @@ def zd1l(host, port, img, filename, yes):
     cur = re.search(r"<current>(.*?)</current>", body, re.S)
     cur = cur.group(1) if cur else ""
     print(
-        "ZD1L BL2 (%s): installed module %s, MCU %s (%s)"
-        % (tag(body, "Model"), tag(cur, "version"), tag(cur, "host"), tag(cur, "time"))
+        "BL2 with the update pages (model %s): installed module %s, MCU %s (%s)"
+        % (tag(body, "Model") or "not given", tag(cur, "version"), tag(cur, "host"), tag(cur, "time"))
     )
+    _, _, js = get(host, port, "/scripts/firmware.js")
+    web = re.search(r"Web Version:?\s*([\d.]+)", js)
+    print("its web version: %s" % (web.group(1) if web else "not found"))
+    # the expert confirm, the one a modified image burns through on the ZD1L's: asked for before anything is uploaded
+    st_x, _, _ = get(host, port, "/1000/firmware_expert.asp")
+    print("expert confirm page: HTTP %d" % st_x)
     if img[:4] == b"bCoD":
         sys.exit("this BL2 takes a B&W .fw (the module .bcd and the MCU .dmb): tools/zeppelin/fw/bwfw.py --pack")
+    if st_x != 200:
+        sys.exit(
+            "this BL2 has no expert confirm page (an A7's older BL2?): nothing uploaded, nothing written. "
+            "Report this output (docs/models/a7.md)"
+        )
     if not yes:
         sys.exit("dry run. re-run with --yes to upload %s (%d bytes) and flash it." % (filename, len(img)))
     get(host, port, "/1000/firmware_prepare.asp")

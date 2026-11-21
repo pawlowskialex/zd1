@@ -181,12 +181,43 @@ pub fn eth0_mac() -> Option<Mac> {
     parse_mac(&std::fs::read_to_string("/sys/class/net/eth0/address").ok()?)
 }
 
-/// The speaker's name before anyone chose one: "Zeppelin Air XXXXXX" from its MAC's last three bytes, like the stock
-/// module.
-pub fn default_name(mac: Option<Mac>) -> String {
+/// Which speaker the module is in (docs/models/README.md), by the HWID in its persistent parameters: the factory's,
+/// which B&W's MCU bootloader on the ZD1L and the A7 writes again at every start (zd1-persparam's `unit_model`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Model {
+    /// the Zeppelin Air (HWID 0xBD, also BL2's default)
+    Zd1,
+    /// the Zeppelin Air with Lightning (0xBE)
+    Zd1l,
+    /// the A7 (0xA7)
+    A7,
+}
+
+impl Model {
+    /// The model of a HWID; any other is taken as the Zeppelin Air's (BL2 rebuilds a blank store with 0xBD).
+    pub fn from_hwid(hwid: u8) -> Model {
+        match hwid {
+            0xBE => Model::Zd1l,
+            0xA7 => Model::A7,
+            _ => Model::Zd1,
+        }
+    }
+
+    /// What B&W call it to senders and on the network (the factory CnE's `ModelName` and `DeviceName`).
+    pub fn product(self) -> &'static str {
+        match self {
+            Model::Zd1 | Model::Zd1l => "Zeppelin Air",
+            Model::A7 => "A7",
+        }
+    }
+}
+
+/// The speaker's name before anyone chose one: the model's ("Zeppelin Air", "A7") and its MAC's last three bytes, like
+/// the stock module.
+pub fn default_name(mac: Option<Mac>, model: Model) -> String {
     match mac {
-        Some(m) => format!("Zeppelin Air {:02X}{:02X}{:02X}", m[3], m[4], m[5]),
-        None => "Zeppelin Air".into(),
+        Some(m) => format!("{} {:02X}{:02X}{:02X}", model.product(), m[3], m[4], m[5]),
+        None => model.product().into(),
     }
 }
 
@@ -211,8 +242,13 @@ mod tests {
         assert_eq!(format_mac(&m), "ec:66:d1:00:00:42");
         assert_eq!(parse_mac("ec:66:d1:00:00"), None);
         assert_eq!(parse_mac("ec:66:d1:00:00:4"), None);
-        assert_eq!(default_name(Some(m)), "Zeppelin Air 000042");
-        assert_eq!(default_name(None), "Zeppelin Air");
+        assert_eq!(default_name(Some(m), Model::Zd1), "Zeppelin Air 000042");
+        assert_eq!(default_name(Some(m), Model::Zd1l), "Zeppelin Air 000042");
+        assert_eq!(default_name(Some(m), Model::A7), "A7 000042");
+        assert_eq!(default_name(None, Model::Zd1), "Zeppelin Air");
+        assert_eq!(Model::from_hwid(0xBD), Model::Zd1);
+        assert_eq!(Model::from_hwid(0xBE), Model::Zd1l);
+        assert_eq!(Model::from_hwid(0xA7), Model::A7);
     }
 
     #[test]

@@ -8,8 +8,8 @@ mcu/result (mcu/flash.sh) and emu/img/os (`nix build -o emu/img/os .#os-image`),
   zeppelin web [--port 8765] [--key KEY]     then open http://localhost:8765 in Chrome, Edge or Brave
 
 --key: the system also signed with KEY (`zd1 keygen`; its .pub on the speaker, /data/zd1/keys), for the update over
-the network (docs/protocol/net.md). The Lightning model's .fw comes along when it is built (`nix build -o
-emu/img/zd1l-fw .#zd1l-fw`).
+the network (docs/protocol/net.md). The Lightning model's and the A7's .fw come along when they are built (`nix build
+-o emu/img/zd1l-fw .#zd1l-fw`, `nix build -o emu/img/a7-fw .#a7-fw`).
 """
 
 import argparse
@@ -27,7 +27,8 @@ IMAGES = {
     "system": os.path.join(REPO, "emu", "img", "os", "system.cpio.gz"),  # nix build -o emu/img/os .#os-image
     "mcu": os.path.join(REPO, "mcu", "result", "zd1.hex"),  # mcu/flash.sh, nix build .#mcu
     "bcd": os.path.join(REPO, "emu", "img", "os", "os.bcd"),
-    "fw": os.path.join(REPO, "emu", "img", "zd1l-fw", "zd1l.fw"),  # nix build -o emu/img/zd1l-fw .#zd1l-fw
+    "fw-zd1l": os.path.join(REPO, "emu", "img", "zd1l-fw", "zd1l.fw"),  # nix build -o emu/img/zd1l-fw .#zd1l-fw
+    "fw-a7": os.path.join(REPO, "emu", "img", "a7-fw", "a7.fw"),  # nix build -o emu/img/a7-fw .#a7-fw
 }
 SIGNED = os.path.join(REPO, "emu", "img", "system.signed")  # --key: made at the start, gitignored with emu/img
 
@@ -51,7 +52,11 @@ def manifest():
     }
     for line in out.splitlines():
         j = json.loads(line)
-        rel[j.pop("kind")] = j
+        k = j.pop("kind")
+        if k == "fw":  # by model, as the hosted manifest has them (.github/workflows/pages.yml)
+            rel.setdefault("fw", {})[j.get("model", "zd1l")] = j
+        else:
+            rel[k] = j
     if "system" in rel:
         rel["version"] = rel["system"]["version"]
     return {"releases": [rel]}

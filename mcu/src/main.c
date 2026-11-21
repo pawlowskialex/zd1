@@ -14,6 +14,7 @@
 #include "log.h"
 #include "selfdfu.h"
 #include "mcufw.h"
+#include "model.h"
 #include "dm870.h"
 #include "update.h"
 #include "audio.h"
@@ -73,6 +74,7 @@ int main(void) {
     board_safe_gpio();
     selfdfu_capture_boot_state();
     mcufw_report(); /* into the log: the preloader's last run, if it ran */
+    model_detect(); /* which speaker, before USB (its name there) and the DSP (its setup) */
     board_usb_mux_device();
     blog(6);
     udc_start();

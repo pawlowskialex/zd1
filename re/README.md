@@ -12,6 +12,7 @@ rebuilds them from `blobs/` into `re/gen/IMAGE/` (gitignored), in minutes per im
 | Image | What, in `re/gen/IMAGE/` |
 |---|---|
 | `mcu-app` | the stock MCU app (`image.bin`, below): `decomp_all.c`, `decomp_resolved.c`, `decomp_orphans.c`, `disasm.txt`, `functions.txt` |
+| `mcu-app-a7` | the A7's stock MCU app (`AZ1_v2-04-77.dmb` from `blobs/a7/a7v20477.fw`, at 0x80008000 behind zeros), the same exports (`docs/models/a7.md`) |
 | `mcu-updater`, `mcu-updater-win` | B&W's DFU updater (Mac `updater.dylib`, Windows `DFUflasher.exe`, from `downloads/`), decompiled: the source for `host/core/src/dfu.rs` |
 | `module-app`, `module-pre` | the stock module app (KnOS) and its preloader, from `app_DMP.bcd`: `decomp_all.c`, `functions.txt`, `string_xrefs.txt` |
 | `bl2`, `bl2-pre` | the module's BL2 and its preloader, from `bl2.bin`, the same exports |
@@ -86,7 +87,9 @@ WPS.
   BL2, `UpdDump` = the DFU updater; `AddrDec` decompiles chosen MCU addresses, on a copy of the mcu-app project).
 - Decompile post-processing: `resolve_decomp.py`, `fn.py`, `fnnames.py`, `fnof.py`, `xref.py`, `callsites.py`,
   `dis.py`, `ramdump.py`, `extract_dsp.py` (the MCU image, through `avr32img.py`: flash words, strings, the `.data`
-  mapping of RAM 0x8-0x3630); `dump_regtable.py` (the module app).
+  mapping of RAM from 0x8, its load address and end read from the app's start-up code: the ZD1's and the A7's);
+  `dump_regtable.py` (the module app). `extract_dsp.py --model a7` writes `re/mcu/extracted/dsp-a7/` (the A7's DSP
+  download); `dspcmp.py` compares two DSP setups, `mcutracecmp.py` two MCU traces.
 - The runnable tools graduated to `tools/zeppelin/` (bcd/nand/cne parsers, mkbcd, the Intel HEX reader, the kernel's kallsyms).
 
 ## Privacy

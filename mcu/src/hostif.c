@@ -30,6 +30,7 @@
 #include "protect.h"
 #include "ir.h"
 #include "dsp.h"
+#include "model.h"
 #include "usbaudio.h"
 #include "wifi.h"
 #include "udi_audio.h"
@@ -278,6 +279,8 @@ static void info_fill(zd1h_info_reply_t *r) {
     r->amp_idle_s = (uint16_t)(g_settings.amp_idle_min * 60u);
     r->volume_cap = g_settings.vol_cap;
     r->console_open = modcon_host();
+    r->model = (uint8_t)model();
+    r->hbl_hwid = model_hbl_hwid();
 }
 
 static void diag_fill(zd1h_diag_reply_t *r) {
@@ -772,8 +775,9 @@ static void run(const uint8_t *b, uint16_t n) {
         if (!decoded(id == ZD1H_ID_DFU ? &ZD1H_DFU : &ZD1H_REBOOT, b, n))
             return;
         if (id == ZD1H_ID_DFU && mcufw_hbl_present()) {
-            /* the ZD1L's bootloader has no USB: DFU would end in it, with nothing on USB (docs/mcu/bootloader-hbl.md) */
-            error(ZD1H_ERR_ARG, "ZD1L: no USB DFU here; its MCU firmware comes from the module");
+            /* B&W's "Net HBL" (the ZD1L's, the A7's) has no USB: DFU would end in it, with nothing on USB
+             * (docs/mcu/bootloader-hbl.md; the A7's is inferred to be the same: docs/models/a7.md) */
+            error(ZD1H_ERR_ARG, "no USB DFU on this model: its MCU firmware comes from the module");
             return;
         }
         ok();

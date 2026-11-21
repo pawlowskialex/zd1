@@ -121,12 +121,27 @@ def our_mcu():
     return mcu_flash(os.path.join(d, "zd1emu.bin"), os.path.join(IMG, "mcu-emu.bin"))
 
 
+def our_mcu_on(model):
+    """Our MCU firmware's emulator build behind another model's bootloader: the ZD1L's "Net HBL", or the A7's stand-in
+    (the same with the A7's HWID: tools/zeppelin/fw/bwfw.py, hbl_standin), the app at 0x80008000. The firmware takes
+    its model from that bootloader (mcu/src/model.c)."""
+    sys.path.insert(0, os.path.join(REPO, "tools"))
+    from zeppelin.fw import bwfw
+
+    d = nix_out("mcu-emu", os.path.join(IMG, "mcu-emu"))
+    out = os.path.join(IMG, "mcu-emu-%s.bin" % model)
+    open(out, "wb").write(bwfw.flash(open(os.path.join(d, "zd1emuapp.bin"), "rb").read(), model))
+    return out
+
+
 def mcu_image(spec):
-    """--mcu ours | stock | PATH (a 256 KB raw flash image) -> the flash image."""
+    """--mcu ours | ours-zd1l | ours-a7 | stock | PATH (a 256 KB raw flash image) -> the flash image."""
     if spec == "ours":
         return our_mcu()
+    if spec in ("ours-zd1l", "ours-a7"):
+        return our_mcu_on(spec[5:])
     if spec == "stock":
         return os.path.join(factory_unit(), "mcu_flash.bin")
     if os.path.isfile(spec) and os.path.getsize(spec) == 0x40000:
         return os.path.abspath(spec)
-    sys.exit("--mcu: ours, stock or a 256 KB raw flash image (got %s)" % spec)
+    sys.exit("--mcu: ours, ours-zd1l, ours-a7, stock or a 256 KB raw flash image (got %s)" % spec)

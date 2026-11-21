@@ -5,7 +5,7 @@ import re
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from avr32img import Image, in_data, in_flash  # noqa: E402
+from avr32img import Image, in_flash  # noqa: E402
 
 img = Image(sys.argv[1])
 src = open(sys.argv[2]).read()
@@ -71,7 +71,7 @@ def fmt(v):
         )
     if in_flash(v):
         return f"FUN_{v:08x}"
-    if in_data(v):
+    if img.in_data(v):
         s2 = img.cstr(v, 3, 200, (9, 10, 13))
         if s2 is not None and len(s2) >= 4:
             return f'RAM_{v:04x}/*"{s2[:40]}"*/'

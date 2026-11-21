@@ -26,13 +26,14 @@ jobs:
           set -eu
           v="$(git rev-parse --short HEAD)"
           echo "version=$v" >>"$GITHUB_OUTPUT"
-          mkdir -p out/zd1 out/zd1l
+          mkdir -p out/zd1 out/zd1l out/a7
           cp "$(nix build .#mcu --print-out-paths)/zd1.hex" "out/zd1/zd1-$v.hex"
           os="$(nix build .#os-image --print-out-paths)"
           cp "$os/system.cpio.gz" "out/zd1/system-$v.cpio.gz"
           cp "$os/os.bcd" "out/zd1/os-$v.bcd"
           nix run .#zd1 -- image out/zd1/* > out/zd1/manifest.json
           cp "$(nix build .#zd1l-fw --print-out-paths)/zd1l.fw" "out/zd1l/zd1l-$v.fw"
+          cp "$(nix build .#a7-fw --print-out-paths)/a7.fw" "out/a7/a7-$v.fw"
           sha256sum out/*/*
       - uses: actions/upload-artifact@v4
         id: zd1
@@ -40,12 +41,16 @@ jobs:
       - uses: actions/upload-artifact@v4
         id: zd1l
         with: { name: "zd1l-${{ steps.build.outputs.version }}", path: out/zd1l, retention-days: 30 }
+      - uses: actions/upload-artifact@v4
+        id: a7
+        with: { name: "a7-${{ steps.build.outputs.version }}", path: out/a7, retention-days: 30 }
       - name: link them
         env:
           GH_TOKEN: "${{ github.token }}"
           V: "${{ steps.build.outputs.version }}"
           ZD1: "${{ steps.zd1.outputs.artifact-url }}"
           ZD1L: "${{ steps.zd1l.outputs.artifact-url }}"
+          A7: "${{ steps.a7.outputs.artifact-url }}"
           PR: "${{ github.event.pull_request.number }}"
           SAME_REPO: "${{ github.event.pull_request.head.repo.full_name == github.repository }}"
         run: |
@@ -62,6 +67,8 @@ jobs:
           - [\`zd1l-$V\`]($ZD1L), the Zeppelin Air with Lightning: \`zd1l-$V.fw\`, both chips, for its BL2 web updater
             from key-hold with the expert confirm (\`docs/module/boot-chain.md\`, "The ZD1L BL2"); the way back is
             B&W's \`blobs/zd1l/zd1lv20435.fw\`.
+          - [\`a7-$V\`]($A7), the A7 (untried on one): \`a7-$V.fw\`, both chips, for its BL2 web updater the same way
+            (\`docs/models/a7.md\`); the way back is B&W's \`blobs/a7/a7v20477.fw\`.
           EOF
           cat body.md >>"$GITHUB_STEP_SUMMARY"
           [ -n "$PR" ] && [ "$SAME_REPO" = true ] || exit 0

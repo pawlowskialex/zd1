@@ -24,6 +24,14 @@ const NAME = {
   snapcast: "Snapcast",
   other: "An app",
 };
+/// What the page calls each model (the host link's `Model`, as the MCU firmware tells it).
+const MODEL = {
+  zd1: "Zeppelin Air",
+  zd1l: "Zeppelin Air with Lightning",
+  a7: "A7",
+};
+export const modelOf = (i) => names(app.S.Model)[i?.model];
+
 export const RECEIVERS = [
   ["airplay", "AirPlay"],
   ["spotify", "Spotify Connect"],
@@ -64,9 +72,11 @@ export function draw() {
     player = PLAYER()[i.player];
   const playing = i.state === app.S.SysState.RUN;
   const what = player !== "none" ? player : src;
+  const model = modelOf(i);
   hero({
     mode: "app",
-    title: app.state?.name || i.mod_name || "Zeppelin Air",
+    model: model === "a7" ? "a7" : null,
+    title: app.state?.name || i.mod_name || MODEL[model] || "Zeppelin Air",
     status:
       i.state === app.S.SysState.STANDBY
         ? "Standby"
@@ -100,6 +110,11 @@ export function draw() {
   $("now").textContent = `The amp is ${ampSentence(i)}.`;
   drawBehaviour();
   drawAdvanced();
+  $("model").textContent =
+    MODEL[model] ??
+    (i.hbl_hwid
+      ? `not one this firmware knows (its bootloader says 0x${i.hbl_hwid.toString(16).toUpperCase()}): the amp stays off`
+      : "not reported by this firmware");
   $("fw").textContent = `${i.fw}${i.built ? `, built ${i.built}` : ""}`;
   const ms = names(app.S.ModState)[i.mod_state];
   $("os").textContent =

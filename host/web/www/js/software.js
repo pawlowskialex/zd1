@@ -212,16 +212,46 @@ export async function loadReleases() {
   if (app.bl) drawDfu();
 }
 
-/// The welcome view's Install: the release it puts on, and the Lightning model's form: an alpha, so only when a release
-/// has its file and the person ticked that they'll try one.
+/// The models a B&W .fw installs on (js/fwinstall.js): what the page calls them, how far ours has come on them, B&W's own file (the way back).
+export const FW_MODELS = {
+  zd1l: {
+    name: "the Lightning model",
+    status:
+      "An alpha: this release has run on a Lightning model only in the emulator; an earlier build of ours runs on " +
+      "owners' Lightning models.",
+    stock: "zd1lv20435.fw",
+  },
+  a7: {
+    name: "the A7",
+    status:
+      "Untried: ours has never run on an A7, only in the emulator. Its updater is an older build than the Lightning " +
+      "model's: run bl2web's dry run against it first (the card says how), which tells whether it takes our file.",
+    stock: "a7v20477.fw",
+  },
+};
+
+/// The newest release with a .fw for `model`, and that file.
+export function fwRelease(model) {
+  const rel = releases.find((r) => r.fw?.[model]);
+  return rel && { rel, img: rel.fw[model] };
+}
+
+/// The welcome view's Install: the release it puts on, and the forms of the models a .fw installs (the Lightning
+/// model, the A7): not tried on every model yet, so only when a release has the model's file and the person ticked
+/// that they'll try it.
 export function drawInstall() {
   const rel = releases[0],
-    fw = releases.find((r) => r.fw);
+    missing = [];
+  for (const [model, m] of Object.entries(FW_MODELS)) {
+    const has = !!fwRelease(model);
+    if (!has) missing.push(m.name);
+    $(`${model}-try`).disabled = !has;
+    for (const e of $(`${model}-form`).elements) e.disabled = !has || !$(`${model}-try`).checked;
+  }
   $("install-release").textContent = rel
-    ? `It installs release ${rel.version}${rel.date ? `, ${rel.date}` : ""}.${fw ? "" : " The Lightning model's file isn't in a release yet."}`
+    ? `It installs release ${rel.version}${rel.date ? `, ${rel.date}` : ""}.` +
+      (missing.length ? ` No release has the file for ${missing.join(" or ")} yet.` : "")
     : "No release is offered to this page: the install needs one.";
-  $("zd1l-alpha").disabled = !fw;
-  for (const e of $("zd1l-form").elements) e.disabled = !fw || !$("zd1l-alpha").checked;
 }
 
 /// A release's image, fetched and checked against the manifest's SHA-256.

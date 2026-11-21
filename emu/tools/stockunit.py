@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
-"""A stock Zeppelin Air with Lightning (ZD1L) for the emulator, from the test unit and a B&W ZD1L .fw: the NAND with
-the ZD1L's HWID (0xBE), its BL2 (blobs/zd1l/module/bl2.bin) and the .fw's module image installed as BL2 writes it,
-and the MCU flash with the ZD1L's bootloader ("Net HBL") and the .fw's app at 0x80008000. Emulation only.
+"""A stock Zeppelin Air with Lightning (ZD1L) or A7 for the emulator, from the test unit and a B&W .fw of that model:
+the NAND with the model's HWID (0xBE, 0xA7) and the ZD1L's BL2 (blobs/zd1l/module/bl2.bin) with the .fw's module image
+installed as BL2 writes it, and the MCU flash with the model's bootloader ("Net HBL") and the .fw's app at 0x80008000.
+The A7's BL2 and bootloader were never read: it gets the ZD1L's BL2, and the ZD1L's HBL with the A7's HWID
+(tools/zeppelin/fw/bwfw.py, hbl_standin), what they are inferred to be (docs/models/a7.md). Emulation only.
 
-usage: zd1lunit.py OUTDIR [FILE.fw]        (default: blobs/zd1l/zd1lv20435.fw, B&W's 2.04.35)
+usage: stockunit.py OUTDIR [FILE.fw]        (default: blobs/zd1l/zd1lv20435.fw, B&W's ZD1L 2.04.35; the A7's:
+                                             blobs/a7/a7v20477.fw)
 
 Then (docs/mcu/bootloader-hbl.md): the key-hold into its updater, an upload to BL2's web updater, both chips:
     zemu run OUTDIR/nand.bin --nand --mcu OUTDIR/mcu_flash.bin --fwd 18080:80 \\
@@ -22,6 +25,7 @@ from zeppelin.fw import bcd, bwfw  # noqa: E402
 
 BL2 = (0xA0000, 0x240000)  # BL2's region (docs/module/boot-chain.md)
 PERSPARAM = (0x20000, 0x40000)
+HWID = {"zd1l": 0xBE, "a7": 0xA7}
 
 
 def main():
@@ -30,14 +34,15 @@ def main():
     out = sys.argv[1]
     fw = sys.argv[2] if len(sys.argv) == 3 else os.path.join(ROOT, "blobs", "zd1l", "zd1lv20435.fw")
     _, module, _, dmb = bwfw.parse(open(fw, "rb").read())
-    if not dmb or not dmb[0].startswith("ZD1L"):
-        sys.exit("%s: not a ZD1L .fw (its MCU part is no ZD1L .dmb)" % fw)
+    model = bwfw.dmb_model(dmb[0]) if dmb else None
+    if model not in HWID:
+        sys.exit("%s: not a ZD1L or A7 .fw (its MCU part is no ZD1L or A7 .dmb)" % fw)
     nand = bytearray(open(os.path.join(ROOT, "emu", "img", "test-unit", "nand.bin"), "rb").read())
     # PersParam: the HWID is the 4 bytes after the reversed key "DIWH"
     at = nand.find(b"DIWH", *PERSPARAM)
     if at < 0:
         sys.exit("no HWID in the test unit's PersParam")
-    nand[at + 4 : at + 8] = bytes([0xBE, 0, 0, 0])
+    nand[at + 4 : at + 8] = bytes([HWID[model], 0, 0, 0])
     bl2 = open(os.path.join(ROOT, "blobs", "zd1l", "module", "bl2.bin"), "rb").read()
     if len(bl2) != BL2[1] - BL2[0]:
         sys.exit("bl2.bin is not BL2's whole region")
@@ -45,10 +50,16 @@ def main():
     bcd.install(nand, module, log=lambda s: print("  " + s))
     os.makedirs(out, exist_ok=True)
     open(os.path.join(out, "nand.bin"), "wb").write(nand)
-    open(os.path.join(out, "mcu_flash.bin"), "wb").write(bwfw.flash(dmb[1], zd1l=True))
+    open(os.path.join(out, "mcu_flash.bin"), "wb").write(bwfw.flash(dmb[1], model))
     print(
-        "%s: nand.bin (HWID 0xBE, the ZD1L's BL2, %s's module image), mcu_flash.bin (the HBL, %s)"
-        % (out, os.path.basename(fw), dmb[0])
+        "%s: nand.bin (HWID 0x%X, the ZD1L's BL2, %s's module image), mcu_flash.bin (%s, %s)"
+        % (
+            out,
+            HWID[model],
+            os.path.basename(fw),
+            "the HBL" if model == "zd1l" else "the HBL with the A7's HWID",
+            dmb[0],
+        )
     )
 
 

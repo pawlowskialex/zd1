@@ -12,7 +12,7 @@ and what is known. What already works: `status.md`; checks that need a person at
   page's text matches. Then Edge, Brave, Opera.
 - **The MCU follows its OS on a ZD1L**: B&W's bootloader taking our app from our OS (emulator only,
   `docs/mcu/bootloader-hbl.md`); needs a ZD1L owner.
-- **The ZD1L's first install from the page** (`zd1l.js`, no-cors to BL2; whole in the emulator): whether Chrome sends
+- **The ZD1L's (and A7's) first install from the page** (`fwinstall.js`, no-cors to BL2; whole in the emulator): whether Chrome sends
   BL2 the requests from the hosted page (Local Network Access, mixed content); the rest on a real ZD1L: Other models.
 - **A developer's key onto a speaker**: today `zd1 console run 'echo KEY > /data/zd1/keys/NAME.pub'` over USB; a
   request of its own (gated, USB only) would make it a step of the page.
@@ -129,19 +129,18 @@ and what is known. What already works: `status.md`; checks that need a person at
   `docs/mcu/bootloader-hbl.md`). Still open: the rescue/slots `zd1l.fw` on a real ZD1L, from the page (the
   2026-11-17 image without slots runs there [HW, the owners]; the whole install in the emulator [EMU 2026-11-21]), and
   what of our MCU firmware works on its board (variant 2: the Lightning dock and the USB mux are the ZD1's code); and an owner pursuing a module-OS-on-stock-MCU route (issue #1).
-- **The A7**: the module program is the Zeppelin's, its MCU app (`AZ1_v2-04-77.dmb`, booting on the ZD1 board model) is
-  another build of the same code; a port means its pins, DSP, amp and keys from that binary, and an A7 to try it on.
-  The telnet hook already ports to it: `stock-patch/patch.py --fw` handles A7 2.04.77 (`voTask`/`WRITEREG` unchanged,
-  the RAM data shifted −0x5c8 so `STATUS`/`ATTACH` are 0x3918/0x482c, the carve follows `memend` 0x7a08). In the
-  emulator the patched MCU reaches RUN and the hook *fires* (its STATE byte at 0x7a08 runs 0→4, writing reg
-  0x75/0x76), and telnet port 23 opens; a live interactive shell is unproven there (the emulator's usernet shell
-  path returns nothing even for the known-good ZD1L), so it awaits an A7 unit. The ~21 s `dmhBcoMgr_ercGetCneValue`
-  assert is pre-existing emulator factory-data noise (wrong PersParam + empty persistent CnE at NAND 0x60000), hit by
-  ZD1L too, and non-fatal — the hook fires through it.
+- **The A7** (`docs/models/a7.md`): ours is ported (its DSP setup, its model told from its bootloader, "A7" on USB
+  and on the network, `a7.fw`) and needs an A7 (an owner offered one: GitHub issue #2; its key-hold reaches BL2 [HW],
+  an older BL2 than the ZD1L's, web version 1.16.1.2). In order (`docs/models/a7.md`, "What an A7 has to show"):
+  `bl2web`'s dry run for the expert confirm; `a7.fw`; its MCU bootloader read with `zd1 peek` (then the model's
+  detection from what it really holds, the EEPROM record's version as a second source); sound at a low volume first
+  (its output stage never heard); the meter at 0x031, keys, IR, LED. If its BL2 has no expert confirm: its BL2 read
+  first (the telnet hook ports to 2.04.77: `stock-patch/patch.py --fw`, `STATUS`/`ATTACH` 0x3918/0x482c, the carve
+  after `memend` 0x7a08; in the emulator it fires and port 23 opens, a live shell there unproven as for the ZD1L).
 - **B&W's LAN update**: answered for the ZD1L — its 2012 BL2 takes the whole `.fw` and flashes both parts, the MCU
   `.dmb` over SPI XModem (`docs/module/boot-chain.md`, "The ZD1L BL2"). Our 2010 BL2 can't (it rejects a whole `.fw`
-  and lacks the host-firmware services). The **A7's** BL2 and bootloader are still unseen — likely the same MR5-era
-  path, but unconfirmed.
+  and lacks the host-firmware services). The **A7's** BL2 and bootloader are still unseen — taken to be the same
+  MR5-era path (`docs/models/a7.md`), unconfirmed.
 
 ## Emulator
 Places where the emulator is known to differ from the unit; fix the model when one gets in the way.

@@ -1,7 +1,7 @@
 // The page's upload to a ZD1L's BL2 (js/bl2.js: the ZD1L's first install, docs/protocol/net.md), in node against the
 // emulator's BL2. Node reads the answers the browser can't (no CORS headers): every request answered, the upload's
 // redirect to the apply page followed, the confirm armed (it redirects to the status page; unarmed it goes to
-// FWUCHandlerPage and burns nothing). A stock ZD1L held at power-up (emu/tools/zd1lunit.py):
+// FWUCHandlerPage and burns nothing). A stock ZD1L held at power-up (emu/tools/stockunit.py):
 //   zemu run OUT/nand.bin --nand --mcu OUT/mcu_flash.bin --fwd 18080:80 --renode 'zd1:flashc BootprotSize 0x8000' \
 //     --renode 'zd1:board Adc "2:0x300"' --renode 'zd1:board Pins "0:PA08=0,1500:PA08=1"' \
 //     --wait mcu 'BSL Ready' --sleep 30 --host 'node host/web/test/zd1l.mjs host/web/www 127.0.0.1:18080 zd1l.fw' \

@@ -178,16 +178,18 @@ in all; an unpaired client's session ends 60 s after it began (its `Hello` and a
 without pairing); a WebSocket message at most 40 KB; a session idle for 5 minutes ends; one update at a time. `zd1-netd` runs as init's service `net`; the setting `net`
 (`off`: nothing listens) is written over USB only.
 
-## The ZD1L's first install from the page
+## The first install on a ZD1L or an A7 from the page
 A stock ZD1L held in BL2 (its key-hold: the light goes white, BL2 on wired Ethernet with DHCP; `docs/module/boot-chain.md`,
-The ZD1L BL2) takes `zd1l.fw` through BL2's web updater (`host/web/www/js/zd1l.js`). BL2 sends no CORS headers, so
+The ZD1L BL2) takes `zd1l.fw` through BL2's web updater (`host/web/www/js/fwinstall.js`); an A7 `a7.fw` the same way,
+its BL2 and key-hold taken to be the ZD1L's (`docs/models/a7.md`). BL2 sends no CORS headers, so
 the page sends `bl2web`'s sequence (`tools/zeppelin/knos/bl2web.py`, which ZD1L owners ran) without reading the
 answers (`no-cors`): the status page (only a network error says nothing is there), prepare, the upload (its 302 to the
 apply page, which the browser follows: it arms the confirm), the expert page, the expert confirm. Then it waits up to
 15 minutes for our OS's link to answer at the address and connects. A refused file (another model) or a new address
-shows only as no answer. Releases carry `zd1l-VERSION.fw` (`kind` fw in the manifest). The requests are `bl2web`'s,
+shows only as no answer. Releases carry `zd1l-VERSION.fw` and `a7-VERSION.fw` (`fw.zd1l`, `fw.a7` in the
+manifest). The requests are `bl2web`'s,
 field for field. [EMU 2026-11-20, a stock ZD1L (its BL2 and HWID, KnOS, B&W's bootloader and app) held at power-up,
-`bl2Upload` cut out of `zd1l.js` and run in node against BL2: every request answered 200, the upload's redirect to the
+`bl2Upload` (`bl2.js`) run in node against BL2: every request answered 200, the upload's redirect to the
 apply page followed, the confirm redirected to the status page (armed); BL2 sent the MCU part to B&W's bootloader,
 burned the module image, the bootloader started our app, the rescue filled slot A and started it, and the page's
 WebAssembly (`test/net.mjs`) paired with the hold on slot A: 374 s in all. `docs/mcu/bootloader-hbl.md`.] Never from

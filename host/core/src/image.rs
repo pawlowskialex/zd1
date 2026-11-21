@@ -5,6 +5,7 @@
 //! LENGTH". The module's boot image: a BridgeCo `.bcd` (docs/module/boot-chain.md).
 
 use crate::backup::{self, Backup};
+use crate::spec::Model;
 use crate::{Error, Result};
 use std::collections::BTreeMap;
 
@@ -131,9 +132,10 @@ pub enum Kind {
     /// The module's system signed for the network (`sign_system`): what its header says, and the key's that signed it
     /// is the speaker's to check.
     Signed { version: String, built: String, stamp: String },
-    /// A B&W over-the-air `.fw` (the Zeppelin Air with Lightning's first install, through its BL2's web updater;
-    /// docs/mcu/stock-firmware.md): the module's `.bcd` (ours: its identity) and the MCU's app (ours: its version).
-    Fw { bcd_ours: bool, boot: String, mcu: Option<Ident> },
+    /// A B&W over-the-air `.fw` (the first install on a Zeppelin Air with Lightning or an A7, through its BL2's web
+    /// updater; docs/mcu/stock-firmware.md): the model its `.bcd`'s HWID is for (BL2 takes it only on that model),
+    /// the module's `.bcd` (ours: its identity) and the MCU's app (ours: its version).
+    Fw { model: Model, bcd_ours: bool, boot: String, mcu: Option<Ident> },
     /// The module's boot image (a BridgeCo `.bcd`): its build string (ours keeps the stock container's), whether it
     /// boots our OS (its stage 2 is our boot stub, module/os/mkpayload.py) or the stock app, and ours's identity
     /// (`zd1.boot=` on its kernel command line, as the State record's `boot` reports it; empty: none).
@@ -152,6 +154,7 @@ pub fn identify(name: &str, data: &[u8]) -> Result<Kind> {
     if let Some((bcd, mcu)) = zd1_release::fw::parts(data) {
         let ours = bcd_ours(bcd);
         return Ok(Kind::Fw {
+            model: bcd_model(bcd),
             bcd_ours: ours,
             boot: if ours { bcd_boot(bcd) } else { String::new() },
             mcu: ident(mcu),
@@ -172,6 +175,27 @@ pub fn identify(name: &str, data: &[u8]) -> Result<Kind> {
 
 /// A `.bcd` whose stage 2 (0x2000 into its first section, docs/module/boot-chain.md) starts with our boot stub's
 /// trampoline and its 'ZLB1' header at 0x40 (module/os/mkpayload.py).
+/// The model a `.bcd` is for: its header's HWID (+0x20, the low 16 bits; docs/module/boot-chain.md), which BL2's web
+/// updater holds against the speaker's (0xBD the Zeppelin Air, 0xBE with Lightning, 0xA7 the A7).
+pub fn bcd_model(data: &[u8]) -> Model {
+    match data.get(0x20..0x22).map(|b| u16::from_le_bytes([b[0], b[1]])) {
+        Some(0xBD) => Model::Zd1,
+        Some(0xBE) => Model::Zd1l,
+        Some(0xA7) => Model::A7,
+        _ => Model::Unknown,
+    }
+}
+
+/// A model's short name, as release files and the page's manifest name it (`zd1l.fw`, `a7.fw`).
+pub fn model_key(m: Model) -> &'static str {
+    match m {
+        Model::Zd1 => "zd1",
+        Model::Zd1l => "zd1l",
+        Model::A7 => "a7",
+        _ => "unknown",
+    }
+}
+
 fn bcd_ours(data: &[u8]) -> bool {
     let Some(sec) = data.get(0x30..0x34).map(|b| u32::from_le_bytes(b.try_into().unwrap()) as usize) else {
         return false;

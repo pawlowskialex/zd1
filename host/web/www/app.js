@@ -6,12 +6,20 @@ import "./js/zd-speaker.js";
 import { act, connect, connectNet, op, reachAgain, show } from "./js/connection.js";
 import { consoleInit } from "./js/console.js";
 import { report } from "./js/diagnostics.js";
+import { installFw } from "./js/fwinstall.js";
 import { joinForm, joinWatch, scan } from "./js/network.js";
 import { app } from "./js/shared.js";
-import { drawInstall, installMcu, installSystem, loadReleases, rollback, startFirmware } from "./js/software.js";
+import {
+  drawInstall,
+  FW_MODELS,
+  installMcu,
+  installSystem,
+  loadReleases,
+  rollback,
+  startFirmware,
+} from "./js/software.js";
 import { refresh } from "./js/speaker.js";
 import { $, ask, download, fill, names, notice, readFile, stamp } from "./js/ui.js";
-import { installZd1l } from "./js/zd1l.js";
 import init, { spec } from "./pkg/zd1_web.js";
 
 // ---- wiring -------------------------------------------------------------------------------------------------------
@@ -25,11 +33,13 @@ async function main() {
     e.preventDefault();
     op(() => connectNet($("net-addr").value));
   };
-  $("zd1l-alpha").onchange = drawInstall;
-  $("zd1l-form").onsubmit = (e) => {
-    e.preventDefault();
-    installZd1l($("zd1l-addr").value);
-  };
+  for (const model of Object.keys(FW_MODELS)) {
+    $(`${model}-try`).onchange = drawInstall;
+    $(`${model}-form`).onsubmit = (e) => {
+      e.preventDefault();
+      installFw(model, $(`${model}-addr`).value);
+    };
+  }
   $("disconnect").onclick = () => {
     app.sp?.free();
     app.bl?.free();

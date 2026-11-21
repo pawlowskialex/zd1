@@ -14,6 +14,11 @@ What is true now, with the evidence. Start with `status.md`.
 - `hardware/cr870-module.md`: the network module and its 120-pin connector
 - `hardware/wiring.md`: what connects to what between the boards
 
+**The models**
+- `models/README.md`: the Zeppelin Air, the Zeppelin Air with Lightning and the A7: what differs, how our firmware
+  tells them apart, the first install's `.fw`
+- `models/a7.md`: the A7: its DSP setup, its bootloader (unread), its install, what an A7 has to show
+
 **Main board firmware**
 - `mcu/bootloader-dfu.md`: the DFU bootloader, its reset logic, the protocol, the module relay
 - `mcu/stock-firmware.md`: what B&W's MCU app does (DSP, codec, amp, sources, modes, stored data)

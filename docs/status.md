@@ -121,6 +121,10 @@ None of these has been seen on the unit. Treat them as "the code does something 
   0x2421 and of the strap.
 - **The MCU's app from the module on the ZD1L** (`docs/mcu/bootloader-hbl.md`): our OS playing BL2 to B&W's bootloader.
 - **The Lightning model's image with the system as the rescue** (the ZD1's is on the unit, above).
+- **The A7** (`docs/models/a7.md`; no A7 has run ours): its DSP setup (the stock A7 download, write for write), its
+  model told from its bootloader (a stand-in: the ZD1L's HBL with the A7's HWID), "A7" over USB, our OS on it;
+  `a7.fw` built. An HBL with a HWID we don't know: the DSP held, the amp kept off. On the unit (a ZD1) the model is
+  "Zeppelin Air" with the DSP setup as before: not checked on hardware since the change.
 - **The network link's rest** (`docs/protocol/net.md`; `zd1 --net` is on the unit, above): the page's WebAssembly
   over the network (Chrome's Local Network Access from the hosted page not tried anywhere); a provisional change that
   cuts the link going back after 120 s; the ZD1L's first install from the page (whole in the emulator: the page's requests, both chips, the first start). `Dfu`

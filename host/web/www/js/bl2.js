@@ -1,4 +1,4 @@
-// BL2's web updater, as the page talks to it (docs/protocol/net.md, The ZD1L's first install): no imports, so node runs
+// BL2's web updater, as the page talks to it (docs/protocol/net.md, The first install on a ZD1L or an A7): no imports, so node runs
 // it against the emulator's BL2 too (host/web/test/zd1l.mjs).
 
 /// The confirm's button value (BL2's aspSetFirmwareUploadConfirmationHandler), form-encoded.

@@ -9,8 +9,9 @@
 OUTDIR gets module.bcd, mcu.bin (the MCU part as it is) and, when the MCU part is an AVR32 .dmb (A7, ZD1L),
 mcu_flash.bin: a 256 KB flash image for `zemu run OUTDIR/module.bcd --mcu OUTDIR/mcu_flash.bin`, the .dmb's app at
 0x80008000 behind a bootloader: the ZD1L's own ("Net HBL", blobs/zd1l/mcu/bootloader.bin: it starts 0x80008000) for
-a ZD1L .dmb; for the A7's, whose bootloader no one has read, B&W's ZD1 bootloader with 0x80004000-0x80007FFF from the
-ZD1's stock app (its jump to 0x80008000). Emulation only, never flashed.
+a ZD1L .dmb; for the A7's, whose bootloader no one has read, a stand-in: the ZD1L's HBL with the A7's HWID
+(hbl_standin); for any other, B&W's ZD1 bootloader with 0x80004000-0x80007FFF from the ZD1's stock app (its jump to
+0x80008000). Emulation only, never flashed.
 
 --pack takes an app linked at 0x80008000 (`nix build .#mcu`: zd1app.bin). The ZD1L's BL2 sends a .fw's MCU part to the
 MCU's bootloader over SPI (docs/mcu/bootloader-hbl.md).
@@ -94,10 +95,31 @@ def parse(d):
     return w, bcd, mcu, dmb
 
 
-def flash(app, zd1l=False):
-    """256 KB: a bootloader and `app` at 0x80008000: the ZD1L's HBL (zd1l), else the ZD1's with its stock jump."""
-    if zd1l:
+def hbl_standin(hwid):
+    """B&W's "Net HBL" as the A7's stand-in: the ZD1L's (blobs/zd1l/mcu/bootloader.bin) with the HWID it writes into the
+    module's persistent parameters, and that our MCU firmware reads its model from ("0xBE000000"), set to `hwid`. The
+    A7's own bootloader was never read; this is what it is inferred to be (docs/models/a7.md). Emulation only."""
+    hbl = open(paths.ZD1L_MCU_BOOTLOADER, "rb").read()
+    old = b"\x000xBE000000\x00"
+    if hbl.count(old) != 1:
+        raise ValueError("the ZD1L's HBL has no single HWID string")
+    return hbl.replace(old, b"\x000x%02X000000\x00" % hwid)
+
+
+DMB_MODELS = {"ZD1L_": "zd1l", "AZ1_": "a7"}  # a stock .dmb's name -> its model
+
+
+def dmb_model(name):
+    return next((m for p, m in DMB_MODELS.items() if name.startswith(p)), "zd1")
+
+
+def flash(app, model="zd1"):
+    """256 KB: a bootloader and `app` at 0x80008000: the ZD1L's HBL (zd1l), its A7 stand-in (a7, hbl_standin), else
+    the ZD1's DFU bootloader with its stock jump."""
+    if model == "zd1l":
         img = open(paths.ZD1L_MCU_BOOTLOADER, "rb").read() + app
+    elif model == "a7":
+        img = hbl_standin(0xA7) + app
     else:
         bl, stock = open(paths.MCU_BOOTLOADER, "rb").read(), paths.stock_mcu_app()
         img = bl + stock[: APP - len(bl)] + app
@@ -169,7 +191,7 @@ def main():
         open(os.path.join(a.out, "module.bcd"), "wb").write(bcd)
         open(os.path.join(a.out, "mcu.bin"), "wb").write(mcu)
         if dmb:
-            open(os.path.join(a.out, "mcu_flash.bin"), "wb").write(flash(dmb[1], dmb[0].startswith("ZD1L")))
+            open(os.path.join(a.out, "mcu_flash.bin"), "wb").write(flash(dmb[1], dmb_model(dmb[0])))
 
 
 if __name__ == "__main__":

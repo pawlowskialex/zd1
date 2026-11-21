@@ -61,11 +61,11 @@
   <section id="welcome" class="panel">
     <h2>Connect</h2>
     <div class="panel-body">
-      <p class="lead">A Zeppelin Air with our software: plug it into this computer with a USB cable, or reach it on
+      <p class="lead">A Zeppelin Air or an A7 with our software: plug it into this computer with a USB cable, or reach it on
          your network. The page talks to the speaker itself: no account, no cloud.</p>
       <p id="nousb" class="warn" hidden>This browser has no WebUSB: open the page in Chrome, Edge, Brave or Opera.</p>
       <div class="row"><button type="button" id="connect" class="primary">Connect over USB…</button>
-        <span class="small">pick “Zeppelin Air” in the browser's list</span></div>
+        <span class="small">pick “Zeppelin Air” (an A7: “A7”) in the browser's list</span></div>
       <form id="net-form" class="row">
         <label for="net-addr">On the network</label>
         <input id="net-addr" class="grow" autocomplete="off" spellcheck="false" placeholder="its address, or its name.local">
@@ -112,9 +112,32 @@
             <li>That address here, then Install: about 10 minutes, then the page connects to it.</li>
           </ol>
           <div class="stack">
-            <label class="check"><input id="zd1l-alpha" type="checkbox"> I'll try an alpha on my speaker</label>
+            <label class="check"><input id="zd1l-try" type="checkbox"> I'll try an alpha on my speaker</label>
             <form id="zd1l-form" class="row">
               <input id="zd1l-addr" class="grow" autocomplete="off" spellcheck="false" placeholder="its address, 192.0.2.20" aria-label="Its address">
+              <button type="submit">Install…</button>
+            </form>
+          </div>
+        </article>
+        <article class="choice">
+          <h3>A7 <span class="tag">untried</span></h3>
+          <p class="small">no dock</p>
+          <p class="small">Ours has never run on an A7, only in the emulator: its own sound tuning is there, but its
+             updater is an older build than the Lightning model's and its bootloader has never been read. If it doesn't
+             come up, B&amp;W's own file goes back on the same way (Help, below).</p>
+          <ol class="steps">
+            <li>Best with an Ethernet cable to your router (its updater is up in seconds; on Wi-Fi it takes about a
+                minute).</li>
+            <li>Start its updater: unplug its power, hold ON/OFF and plug the power back in while holding it: its light
+                goes white. It takes an address from your router (the router's list of devices shows it).</li>
+            <li>First run <span class="data">tools/zeppelin bl2web ADDRESS a7.fw</span> from the repository without
+                <span class="data">--yes</span>: it writes nothing and says whether its updater takes our file the way
+                this page sends it. Then that address here, and Install: about 10 minutes, then the page connects.</li>
+          </ol>
+          <div class="stack">
+            <label class="check"><input id="a7-try" type="checkbox"> I'll try it on my A7 first</label>
+            <form id="a7-form" class="row">
+              <input id="a7-addr" class="grow" autocomplete="off" spellcheck="false" placeholder="its address, 192.0.2.20" aria-label="The A7's address">
               <button type="submit">Install…</button>
             </form>
           </div>
@@ -156,7 +179,8 @@ sudo udevadm control --reload-rules</pre></li>
         <dl class="facts">
           <dt>Red, breathing</dt><dd>starting</dd>
           <dt>Dim red</dt><dd>standby</dd>
-          <dt>White</dt><dd>playing from the network; on the Lightning model held at power-up, its updater waiting</dd>
+          <dt>White</dt><dd>playing from the network; on the Lightning model (and, we expect, the A7) held at
+              power-up, its updater waiting</dd>
           <dt>Sky blue</dt><dd>playing from USB</dd>
           <dt>Purple, flashing</dt><dd>a change waits for a press of ON/OFF</dd>
           <dt>Amber, flashing</dt><dd>an update over the network waits for ON/OFF held 5 s</dd>
@@ -165,9 +189,10 @@ sudo udevadm control --reload-rules</pre></li>
       <details class="triage">
         <summary>Back to B&amp;W's software</summary>
         <p>The Zeppelin Air: connect to its bootloader (Install, above) and choose “Back to B&amp;W's software” there,
-           with B&amp;W's update file and its main board's firmware, or a backup this page kept. The Lightning model:
-           B&amp;W's own file through its updater, the way the install went (<span class="data">zd1lv20435.fw</span>,
-           in the repository's <span class="data">blobs/zd1l</span>).</p>
+           with B&amp;W's update file and its main board's firmware, or a backup this page kept. The Lightning model and
+           the A7: B&amp;W's own file through its updater, the way the install went (<span class="data">zd1lv20435.fw</span>
+           in the repository's <span class="data">blobs/zd1l</span>, <span class="data">a7v20477.fw</span> in
+           <span class="data">blobs/a7</span>).</p>
       </details>
     </div>
   </section>
@@ -286,6 +311,7 @@ sudo udevadm control --reload-rules</pre></li>
       <h2>Software</h2>
       <div class="panel-body">
         <dl class="facts">
+          <dt>Model</dt><dd id="model"></dd>
           <dt>Main board</dt><dd id="fw" class="data"></dd>
           <dt>Network module</dt><dd id="os" class="data"></dd>
           <dt>System slots</dt><dd id="slots" class="data"></dd>

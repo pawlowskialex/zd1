@@ -51,7 +51,7 @@ python3 emu/tools/run.py script.resc            # a .resc line by line through t
 Monitor knobs (`zemu run --renode "machine:command"`): `core` (module: `LogFile`, `TraceFile`, `TraceOnly`, `Patch`,
 `Stage2Image`, `BootFromNand`, `Power`, `DelayLoops`, `TimerWaitPcs`, ...), `pm` (MCU trace: `TraceFile`,
 `TraceMaxLines`, `TraceQuiet`, `TraceLoud`, `WdtResets`, `GPLP0`), `board` (`Key`, `Pins`, `IR`, `Adc`, `Watch`,
-`Poke`), `twi.dsp` (`SpdifLock`, `AudioWav`), `spi0.module` (the stand-in: `BootMs`, `PlayMs`), `usernet`
+`Poke`), `twi.dsp` (`SpdifLock`, `AudioWav`, `Record`: every DSP write into a file), `spi0.module` (the stand-in: `BootMs`, `PlayMs`), `usernet`
 (`Forward`, `LogFile`), `spis` (`PollHalt`, `TxAhead`), `flashc` (`BootprotSize`: 0x8000 for the ZD1L's bootloader), `spis.testhost` (module
 alone: `Run "rd 0x11 rdv 0x38"`), and Renode's own (`cpu
 LogCpuInterrupts true`, `cpu DisassembleBlock addr len`, `machine StartGdbServer port`, `sysbus ReadDoubleWord addr`).

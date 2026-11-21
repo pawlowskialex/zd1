@@ -174,7 +174,7 @@ fn identity(mac: &[u8]) -> DeviceIdentity {
     let release = zd1_sys::OsRelease::read("/etc/os-release");
     let version = release.get("VERSION_ID");
     DeviceIdentity {
-        model: "Zeppelin Air".into(),
+        model: zd1_persparam::unit_model().product().into(),
         manufacturer: Some("Bowers & Wilkins".into()),
         serial_number: Some(mac.iter().map(|b| format!("{b:02X}")).collect::<Vec<_>>().join("-")),
         firmware_version: format!("zd1-os {version}"),

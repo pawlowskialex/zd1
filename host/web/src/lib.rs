@@ -263,8 +263,8 @@ pub fn spec() -> JsValue {
 /// What a file is (host/core's `image::identify`): { kind: "mcu", version, built, start, end } (Intel HEX or the app
 /// region's .bin), { kind: "backup", version, when } (an MCU backup: installs as MCU firmware), { kind: "system",
 /// version, stamp, size } (a gzip'd cpio of a slot's root), { kind: "signed", version, built, stamp, size } (one signed
-/// for the network update), { kind: "fw", ours, boot, version, built, size } (a B&W .fw: the Lightning model's first
-/// install through its BL2) or { kind: "bcd", build, ours, version } (the module's boot image: ours or the stock one;
+/// for the network update), { kind: "fw", model, ours, boot, version, built, size } (a B&W .fw: the first install
+/// on a Zeppelin Air with Lightning (model "zd1l") or an A7 ("a7") through its BL2) or { kind: "bcd", build, ours, version } (the module's boot image: ours or the stock one;
 /// version: ours's identity, `zd1.boot=`).
 #[wasm_bindgen(js_name = imageInfo)]
 pub fn image_info(name: &str, data: &[u8]) -> Result<JsValue, JsValue> {
@@ -283,8 +283,9 @@ pub fn image_info(name: &str, data: &[u8]) -> Result<JsValue, JsValue> {
             set(&o, "stamp", stamp);
             set(&o, "size", data.len() as f64);
         }
-        Kind::Fw { bcd_ours, boot, mcu } => {
+        Kind::Fw { model, bcd_ours, boot, mcu } => {
             set(&o, "kind", "fw");
+            set(&o, "model", image::model_key(model));
             set(&o, "ours", bcd_ours && mcu.is_some());
             set(&o, "boot", boot);
             if let Some(i) = mcu {

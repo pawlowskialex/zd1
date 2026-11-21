@@ -170,9 +170,9 @@ fn actions_keys() -> impl Iterator<Item = String> {
     zd1_hostlink::actions().map(|f| f.key())
 }
 
-/// The name before anyone chose one: "Zeppelin Air XXXXXX" from the unit's MAC.
+/// The name before anyone chose one: the model's and the unit's MAC ("Zeppelin Air XXXXXX", "A7 XXXXXX").
 pub fn default_name() -> String {
-    zd1_sys::default_name(zd1_persparam::unit_mac().ok())
+    zd1_sys::default_name(zd1_persparam::unit_mac().ok(), zd1_persparam::unit_model())
 }
 
 /// The value in effect: the stored one, else the default.

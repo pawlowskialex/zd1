@@ -209,7 +209,8 @@ def main(argv=None):
         nargs="?",
         const="ours",
         metavar="FW",
-        help="the main board too, linked over J2: ours (default), stock, or a 256 KB flash image",
+        help="the main board too, linked over J2: ours (default; ours-zd1l, ours-a7: behind that model's bootloader), "
+        "stock, or a 256 KB flash image",
     )
     g = p.add_argument_group("debugging")
     g.add_argument(

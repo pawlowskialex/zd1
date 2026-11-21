@@ -87,6 +87,20 @@ pub fn unit_mac() -> Result<[u8; 6], String> {
     MAC.get_or_init(|| mac(&parse(&read(DEV)?)?)).clone()
 }
 
+/// The speaker's model from the NAND (its HWID's first byte), read once per process; the Zeppelin Air's if the store
+/// can't be read.
+pub fn unit_model() -> zd1_sys::Model {
+    static MODEL: OnceLock<zd1_sys::Model> = OnceLock::new();
+    *MODEL.get_or_init(|| {
+        read(DEV).ok().and_then(|b| parse(&b).ok().and_then(|r| model(&r))).unwrap_or(zd1_sys::Model::Zd1)
+    })
+}
+
+/// The model the HWID record says (its first byte: `[0xBD, 0, 0, 0]` on a Zeppelin Air), if there is one.
+pub fn model(recs: &[Record]) -> Option<zd1_sys::Model> {
+    get(recs, "HWID").and_then(|d| d.first()).map(|&b| zd1_sys::Model::from_hwid(b))
+}
+
 #[derive(Debug, PartialEq)]
 pub struct Record<'a> {
     pub key: String,
@@ -190,6 +204,7 @@ mod tests {
         let r = parse(&b).unwrap();
         assert_eq!(r.len(), 5);
         assert_eq!(get(&r, "HWID"), Some(&[0xBD, 0, 0, 0][..]));
+        assert_eq!(model(&r), Some(zd1_sys::Model::Zd1));
         assert_eq!(format_mac(&mac(&r).unwrap()), "ec:66:d1:00:00:42");
         assert_eq!(format_mac(&wlan_mac(&mac(&r).unwrap())), "ee:66:d1:00:00:42");
         assert_eq!(format_mac(&wlan_mac(&[0x02, 0x5A, 0xD1, 0, 0, 1])), "02:5a:d1:00:00:00");

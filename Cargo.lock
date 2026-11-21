@@ -4030,6 +4030,7 @@ dependencies = [
  "tracing",
  "zd1-audio",
  "zd1-compat",
+ "zd1-persparam",
  "zd1-sys",
  "zd1-text",
  "zd1-warp0",
@@ -4043,6 +4044,7 @@ dependencies = [
  "nix",
  "tracing",
  "tracing-subscriber",
+ "zd1-persparam",
  "zd1-sys",
 ]
 
