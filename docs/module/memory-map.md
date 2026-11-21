@@ -181,8 +181,10 @@ clears it while it starts the core, and afterwards its value doesn't matter. The
 **Association works [HW 2026-10-24]**: `wpa_supplicant` 2.11 (`-Dwext`) joins a WPA2-PSK (CCMP) network at -57 dBm,
 `udhcpc` gets a lease, and the receivers play over it (AirPlay 2 realtime recovers the lost packets by retransmit
 requests: `module/os/forks.md`). WPA3-only networks (SAE) are not reachable this way:
-WEXT has no SAE authentication path [INF]. `wpa_cli signal_poll` reports -80 dBm whatever the level: the driver doesn't fill it in;
-`wpa_cli bss BSSID` has the real one.
+WEXT has no SAE authentication path [INF]. `wpa_cli signal_poll` gives the AP's level with our mac80211
+(`module/wifi`; with Nokia's it said -80 dBm whatever the level), `wpa_cli bss BSSID` the last scan's.
+The 2.4 GHz TX power asked of the radio is the channel's maximum from cfg80211's regulatory table: 19 dBm (Nokia's
+`US` and our `world`).
 
 **The antenna is on the radio's second port** [HW 2026-10-24]: `sulu_wlan`'s `diversity` parameter (0 both, the
 default; 1 / 2 one port; 3 toggling) sets the firmware's AntennaMode (DR_PHY_STAT, +8 in the debugfs table: 22 / 10 /

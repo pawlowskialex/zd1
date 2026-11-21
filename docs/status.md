@@ -63,6 +63,7 @@ A result counts once it was seen on the unit. An emulator run says the code does
 | The web page against the unit (Brave on the Mac): every view, the State record's lines, the drawn speaker's glow following the LED | 2026-11-02 | `docs/web.md` |
 | Ethernet 100 Mb/s: 169.254.1.1 at once, DHCP in the background; eth0 = MAC0, wlan0 = MAC0 locally administered (from PersParam, read raw) | 2026-10-23 | `docs/module/linux.md`, The MAC |
 | Wi-Fi: WPA2-PSK through `wpa_supplicant` (`-Dwext`), a DHCP lease, on the radio's second antenna port (the AP hears the module at -56 dBm); ~0.7-1 % of downlink packets lost | 2026-10-24/25 | `docs/module/memory-map.md`, Wi-Fi |
+| Wi-Fi on our `cfg80211` and `mac80211` (`module/wifi`) with Nokia's `sulu_wlan`, from the system's slot: joined at boot (after the AP's disassociation of the stale association, on the second request), WPA2-PSK CCMP, DHCP; on a quiet channel the downlink loses 0.67-1.1 % (a 120 s AirPlay-like stream, as with Nokia's modules); `SIGNAL_POLL` gives the AP's level (-61 dBm; Nokia's said -80); regulatory domain `world` (19 dBm, 12-13 passive: a full scan 0.97 s); no scan after the join | 2026-11-21, system d8cc616 | `module/wifi/README.md` |
 | The wall clock by NTP over the Wi-Fi lease (init's `time`: the module boots in 1970, TLS needs the date) | 2026-10-25 | `module/os/README.md`, Init |
 | Audio out through Nokia's `snd-sulu` (AV port 2 at 512·fs MCLK, like KnOS), heard through the speaker; the whole ALSA path ~1.8 % of the ARM with few wake-ups | 2026-10-24 on | `docs/module/linux.md`, `docs/module/memory-map.md` |
 | The module's own auth chip on its I2C bus (an Authentication Coprocessor 2.0B) | 2026-10-25 | `docs/hardware/cr870-module.md` |
@@ -153,7 +154,15 @@ Work items: `backlog.md`. Checks that need a person at the unit: `units/<unit>/h
   A reload of the Wi-Fi modules does it too: after our own deauthentication (`zd1-ctl stop wifi`, `rmmod`/`insmod` of
   `sulu_wlan` and `mac80211`, `zd1-ctl start wifi`) the authentication requests timed out for 2-4 min, then one got
   through; the same with Nokia's mac80211 and with one built from source, so not that module's doing (once the
-  join came within 30 s) [HW 2026-11-21, system 4557b09].
+  join came within 30 s) [HW 2026-11-21, system 4557b09]. The kernel now logs each request and whether the AP acked
+  it (`module/wifi/README.md`): at boot the AP acks the first, answers with a disassociation of the association it
+  still holds (reason 8), ignores the next, answers the one after [HW 2026-11-21, system 87c6e51 and d8cc616]. A long
+  failure with that log is still to be seen: acked requests would put it on the AP's side.
+- **Stretches of loss on the Wi-Fi** [HW 2026-11-21]: for minutes at a time the downlink loses 5-10 % in bursts with
+  gaps up to 2 s (pings up to 1.8 s late), then for minutes ~1 % in single packets; with Nokia's modules as with
+  ours. Through those stretches the module hears the AP's beacons with gaps of 0.5-4.6 s (the kernel's log: no
+  scan, no TX stall meanwhile), so the channel or the AP goes quiet, not the module's software. Setting the
+  firmware's `PowerSaveMode` (MIB 24:00) to 0 changed nothing seen.
 - `sulu_eth`'s `TX packets` counter climbs at ~400/s with nothing to send (RX and IRQ counts are sane): cosmetic.
 - The boot stub's own lines arrive garbled on the module console (BL1 leaves UART1 at another divisor); Linux's
   console is clean.
