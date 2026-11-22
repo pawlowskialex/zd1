@@ -455,6 +455,14 @@ impl Speaker {
         self.net.borrow().as_ref().map(|n| zd1_host::hex(&n.speaker))
     }
 
+    /// Let go of the speaker now (the page's Disconnect): its USB interface or its WebSocket closed, an operation
+    /// under way lets go of it when it ends, later ones fail (GONE). `free()` can't while a call is under way (one
+    /// mostly is: the page polls), and wouldn't wait for it; the object goes with the page's last reference.
+    pub fn close(&self) {
+        self.closed.set(true);
+        drop(self.m.borrow_mut().take());
+    }
+
     /// "usb" or "net".
     pub fn link(&self) -> String {
         if self.net.borrow().is_some() { "net" } else { "usb" }.into()
@@ -801,8 +809,11 @@ impl Speaker {
         }
     }
 
+    /// The connection back after an operation; closed meanwhile (`close`), let go instead.
     fn put(&self, c: Conn) {
-        *self.m.borrow_mut() = Some(c);
+        if !self.closed.get() {
+            *self.m.borrow_mut() = Some(c);
+        }
     }
 }
 

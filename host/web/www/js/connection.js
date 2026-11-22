@@ -256,7 +256,8 @@ for (const type of ["click", "change", "submit"])
 /// Until it ends the control that started it is `aria-busy`, and once it has taken long enough to see (most do over
 /// the network) the page is `waiting`: that control breathes, the pointer says so (button.css).
 export async function op(f) {
-  const from = trigger;
+  const from = trigger,
+    sp = app.sp;
   app.cancel = false;
   app.busy++;
   from?.setAttribute("aria-busy", "true");
@@ -265,7 +266,7 @@ export async function op(f) {
   try {
     return await f();
   } catch (e) {
-    failed(e);
+    if (!(e?.code === "GONE" && sp && app.sp !== sp)) failed(e); // not one the page let go of (Disconnect)
   } finally {
     $("press").close();
     clearTimeout(slow);
