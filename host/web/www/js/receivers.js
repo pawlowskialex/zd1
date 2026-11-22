@@ -8,6 +8,11 @@ import { $, ask, el, notice } from "./ui.js";
 
 export let servers = [],
   pairings = null;
+/// Another connection: the last speaker's pairings and servers aren't this one's.
+export function forgetReceivers() {
+  servers = [];
+  pairings = null;
+}
 
 export function drawReceivers() {
   const st = app.state;
