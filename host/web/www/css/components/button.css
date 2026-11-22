@@ -70,6 +70,25 @@ button:disabled,
   opacity: var(--control-faded);
   pointer-events: none;
 }
+/* Waiting for the speaker (js/connection.js `op`): the control that asked (`[aria-busy]`) breathes until the page
+ * shows the answer, the pointer too; only once the wait is long enough to see (`.waiting`, after 200 ms). */
+.waiting {
+  cursor: progress;
+}
+.waiting [aria-busy="true"] {
+  cursor: progress;
+  animation: waiting 0.8s var(--ease) infinite alternate;
+}
+@keyframes waiting {
+  to {
+    opacity: var(--control-faded);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .waiting [aria-busy="true"] {
+    opacity: 0.6;
+  }
+}
 .file input {
   display: none;
 }

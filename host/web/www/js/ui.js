@@ -10,14 +10,18 @@ export const names = (e) => Object.fromEntries(Object.entries(e).map(([k, v]) =>
 export const hex4 = (n) => Number(n).toString(16).toUpperCase().padStart(4, "0");
 /// A slider's groove filled up to its value (style.css: --fill).
 export const fill = (r) => r.style.setProperty("--fill", `${((r.value - r.min) / (r.max - r.min)) * 100}%`);
-/// A segmented control into `into`: `choices` [key, label, lamp colour?], the one pressed in, what a pick does.
+/// A segmented control into `into`: `choices` [key, label, lamp colour?], the one pressed in, what a pick does. A
+/// pick shows at once; the speaker's answer draws it again (back to what it was if the pick didn't take).
 export function segmented(into, choices, current, pick) {
   into.replaceChildren(
     ...choices.map(([key, label, lamp]) => {
       const b = el("button", { type: "button", textContent: label });
       b.setAttribute("aria-pressed", String(key === current));
       if (lamp) b.style.setProperty("--lamp", lamp);
-      b.onclick = () => pick(key);
+      b.onclick = () => {
+        for (const o of into.children) o.setAttribute("aria-pressed", String(o === b));
+        pick(key);
+      };
       return b;
     }),
   );
