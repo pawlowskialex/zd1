@@ -7,7 +7,7 @@ import { lampOf, ledLook } from "./led.js";
 import { drawSettings } from "./network.js";
 import { app } from "./shared.js";
 import { drawnKey, drawReleases, drawSoftware } from "./software.js";
-import { $, ask, el, fill, names, segmented } from "./ui.js";
+import { $, ask, el, fill, names, notice, segmented } from "./ui.js";
 
 // ---- the state ----------------------------------------------------------------------------------------------------
 
@@ -63,9 +63,15 @@ export async function refresh(all, within = false) {
     app.led = diag.led;
     draw();
   } catch (e) {
-    if (e?.code === "GONE" && app.sp === sp) {
+    if (app.sp !== sp) return;
+    // USB: the speaker left it. The network: its connection closed (the speaker restarted, left the network); while
+    // an operation runs that may be its doing (reachAgain connects again), so only between them.
+    const net = sp.link() === "net";
+    if (e?.code === "GONE" && !(net && app.busy)) {
+      sp.close();
       app.sp = null;
       show("welcome");
+      if (net) notice("The connection to the speaker over the network ended: connect again (the list above).", "warn");
     }
   }
 }

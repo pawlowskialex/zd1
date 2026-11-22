@@ -58,7 +58,7 @@ impl WebSock {
 impl Socket for WebSock {
     async fn send(&self, data: &[u8]) -> Result<()> {
         if self.state.get() != 1 {
-            return Err(Error::Device("the connection to the speaker has closed".into()));
+            return Err(Error::Gone("the connection to the speaker has closed".into()));
         }
         self.ws.send_with_u8_array(data).map_err(|e| Error::Device(format!("the connection to the speaker: {e:?}")))
     }
@@ -70,7 +70,7 @@ impl Socket for WebSock {
                 return Ok(Some(m));
             }
             if self.state.get() == 2 {
-                return Err(Error::Device("the speaker closed the connection".into()));
+                return Err(Error::Gone("the speaker closed the connection".into()));
             }
             if zd1_host::now_ms() - t0 >= ms as f64 {
                 return Ok(None);

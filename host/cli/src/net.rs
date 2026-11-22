@@ -28,7 +28,7 @@ impl Socket for TcpWs {
         ws.get_mut().set_read_timeout(Some(Duration::from_millis(ms.max(1) as u64))).map_err(|e| gone(e.into()))?;
         match ws.read() {
             Ok(Message::Binary(b)) => Ok(Some(b.to_vec())),
-            Ok(Message::Close(_)) => Err(Error::Device("the speaker closed the connection".into())),
+            Ok(Message::Close(_)) => Err(Error::Gone("the speaker closed the connection".into())),
             Ok(_) => Ok(None),
             Err(tungstenite::Error::Io(e)) if matches!(e.kind(), ErrorKind::WouldBlock | ErrorKind::TimedOut) => {
                 Ok(None)

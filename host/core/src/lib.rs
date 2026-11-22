@@ -56,6 +56,9 @@ pub enum Error {
     Codec(codec::Error),
     /// The device isn't on USB, or isn't what was expected.
     Device(String),
+    /// The network connection to the speaker closed (it restarted, left the network): over USB, [`Error::Usb`] with
+    /// `Gone`. Both read GONE.
+    Gone(String),
     /// A flow's own verdict: a refused image, a failed verify, an update the module rejected.
     Failed(String),
     /// Stopped by the person ([`Events::cancelled`]).
@@ -67,7 +70,7 @@ impl fmt::Display for Error {
         match self {
             Error::Usb(what, e) => write!(f, "{what}: {e}"),
             Error::Mcu(code, text) => write!(f, "{}: {text}", code.name().to_uppercase()),
-            Error::Timeout(s) | Error::Device(s) | Error::Failed(s) => f.write_str(s),
+            Error::Timeout(s) | Error::Device(s) | Error::Gone(s) | Error::Failed(s) => f.write_str(s),
             Error::Codec(e) => write!(f, "{e}"),
             Error::Cancelled => f.write_str("stopped"),
         }
@@ -81,7 +84,7 @@ impl Error {
     pub fn code(&self) -> &'static str {
         use spec::Err as E;
         match self {
-            Error::Usb(_, usb::UsbError::Gone) => "GONE",
+            Error::Usb(_, usb::UsbError::Gone) | Error::Gone(_) => "GONE",
             Error::Usb(_, usb::UsbError::Timeout) | Error::Timeout(_) => "TIMEOUT",
             Error::Usb(..) | Error::Device(_) => "DEVICE",
             Error::Mcu(e, _) => match e {
