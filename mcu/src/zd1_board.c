@@ -111,6 +111,20 @@ void board_usb_mux_device(void) {
     gpio_configure_pin(AVR32_PIN_PB17, GPIO_DIR_OUTPUT | GPIO_INIT_HIGH);
 }
 
+/* The USB serial number: the chip's own, FLASHC's serial data (15 bytes at 0x80800204, past the user page: Atmel's
+ * lot, wafer and die position; this unit's reads "0R3757" in its middle [HW 2026-11-22]) as 30 hex digits. Each
+ * speaker is another device to a computer, which keeps its settings for each; it stays the same across builds. */
+typedef char usb_serial_len_check[2 * AVR32_FLASHC_SERIAL_DATA_SIZE == USB_SERIAL_LEN ? 1 : -1]; /* GCC 4.4 */
+char g_usb_serial[USB_SERIAL_LEN];
+void board_usb_serial(void) {
+    static const char hex[] = "0123456789ABCDEF";
+    for (int i = 0; i < AVR32_FLASHC_SERIAL_DATA_SIZE; i++) {
+        uint8_t b = AVR32_FLASHC_SERIAL_DATA[i];
+        g_usb_serial[2 * i] = hex[b >> 4];
+        g_usb_serial[2 * i + 1] = hex[b & 15];
+    }
+}
+
 /* Cold-boot stage log: one word per stage appended to the last flash page (0x8003FE00, erased by every DFU
  * flash). Word = 0xB0 | boot# | stage | RCAUSE. Read back over DFU (`zd1 dfu boot-log`) or `zd1 peek 0x8003FE00 64`. */
 #define BLOG_PAGE 511u

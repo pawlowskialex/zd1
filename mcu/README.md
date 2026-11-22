@@ -213,8 +213,13 @@ All in `src/source.c` unless said otherwise; the times are constants there.
   host: ...`). Snapcast has no pick to see (the client connects by itself).
 - **Volume keys on USB** step the speaker's volume, as on every source, and USB audio's status interrupt tells the host:
   its slider follows (stock sent HID Volume Up/Down to the host in PC mode instead). A USB stream's start or rate switch mutes and ramps back up in 200 ms (`source_ramp_in`).
-- **USB identity**: stock's strings, "Bowers & Wilkins" / "Zeppelin Air", and a fixed serial number ("ZD1"), so the
-  host shows the speaker under its name and keeps its settings; the VID/PID stay 03EB:2FE0 (the tools find it by them).
+- **USB identity**: stock's strings, "Bowers & Wilkins" / "Zeppelin Air", and the chip's own serial number (FLASHC's
+  15 bytes at 0x80800204, past the user page: 30 hex digits, `board_usb_serial`), so the host shows the speaker under
+  its name, tells two speakers apart and keeps its settings for each across builds; the VID/PID stay 03EB:2FE0 (the
+  tools find it by them). The name stays "Zeppelin Air" whatever the speaker is called: a string a host reads once,
+  likely part of the device's identity to it (macOS's output UID), so the computer would forget the speaker at each
+  rename.
+  The emulator doesn't model the serial area: its serial reads as zeros.
 
 ## The LED
 `src/led.c`. The source manager describes what the speaker does (a look: standby, error, the source, the module's
@@ -245,7 +250,7 @@ that must be told apart (19.7; `mcu/tools/led_palette.py` with the measured mode
   PCM16 stereo, iso adaptive OUT EP 0x06) + HID consumer (IF2: play/pause, next, previous) + vendor (IF3: the host link
   on EP0, the module's console among it, the pipe on bulk OUT EP 0x05, two banks: no faster than one, ~910 KB/s, the
   MCU's handling of its 512-byte buffers is the limit), 03EB:2FE0, stock's strings ("Bowers &
-  Wilkins", "Zeppelin Air") and serial "ZD1"; no serial port. For Windows, Microsoft OS 2.0 descriptors (`src/msos.c`:
+  Wilkins", "Zeppelin Air") and the chip's serial number; no serial port. For Windows, Microsoft OS 2.0 descriptors (`src/msos.c`:
   bcdUSB 2.10 for the BOS, vendor request 0x20 for the set) give IF3 WinUSB as its compatible ID and the interface
   GUID {A360CB65-12F3-41A0-ACCE-E3AD90285403}, so Windows binds WinUSB to it by itself; bcdDevice 2.03 marks them (Windows
   keeps a device's per VID:PID:bcdDevice) [HW 2026-11-20: macOS reads the BOS and the 178-byte set from the unit,

@@ -47,6 +47,9 @@ void board_safe_gpio(void);                    /* amp off + muted, DSP/module he
 void board_module_spi(void); /* the reset released (PA17), SPI0 on its pins (NPCS2 PA09, mode 3, ~3 MHz) */
 void board_module_off(void); /* stock's detach (FUN_8000dcdc): reset, 20 ms, power off; the SPI pins back to inputs */
 void board_usb_mux_device(void); /* external USB routing -> MCU device port */
-void blog(uint8_t stage);        /* cold-boot stage log (flash page 511) */
+#define USB_SERIAL_LEN 30        /* the USB serial number's characters: the chip's serial data in hex */
+extern char g_usb_serial[USB_SERIAL_LEN];
+void board_usb_serial(void); /* g_usb_serial from the chip, before the USB device starts */
+void blog(uint8_t stage);    /* cold-boot stage log (flash page 511) */
 
 #endif

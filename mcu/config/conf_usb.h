@@ -28,7 +28,11 @@
 
 #define USB_DEVICE_MANUFACTURE_NAME "Bowers & Wilkins" /* stock's strings (19B5:0005: "Bowers & Wilkins", */
 #define USB_DEVICE_PRODUCT_NAME     "Zeppelin Air"     /* "Zeppelin Air", "304"): what the host calls it */
-#define USB_DEVICE_SERIAL_NAME      "ZD1"              /* fixed, so the host keeps its settings for us */
+/* the chip's serial number in hex (zd1_board.c): each speaker its own device to the host, the same across builds,
+ * so the host keeps its settings for each. ASF's string table needs the length as a constant. */
+extern char g_usb_serial[];
+#define USB_DEVICE_GET_SERIAL_NAME_POINTER g_usb_serial
+#define USB_DEVICE_GET_SERIAL_NAME_LENGTH  30 /* USB_SERIAL_LEN */
 
 /* Windows: WinUSB for the host link's interface by itself (Microsoft OS 2.0 descriptors, msos.c): a BOS descriptor
  * (bcdUSB 2.10 with it: udi_composite_desc.c), and its vendor request, which reaches no interface (device recipient) */
