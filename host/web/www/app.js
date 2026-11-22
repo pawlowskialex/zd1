@@ -40,8 +40,9 @@ async function main() {
   $("zd1l-find").onclick = findUpdater;
   hostTexts();
   $("disconnect").onclick = () => {
-    app.sp?.free();
-    app.bl?.free();
+    // close, not free(): free() throws while a call is under way (the page polls: one mostly is) and leaves the page
+    // holding a dead object; the objects go with the last reference
+    app.sp?.close();
     app.sp = app.bl = null;
     show("welcome");
   };

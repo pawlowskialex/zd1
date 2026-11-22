@@ -33,20 +33,21 @@ export const RECEIVERS = [
 /// Read the speaker and draw it; `all`: the module's state and the software too. Between operations, or as the last
 /// step of one (`within`, connection.js `act`); one an operation overtook draws nothing, the operation draws after it.
 export async function refresh(all, within = false) {
-  const overtaken = () => app.busy && !within;
-  if (!app.sp || overtaken()) return;
+  const sp = app.sp; // the speaker it reads: Disconnect (or another connected since) leaves its answers undrawn
+  const overtaken = () => (app.busy && !within) || app.sp !== sp;
+  if (!sp || overtaken()) return;
   try {
-    const info = await app.sp.call("Info", {});
-    const diag = await app.sp.call("Diag", {});
+    const info = await sp.call("Info", {});
+    const diag = await sp.call("Diag", {});
     let more = null;
     if (all) {
       // the State record only from a module up as our OS (booting, in BL2 or on the stock software it has none)
-      const state = moduleUp(info) ? await app.sp.state() : null;
+      const state = moduleUp(info) ? await sp.state() : null;
       more = {
         state,
-        known: state ? await app.sp.list("Networks").catch(() => []) : [],
-        boot: await app.sp.call("BootState", {}),
-        controllers: app.sp.link() === "net" ? await app.sp.list("Controllers").catch(() => []) : null,
+        known: state ? await sp.list("Networks").catch(() => []) : [],
+        boot: await sp.call("BootState", {}),
+        controllers: sp.link() === "net" ? await sp.list("Controllers").catch(() => []) : null,
       };
     }
     if (overtaken()) return;
@@ -62,7 +63,7 @@ export async function refresh(all, within = false) {
     app.led = diag.led;
     draw();
   } catch (e) {
-    if (e?.code === "GONE") {
+    if (e?.code === "GONE" && app.sp === sp) {
       app.sp = null;
       show("welcome");
     }
