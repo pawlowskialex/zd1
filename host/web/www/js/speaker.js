@@ -63,7 +63,8 @@ export function draw() {
     src = SRC()[i.source],
     player = PLAYER()[i.player];
   const playing = i.state === app.S.SysState.RUN;
-  const what = player !== "none" ? player : src;
+  // Info's player is the module's receiver in front, kept while another source plays: it names the source on Wi-Fi only
+  const what = src === "wifi" && player !== "none" ? player : src;
   hero({
     mode: "app",
     title: app.state?.name || i.mod_name || "Zeppelin Air",
@@ -76,14 +77,17 @@ export function draw() {
     ...ledLook(app.led ?? 0, i.player),
     vol: i.volume / 71,
   });
+  const cur = !playing ? "standby" : what;
+  // Network: the module with no receiver in front, waiting for a sender. Once one has a sender it is listed itself,
+  // and choosing the network would only bring it back to the front (as ON/OFF's cycle, which lists the receivers).
+  const receivers = RECEIVERS.filter(([k]) => (i.players_on >> app.S.Player[k.toUpperCase()]) & 1);
   const choices = [
     ["usb", "USB"],
     ["aux", "AUX"],
-    ["wifi", "Network"],
+    ...(receivers.length === 0 || cur === "wifi" ? [["wifi", "Network"]] : []),
+    ...receivers,
+    ["standby", "Standby"],
   ];
-  for (const [k, label] of RECEIVERS) if ((i.players_on >> app.S.Player[k.toUpperCase()]) & 1) choices.push([k, label]);
-  choices.push(["standby", "Standby"]);
-  const cur = !playing ? "standby" : src === "wifi" && player !== "none" ? player : src;
   segmented(
     $("sources"),
     choices.map(([k, label]) => [k, label, lampOf(k)]),
