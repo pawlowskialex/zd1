@@ -3,7 +3,7 @@ import { wifiSentence } from "../pkg/zd1_web.js";
 import { act, reachAgain } from "./connection.js";
 import { drawReceivers } from "./receivers.js";
 import { app } from "./shared.js";
-import { $, ask, el, names, notice } from "./ui.js";
+import { $, ask, editing, el, names, notice } from "./ui.js";
 
 // ---- network ------------------------------------------------------------------------------------------------------
 
@@ -24,7 +24,7 @@ export function wifiStatus(st) {
 
 export function drawSettings() {
   const st = app.state;
-  if (document.activeElement !== $("name")) $("name").value = st.name ?? "";
+  if (!editing($("name-form"))) $("name").value = st.name ?? "";
   const [text, kind] = wifiStatus(st);
   $("wifi-now").replaceChildren(
     el("span", { className: kind, textContent: text }),
@@ -41,8 +41,9 @@ export function drawSettings() {
           : "Cable connected, waiting for an address.";
   $("wifi-toggle").textContent = names(app.S.NetMode)[st.wifi_mode] === "off" ? "Wi-Fi on" : "Wi-Fi off";
   drawKnown();
-  drawAddresses();
-  drawReceivers();
+  // forms a person is filling in stay as they are (redrawn, what was typed would go)
+  if (!editing($("addr"))) drawAddresses();
+  if (!editing($("receivers"))) drawReceivers();
 }
 
 export function drawKnown() {
