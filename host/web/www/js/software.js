@@ -142,22 +142,25 @@ export async function rollback() {
 }
 // ---- software -----------------------------------------------------------------------------------------------------
 
+let softwareDrawn = 0;
 export function drawSoftware(b) {
+  // the slots are the State record's: none while the module isn't up as our OS (starting, in BL2, B&W's software)
   const st = app.state,
     slot = names(app.S.Slot);
-  const runs = slot[st.slot];
+  const runs = st ? slot[st.slot] : null;
   const failed = ["A", "B", "the rescue"].filter((_, k) => (b.failed >> k) & 1);
   // a slot's stamp is "VERSION [SHA LENGTH]": the version says it
   const line = (s, stampv) =>
     `${s.toUpperCase()}: ${stampv?.split(" ")[0] || "empty"}${runs === s ? ", running" : ""}${slot[st.good] === s ? ", the good one" : ""}`;
   $("slots").textContent =
-    [line("a", st.stamp_a), line("b", st.stamp_b)].join(" · ") +
+    (st ? [line("a", st.stamp_a), line("b", st.stamp_b)].join(" · ") : "not known while the module isn't up") +
     (runs === "none" ? " · the module runs its rescue" : "") +
     (b.next ? ` · the next boot tries ${slot[b.next].toUpperCase()}` : "") +
     (b.installing ? " · the rescue installs itself into a slot" : "") +
     (failed.length ? ` · failed: ${failed.join(", ")}` : "");
   const back = $("ways-back");
   back.replaceChildren();
+  const drawn = ++softwareDrawn;
   const other = runs === "a" ? "b" : runs === "b" ? "a" : null;
   const usb = app.sp.link() === "usb"; // the slots and the MCU's backups are USB's (over the network: no going back)
   if (usb && other && st[`stamp_${other}`]) {
@@ -184,7 +187,7 @@ export function drawSoftware(b) {
   }
   backups()
     .then((l) => {
-      if (!l.length || !usb) return;
+      if (!l.length || !usb || drawn !== softwareDrawn) return; // drawn again meanwhile: that one adds it
       const x = el("button", {
         className: "quiet",
         textContent: `Restore the MCU firmware ${l[0].holds} (backed up ${new Date(l[0].date).toLocaleDateString()})`,
