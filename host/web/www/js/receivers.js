@@ -2,16 +2,18 @@
 import { act, op } from "./connection.js";
 import { app } from "./shared.js";
 import { RECEIVERS } from "./speaker.js";
-import { $, ask, el, notice } from "./ui.js";
+import { $, ask, el } from "./ui.js";
 
 // ---- receivers ----------------------------------------------------------------------------------------------------
 
 export let servers = [],
-  pairings = null;
+  pairings = null,
+  looked = false; // Find servers asked: what it found is said beside it
 /// Another connection: the last speaker's pairings and servers aren't this one's.
 export function forgetReceivers() {
   servers = [];
   pairings = null;
+  looked = false;
 }
 
 export function drawReceivers() {
@@ -140,7 +142,7 @@ export function options(k) {
           await new Promise((r) => setTimeout(r, 2000));
           servers = await app.sp.list("Servers");
         }
-        if (!servers.length) notice("No snapserver answered on the speaker's networks.");
+        looked = true;
         drawReceivers();
       });
     const f = el(
@@ -160,6 +162,18 @@ export function options(k) {
       act(() => app.sp.setSetting("snapcast.server", s.value === "?" ? hand.value.trim() : s.value));
     };
     o.append(f);
+    // what Find servers found, here: a notice on top is out of sight, and servers only join the list unseen
+    if (looked)
+      o.append(
+        el("p", {
+          className: servers.length ? "small" : "small warn",
+          textContent: servers.length
+            ? `Found ${servers.map((x) => `${x.name} (${x.host}:${x.port})`).join(", ")}: pick one in the list, then Save.`
+            : "No snapserver answered over mDNS on the speaker's networks, so “found automatically” finds none " +
+              "either. A server that doesn't announce itself (in a container, behind another network): its address " +
+              "by hand.",
+        }),
+      );
     const lat = el("input", { type: "number", min: 0, max: 2000, value: st.snapcast_latency, className: "short" });
     const g = el(
       "form",
