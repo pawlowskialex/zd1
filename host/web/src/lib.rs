@@ -397,6 +397,9 @@ pub struct Speaker {
     js: JsEvents,
     /// over the network: where, to connect again (the address may change: `reachAgain`)
     net: RefCell<Option<NetTo>>,
+    /// the firmware's HELLO as of the last connection, encoded: `hello()` answers it while an operation has the
+    /// connection out (the page polls: one mostly has)
+    hello: RefCell<Vec<u8>>,
 }
 
 /// A setting or action that, changed over the network, can cut the page off the speaker: kept once the page connects
@@ -471,9 +474,7 @@ impl Speaker {
     /// The firmware's HELLO: { fw, built, board, proto, uptime_ms, requests } (over the network, the requests that
     /// go there).
     pub fn hello(&self) -> Result<JsValue, JsValue> {
-        let h = self.m.borrow().as_ref().map(|c| on!(c, m => codec::encode_msg(&m.hello)));
-        let h = h.ok_or_else(|| js_err(Error::Device("busy".into())))?.map_err(|e| js_err(e.into()))?;
-        Ok(to_js(&codec::decode(&h).map_err(|e| js_err(e.into()))?))
+        Ok(to_js(&codec::decode(&self.hello.borrow()).map_err(|e| js_err(e.into()))?))
     }
 
     /// One request by its name with its fields (docs/protocol/host.md); the reply as an object.
@@ -782,7 +783,16 @@ fn report_js(r: flash::Report) -> JsValue {
 
 impl Speaker {
     fn with(c: Conn, ev: Rc<dyn Events>, js: JsEvents, net: Option<NetTo>) -> Speaker {
-        Speaker { m: Rc::new(RefCell::new(Some(c))), closed: Cell::new(false), ev, js, net: RefCell::new(net) }
+        let s = Speaker {
+            m: Rc::new(RefCell::new(None)),
+            closed: Cell::new(false),
+            ev,
+            js,
+            net: RefCell::new(net),
+            hello: RefCell::new(Vec::new()),
+        };
+        s.put(c);
+        s
     }
 
     /// The connection for one operation (another one running: wait for it; the page polls the log meanwhile).
@@ -811,9 +821,14 @@ impl Speaker {
 
     /// The connection back after an operation; closed meanwhile (`close`), let go instead.
     fn put(&self, c: Conn) {
-        if !self.closed.get() {
-            *self.m.borrow_mut() = Some(c);
+        if self.closed.get() {
+            return;
         }
+        // a connection made again (`reachAgain`, the network update's) may be to another firmware
+        if let Ok(h) = on!(&c, m => codec::encode_msg(&m.hello)) {
+            *self.hello.borrow_mut() = h;
+        }
+        *self.m.borrow_mut() = Some(c);
     }
 }
 
