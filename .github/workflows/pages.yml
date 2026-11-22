@@ -60,9 +60,10 @@ jobs:
   app:
     if: github.event_name == 'release'
     strategy:
+      fail-fast: false # each package on its own: one failing leaves the others to the release
       matrix:
         include:
-          - { runner: macos-14, package: app-macos, file: macos.zip }
+          - { runner: macos-latest, package: app-macos, file: macos.zip }
           - { runner: ubuntu-latest, package: app-windows, file: windows-x64.zip }
     runs-on: ${{ matrix.runner }}
     steps:
@@ -86,6 +87,7 @@ jobs:
   app-linux:
     if: github.event_name == 'release'
     strategy:
+      fail-fast: false
       matrix:
         include:
           - { runner: ubuntu-latest, arch: x86_64 }
