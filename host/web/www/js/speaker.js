@@ -30,18 +30,33 @@ export const RECEIVERS = [
   ["snapcast", "Snapcast"],
 ];
 
-export async function refresh(all) {
-  if (!app.sp || app.busy) return;
+/// Read the speaker and draw it; `all`: the module's state and the software too. Between operations, or as the last
+/// step of one (`within`, connection.js `act`); one an operation overtook draws nothing, the operation draws after it.
+export async function refresh(all, within = false) {
+  const overtaken = () => app.busy && !within;
+  if (!app.sp || overtaken()) return;
   try {
-    app.info = await app.sp.call("Info", {});
+    const info = await app.sp.call("Info", {});
     const diag = await app.sp.call("Diag", {});
+    let more = null;
     if (all) {
       // the State record only from a module up as our OS (booting, in BL2 or on the stock software it has none)
-      app.state = moduleUp() ? await app.sp.state() : null;
-      app.known = app.state ? await app.sp.list("Networks").catch(() => []) : [];
+      const state = moduleUp(info) ? await app.sp.state() : null;
+      more = {
+        state,
+        known: state ? await app.sp.list("Networks").catch(() => []) : [],
+        boot: await app.sp.call("BootState", {}),
+        controllers: app.sp.link() === "net" ? await app.sp.list("Controllers").catch(() => []) : null,
+      };
+    }
+    if (overtaken()) return;
+    app.info = info;
+    if (more) {
+      app.state = more.state;
+      app.known = more.known;
       if (app.state) drawSettings();
-      drawSoftware(await app.sp.call("BootState", {}));
-      if (app.sp.link() === "net") drawControllers(await app.sp.list("Controllers").catch(() => []));
+      drawSoftware(more.boot);
+      if (more.controllers) drawControllers(more.controllers);
     }
     drawDiag(diag);
     app.led = diag.led;
@@ -55,7 +70,7 @@ export async function refresh(all) {
 }
 
 /// The module up as our OS: what the Network and Receivers sections are about.
-const moduleUp = () => names(app.S.ModState)[app.info?.mod_state] === "ready";
+const moduleUp = (i = app.info) => names(app.S.ModState)[i?.mod_state] === "ready";
 
 export function draw() {
   $("network-panel").hidden = $("receivers-panel").hidden = !moduleUp() || !app.state;

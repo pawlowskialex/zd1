@@ -199,7 +199,7 @@ export async function connectNet(addr) {
   localStorage.setItem("zd1.address", addr);
   app.bl = null;
   show("app");
-  await refresh(true);
+  await refresh(true, true); // the step of the operation it runs in (op): the speaker drawn before it ends
   rememberName(addr, app.state?.name);
 }
 
@@ -237,25 +237,50 @@ export function show(what) {
   if (what === "app") $("verdict").after($("builds"));
 }
 
+/// The control a person just used (clicked, changed, submitted): what an operation it starts marks as waiting.
+/// Taken from the events, not the focus: WebKit (the app) doesn't focus a clicked button.
+let trigger = null;
+for (const type of ["click", "change", "submit"])
+  document.addEventListener(
+    type,
+    (e) => {
+      trigger = e.submitter ?? e.target.closest?.("button, input, select, label") ?? null;
+      setTimeout(() => {
+        trigger = null;
+      });
+    },
+    true,
+  );
+
 /// One operation at a time from the page's side (the WebAssembly queues them too); the press dialog closes after.
+/// Until it ends the control that started it is `aria-busy`, and once it has taken long enough to see (most do over
+/// the network) the page is `waiting`: that control breathes, the pointer says so (button.css).
 export async function op(f) {
+  const from = trigger;
   app.cancel = false;
   app.busy++;
+  from?.setAttribute("aria-busy", "true");
   document.body.classList.add("busy");
+  const slow = setTimeout(() => document.body.classList.add("waiting"), 200);
   try {
     return await f();
   } catch (e) {
     failed(e);
   } finally {
     $("press").close();
-    if (--app.busy === 0) document.body.classList.remove("busy");
+    clearTimeout(slow);
+    from?.removeAttribute("aria-busy");
+    if (--app.busy === 0) document.body.classList.remove("busy", "waiting");
   }
 }
-/// An operation, then the speaker drawn again.
+/// An operation, then the speaker drawn again, within it: the control waits until the page shows what came of it.
 export const act = (f, all = true) =>
-  op(f).then((r) => {
-    refresh(all);
-    return r;
+  op(async () => {
+    try {
+      return await f();
+    } finally {
+      await refresh(all, true);
+    }
   });
 
 // ---- the job strip: one long flow at a time, its phases, its outcome --------------------------------------------

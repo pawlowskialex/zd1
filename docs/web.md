@@ -126,7 +126,8 @@ floor: the drawing stands on its reflection.
   `fill` for a slider): buttons (`button` secondary, `.primary` the one action a view leads to, `.danger`, `.quiet`
   a link; `select` and the file picker drawn the same), the segmented control and the switch
   (`button.switch[aria-pressed]`), filled when chosen (the sources in `--lamp`, the LED's colour for
-  each: `led.js` `lampOf`; switches white), the checkbox, the lamp (`.lamp`, and the tags' and notices' own), fields, the slider, the panel (`section.panel` > `h2` +
+  each: `led.js` `lampOf`; switches white; a pick shows at once), a control waiting for the speaker (`[aria-busy]`
+  from `op` until the page shows the answer; it breathes once the wait passes 200 ms, `body.waiting`), the checkbox, the lamp (`.lamp`, and the tags' and notices' own), fields, the slider, the panel (`section.panel` > `h2` +
   `.panel-body`) and the facts table, lists and receivers, tags and signal bars, notices, the banner, the choice cards (`.choices > .choice`, side by side, with numbered `.steps`), progress,
   dialogs, terminal panes, disclosures and the triage. `<zd-speaker>` (`js/zd-speaker.js`, a custom element: `mode`, `led`, `look`,
   `vol`, `press`, `progress`) is the drawing.
