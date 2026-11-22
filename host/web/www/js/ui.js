@@ -26,6 +26,16 @@ export function segmented(into, choices, current, pick) {
     }),
   );
 }
+/// A part of the page a person is changing (typed or picked in it since it was drawn, not saved yet): the speaker's
+/// state as read doesn't draw over it. Saving from it (an operation it starts: connection.js `op`) or another
+/// connection ends that.
+export const editing = (part) => part.dataset.edited === "1";
+export function watchEdits(...parts) {
+  for (const p of parts)
+    p.addEventListener("input", () => {
+      p.dataset.edited = "1";
+    });
+}
 export const stamp = () => new Date().toISOString().replace(/[-:]/g, "").replace("T", "-").slice(0, 15);
 
 // ---- notices: every outcome in the page, never alert() ----------------------------------------------------------

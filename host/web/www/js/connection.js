@@ -234,7 +234,11 @@ export function show(what) {
     drawSpeakers();
   }
   if (what === "dfu") hero({ mode: what, title: "Bootloader", status: "Waiting for firmware" });
-  if (what === "app") $("verdict").after($("builds"));
+  if (what === "app") {
+    $("verdict").after($("builds"));
+    // another connection (maybe another speaker): nothing of the last one's carried over
+    for (const e of document.querySelectorAll("[data-edited]")) e.removeAttribute("data-edited");
+  }
 }
 
 /// The control a person just used (clicked, changed, submitted): what an operation it starts marks as waiting.
@@ -264,7 +268,7 @@ export async function op(f) {
   document.body.classList.add("busy");
   const slow = setTimeout(() => document.body.classList.add("waiting"), 200);
   try {
-    return await f();
+    return await f(from);
   } catch (e) {
     if (!(e?.code === "GONE" && sp && app.sp !== sp)) failed(e); // not one the page let go of (Disconnect)
   } finally {
@@ -275,11 +279,17 @@ export async function op(f) {
   }
 }
 /// An operation, then the speaker drawn again, within it: the control waits until the page shows what came of it.
+/// Saved from a part a person was changing (ui.js `editing`): that part is drawn from the speaker again; not saved
+/// (refused, failed), it keeps what they typed.
 export const act = (f, all = true) =>
-  op(async () => {
+  op(async (from) => {
+    let saved = false;
     try {
-      return await f();
+      const r = await f();
+      saved = true;
+      return r;
     } finally {
+      if (saved) from?.closest("[data-edited]")?.removeAttribute("data-edited");
       await refresh(all, true);
     }
   });

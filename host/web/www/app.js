@@ -12,7 +12,7 @@ import { app } from "./js/shared.js";
 import { drawInstall, installMcu, installSystem, loadReleases, rollback, startFirmware } from "./js/software.js";
 import { refresh } from "./js/speaker.js";
 import { watchSpeakers } from "./js/speakers.js";
-import { $, ask, download, fill, names, notice, readFile, stamp } from "./js/ui.js";
+import { $, ask, download, fill, names, notice, readFile, stamp, watchEdits } from "./js/ui.js";
 import { findUpdater, installZd1l, lookHere } from "./js/zd1l.js";
 import init, { spec } from "./pkg/zd1_web.js";
 
@@ -52,6 +52,7 @@ async function main() {
     $("connect").disabled = $("connect-dfu").disabled = true;
   }
   wire();
+  watchEdits($("name-form"), $("addr"), $("receivers"));
   consoleInit();
   loadReleases();
   watchSpeakers();
