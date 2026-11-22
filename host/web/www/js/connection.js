@@ -5,6 +5,7 @@ import { keepBackup } from "./backups.js";
 import { consoleText } from "./console.js";
 import { hero, heroProgress } from "./hero.js";
 import { host } from "./host.js";
+import { forgetReceivers } from "./receivers.js";
 import { app } from "./shared.js";
 import { drawDfu } from "./software.js";
 import { refresh } from "./speaker.js";
@@ -238,6 +239,7 @@ export function show(what) {
     $("verdict").after($("builds"));
     // another connection (maybe another speaker): nothing of the last one's carried over
     for (const e of document.querySelectorAll("[data-edited]")) e.removeAttribute("data-edited");
+    forgetReceivers();
   }
 }
 
