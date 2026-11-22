@@ -428,7 +428,7 @@ export function drawReleases() {
       ["system", "its system"],
       ["mcu", "its MCU firmware"],
     ]) {
-      if (!r[kind]) continue;
+      if (!r[kind] || (kind === "mcu" && app.sp?.link() === "net")) continue; // the MCU's: over USB only
       const b = el("button", { className: "quiet", textContent: `Install ${label}` });
       b.onclick = () => installRelease(r, kind);
       row.append(b);
@@ -627,6 +627,8 @@ export async function installMcu(name, data) {
   }
   if (i.kind !== "mcu" && i.kind !== "backup")
     return notice(`${name} is not MCU firmware (Intel HEX, the app region's .bin, or a backup).`, "warn");
+  if (app.sp?.link() === "net")
+    return notice("The main board's firmware goes over USB (over the network it follows its system).", "warn");
   const from = i.kind === "backup" ? ` (the backup read ${new Date(i.when).toLocaleString()})` : "";
   if (
     !(await ask(
@@ -651,7 +653,9 @@ export async function installMcu(name, data) {
             : "Written and started.",
       ),
   );
+  // done or not, this connection has ended (the flash took the speaker into its bootloader): whatever is on USB
+  // now, the firmware or the bootloader, the page shows it
   app.sp = null;
   app.bl = null;
-  if (r) await connect(false);
+  await connect(false);
 }
