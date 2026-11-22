@@ -99,7 +99,7 @@ and what is known. What already works: `status.md`; checks that need a person at
   may come from an app the key doesn't reach; today the USB stream keeps running unheard and the speaker goes back to
   it once the other source is silent.
 - **Stable USB identity**: macOS asks "Allow accessory to connect?" when the descriptors change; keep them as they are
-  between builds (the serial number is fixed, "ZD1").
+  between builds (the serial number is the chip's, the same for a speaker whatever the build).
 - **The host link**: events as typed messages (source and module changes, keys) instead of only log text.
 - **Windows**: the WinUSB descriptors (bb0ea15) on a real Windows machine, and the page there.
 - **The transport keys after the CDC port went** (MCU feffd90; HID keeps play/pause, next, previous): not tried on

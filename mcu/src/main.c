@@ -33,6 +33,9 @@
 #include <intc.h>
 #include <pm.h>
 
+/* conf_usb.h states the serial's length as a number (ASF sizes its string table by it): the one zd1_board.c fills */
+typedef char usb_serial_len_check[USB_DEVICE_GET_SERIAL_NAME_LENGTH == USB_SERIAL_LEN ? 1 : -1];
+
 /* Between main-loop passes the CPU sleeps (idle mode: clocks and peripherals keep running) until the next
  * interrupt or the 1 kHz wake tick (TC0, RC compare, from PBA / 128; the CPU's COMPARE would reset COUNT, which the
  * ms tick, IR timing and cpu_delay all read). Not from the 32 kHz oscillator, TIMER_CLOCK1: nothing starts it, and
@@ -74,6 +77,7 @@ int main(void) {
     selfdfu_capture_boot_state();
     mcufw_report(); /* into the log: the preloader's last run, if it ran */
     board_usb_mux_device();
+    board_usb_serial();
     blog(6);
     udc_start();
     blog(7);
