@@ -216,10 +216,11 @@ All in `src/source.c` unless said otherwise; the times are constants there.
 - **USB identity**: stock's strings, "Bowers & Wilkins" / "Zeppelin Air", and the chip's own serial number (FLASHC's
   15 bytes at 0x80800204, past the user page: 30 hex digits, `board_usb_serial`), so the host shows the speaker under
   its name, tells two speakers apart and keeps its settings for each across builds; the VID/PID stay 03EB:2FE0 (the
-  tools find it by them). The name stays "Zeppelin Air" whatever the speaker is called: a string a host reads once,
-  likely part of the device's identity to it (macOS's output UID), so the computer would forget the speaker at each
-  rename.
-  The emulator doesn't model the serial area: its serial reads as zeros.
+  tools find it by them). macOS keys an output by all three strings: CoreAudio's UID is `AppleUSBAudioEngine:Bowers &
+  Wilkins:Zeppelin Air:SERIAL:1` [HW 2026-11-26]. So the name stays "Zeppelin Air" whatever the speaker is called (a
+  rename would make the Mac forget the speaker), and a speaker whose serial changed (from "ZD1", once) is a new output
+  to it: no longer the one chosen, and at a new device's volume, which reaches the speaker (on the unit 34/71 where it
+  had been 11) [HW 2026-11-26]. The emulator doesn't model the serial area: its serial reads as zeros.
 
 ## The LED
 `src/led.c`. The source manager describes what the speaker does (a look: standby, error, the source, the module's
