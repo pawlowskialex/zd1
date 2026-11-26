@@ -4099,7 +4099,7 @@ dependencies = [
 [[package]]
 name = "shairplay"
 version = "0.13.0"
-source = "git+https://github.com/pawlowskialex/shairplay-rust?rev=757cc1a8ebae24db9d1f05acac819e1989dd614e#757cc1a8ebae24db9d1f05acac819e1989dd614e"
+source = "git+https://github.com/pawlowskialex/shairplay-rust?rev=50ff866868610e1584c06937c79a12a8279683de#50ff866868610e1584c06937c79a12a8279683de"
 dependencies = [
  "aes 0.9.3",
  "astro-dnssd",
