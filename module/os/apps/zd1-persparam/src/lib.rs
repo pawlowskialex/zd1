@@ -87,6 +87,63 @@ pub fn unit_mac() -> Result<[u8; 6], String> {
     MAC.get_or_init(|| mac(&parse(&read(DEV)?)?)).clone()
 }
 
+/// Where a speaker whose PersParam has no MAC keeps the one it made itself ([`speaker_mac`]).
+pub const OWN_MAC: &str = "/data/zd1/mac";
+/// The MAC when there is none to be had, not even one of our own: the same on every speaker.
+const SHARED_MAC: [u8; 6] = [0x02, 0x5A, 0xD1, 0x00, 0x00, 0x01];
+
+/// The speaker's MAC, what everything that names it on the network comes from (eth0's and the Wi-Fi's MACs, the host
+/// name, AirPlay's device id, Spotify's, Snapcast's client id, the default name): PersParam's, the unit's from the
+/// factory; else one of its own, made the first time and kept in /data, so that two speakers on one network stay
+/// apart even with a broken PersParam. Ours is locally administered under 02:5A:D1. Only if /data can't keep it,
+/// [`SHARED_MAC`]. Read once per process.
+pub fn speaker_mac() -> [u8; 6] {
+    static MAC: OnceLock<[u8; 6]> = OnceLock::new();
+    *MAC.get_or_init(|| unit_mac().unwrap_or_else(|_| own_mac()))
+}
+
+fn own_mac() -> [u8; 6] {
+    if let Some(m) = std::fs::read_to_string(OWN_MAC).ok().and_then(|s| zd1_sys::parse_mac(&s)) {
+        return m;
+    }
+    let r = fresh();
+    let m = [0x02, 0x5A, 0xD1, r[0], r[1], r[2]];
+    let tmp = format!("{OWN_MAC}.new");
+    let kept = std::path::Path::new(OWN_MAC).parent().is_some_and(|d| std::fs::create_dir_all(d).is_ok())
+        && std::fs::write(&tmp, format!("{}\n", zd1_sys::format_mac(&m))).is_ok()
+        && std::fs::rename(&tmp, OWN_MAC).is_ok();
+    if kept { m } else { SHARED_MAC }
+}
+
+/// Three bytes another speaker is unlikely to draw: /dev/urandom, folded (FNV-1a) with the time a memory-bound loop
+/// takes, many times. At boot the kernel's pool has next to nothing in it (zd1-entropy credits it later), and two
+/// speakers start the same image: the timing (SDRAM refresh, the other bus masters) is what differs.
+fn fresh() -> [u8; 3] {
+    fn mix(h: &mut u64, bytes: &[u8]) {
+        for &b in bytes {
+            *h ^= b as u64;
+            *h = h.wrapping_mul(0x0100_0000_01b3);
+        }
+    }
+    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+    let mut u = [0u8; 16];
+    if let Ok(mut f) = File::open("/dev/urandom") {
+        let _ = f.read_exact(&mut u);
+    }
+    mix(&mut h, &u);
+    let mut buf = vec![0u8; 64 * 1024];
+    for i in 0..256u32 {
+        let t0 = std::time::Instant::now();
+        for j in (0..buf.len()).step_by(64) {
+            buf[j] = buf[j].wrapping_add(i as u8);
+        }
+        mix(&mut h, &(t0.elapsed().as_nanos() as u64).to_le_bytes());
+    }
+    std::hint::black_box(&buf);
+    let b = h.to_le_bytes();
+    [b[0], b[1], b[2]]
+}
+
 #[derive(Debug, PartialEq)]
 pub struct Record<'a> {
     pub key: String,

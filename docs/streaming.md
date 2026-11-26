@@ -64,7 +64,10 @@ shairport-sync's) and artwork / now-playing text (bits 15, 17: nothing here show
 (the Ed25519 seed behind the advertised `pk`) and paired controllers are kept in `/data/zd1/airplay`, so the speaker
 is the same accessory across restarts; without a PIN, pairing is transient (SRP per connection), as for AirPlay
 speakers without HomeKit. Its mDNS services point at `<hostname>-airplay.local`: the plain host name is claimed by
-Spotify's and Snapcast's responders too.
+Spotify's and Snapcast's responders too. The host name is the speaker's own, `zeppelin-air-<MAC>` (`zd1_sys::host_name`,
+set by init): with the image's `zd1` every speaker's services pointed at `zd1-airplay.local`, and with two speakers on
+one network a sender streamed to whichever answered for it, the other one listed and chosen but silent [HW
+2026-11-26: a Zeppelin Air and one with Lightning].
 
 **Formats.** GET /info offers realtime ALAC/44100/S16/2 and buffered AAC-LC/44100 and /48000, ALAC/44100/S16/2 and
 ALAC/48000/S24/2 (shairport-sync's set with its lossless mode on). A buffered stream's SETUP names one format, but

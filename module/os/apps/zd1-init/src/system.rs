@@ -295,10 +295,10 @@ fn address(i: &Iface, a: &zd1_settings::Address, retry_s: &str) -> Result<Vec<Co
     Ok(Vec::new())
 }
 
-/// eth0's MAC: sulu_eth comes up with 0 (Nokia's userspace set it). The unit's from PersParam, else a locally
-/// administered one (the same on every unit: only for a broken PersParam).
+/// eth0's MAC: sulu_eth comes up with 0 (Nokia's userspace set it). The speaker's: PersParam's, else its own
+/// (`zd1_persparam::speaker_mac`).
 fn unit_mac() -> [u8; 6] {
-    zd1_persparam::unit_mac().unwrap_or([0x02, 0x5A, 0xD1, 0x00, 0x00, 0x01])
+    zd1_persparam::speaker_mac()
 }
 
 const WPA_CONF: &str = "/run/wpa_supplicant.conf";
@@ -452,15 +452,9 @@ fn selftest(c: &Ctx) -> Start {
 
 // ---- the early start: the system's part (the rescue's: start.rs) ----
 
-/// After the mounts: the host name, the identification, /data (formatted if it isn't ours yet), the vendor's
-/// modules, loopback.
+/// After the mounts: the identification, /data (formatted if it isn't ours yet), the host name, the vendor's modules,
+/// loopback.
 pub fn early(boot: &Boot, kernel: &str) {
-    if let Ok(h) = std::fs::read_to_string("/etc/hostname") {
-        let h = h.trim();
-        unsafe {
-            libc::sethostname(h.as_ptr() as *const _, h.len());
-        }
-    }
     let release = identify(boot);
     say(&format!(
         "{} {} ({}, {}), kernel {kernel}, {}",
@@ -471,8 +465,18 @@ pub fn early(boot: &Boot, kernel: &str) {
         where_we_run(boot)
     ));
     data();
+    host_name();
     modules();
     loopback();
+}
+
+/// The speaker's own host name, from its MAC (`zd1_sys::host_name`), before anything announces itself on the network
+/// with it; after /data, where a speaker without a MAC in PersParam keeps its own.
+fn host_name() {
+    let h = zd1_sys::host_name(&zd1_persparam::speaker_mac());
+    if unsafe { libc::sethostname(h.as_ptr() as *const _, h.len()) } != 0 {
+        say(&format!("host name {h}: {}", std::io::Error::last_os_error()));
+    }
 }
 
 /// The system's identification, with how it started as its variant (the command line: `zd1.rescue`, the system from
@@ -504,24 +508,28 @@ fn where_we_run(boot: &Boot) -> String {
 }
 
 /// The vendor's kernel modules, in /etc/modules' order (os.toml [vendor] load). sulu_wlan gets the unit's Wi-Fi MAC
-/// (PersParam MAC0, locally administered: its own address) and `diversity=2`: the Zeppelin's antenna is on the
+/// (the speaker's MAC, `zd1_persparam::speaker_mac`, locally administered: its own address) and `diversity=2`: the Zeppelin's antenna is on the
 /// radio's second port. The driver's default (both) transmits on the first: the AP heard the module 15-20 dB weaker
 /// than the module heard it, and ~1-2 % of the uplink was lost; on port 2 the link is symmetric and loses nothing
 /// [HW 2026-10-24, docs/module/memory-map.md, Wi-Fi].
 fn modules() {
     let release = std::fs::read_to_string("/proc/sys/kernel/osrelease").unwrap_or_default();
     let dir = format!("/lib/modules/{}/kernel", release.trim());
-    let wlan_mac = match zd1_persparam::unit_mac() {
-        Ok(m) => Some(zd1_persparam::wlan_mac(&m).iter().map(|b| format!("{b:#04x}")).collect::<Vec<_>>().join(",")),
-        Err(e) => {
-            say(&format!("no MAC in PersParam: {e}"));
-            None
-        }
-    };
+    if let Err(e) = zd1_persparam::unit_mac() {
+        say(&format!(
+            "no MAC in PersParam ({e}): the speaker's own, {}",
+            zd1_sys::format_mac(&zd1_persparam::speaker_mac())
+        ));
+    }
+    let wlan_mac = zd1_persparam::wlan_mac(&zd1_persparam::speaker_mac())
+        .iter()
+        .map(|b| format!("{b:#04x}"))
+        .collect::<Vec<_>>()
+        .join(",");
     for m in std::fs::read_to_string("/etc/modules").unwrap_or_default().lines().filter(|l| !l.is_empty()) {
         let params = match m.rsplit('/').next() {
             Some("sulu_wlan") => {
-                format!("diversity=2{}", wlan_mac.as_ref().map(|w| format!(" macaddr={w}")).unwrap_or_default())
+                format!("diversity=2 macaddr={wlan_mac}")
             }
             _ => String::new(),
         };
