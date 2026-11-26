@@ -1,0 +1,16 @@
+[package]
+name = "zd1-noise"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+description = "The network link's Noise session (docs/protocol/net.md): Noise_XX_25519_ChaChaPoly_SHA256 with the link's prologue, on nivalis; the speaker's side and a client's"
+
+[dependencies]
+nivalis.workspace = true
+getrandom = { version = "0.4", features = ["sys_rng"] }
+rand_core = { version = "0.10", default-features = false }
+zd1-hostlink.workspace = true
+
+# the browser's randomness in the page's WebAssembly
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+getrandom = { version = "0.4", features = ["sys_rng", "wasm_js"] }

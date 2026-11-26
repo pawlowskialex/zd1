@@ -111,6 +111,17 @@ let
         ../Cargo.lock
         "${rust.passthru.availableComponents.rust-src}/lib/rustlib/src/rust/library/Cargo.lock"
       ];
+      # ring from git (Cargo.toml's [patch.crates-io], until a release has getrandom 0.4) has no pregenerated/
+      # assembly: with a .git beside its Cargo.toml its build script generates it with perl (the module's build has
+      # perl), as in a checkout
+      overrideVendorGitCheckout =
+        ps: drv:
+        if lib.any (p: p.name == "ring") ps then
+          drv.overrideAttrs (old: {
+            postInstall = (old.postInstall or "") + "for d in $out/ring-*; do touch $d/.git; done\n";
+          })
+        else
+          drv;
     };
   };
 
@@ -304,6 +315,12 @@ in
       ${lib.getExe pkgs.python3Minimal} -I ${./privacy.py} ${repo}
       touch $out
     '';
+    # every crate in the module's binary in one version: nix/dups.py, on the vendored dependencies
+    dups = pkgs.runCommand "zd1-dups" { nativeBuildInputs = [ rust ]; } ''
+      cd ${workspace.src}
+      CARGO_HOME=$TMPDIR ${lib.getExe pkgs.python3Minimal} -I ${./dups.py} --offline --config ${workspace.cargoVendorDir}/config.toml
+      touch $out
+    '';
     # the MCU's C for both protocols against the Rust's vectors (mcu/test, written by protocol/gen), and its host-volume
     # mapping (hostvol.h), on the host
     mcu-tests =
@@ -413,14 +430,16 @@ in
         nativeBuildInputs = [
           (pkgsArm.buildPackages.rust-bin.fromRustupToolchainFile ../rust-toolchain.toml)
           pkgsArm.buildPackages.pkg-config
+          pkgsArm.buildPackages.perl
         ];
-        # what the full build needs besides the core's, as in module/apps.nix: alsa-lib (alsa-sys), the Warp0 images
+        # what the full build needs besides the core's, as in module/apps.nix (perl and the CFLAGS: ring): alsa-lib (alsa-sys), the Warp0 images
         # (zd1-warp0), libiconv for the build scripts on macOS (librespot-protocol's)
         buildInputs = [ module.alsa-lib ];
         depsBuildBuild = lib.optional pkgs.stdenv.isDarwin pkgs.libiconv;
         env = {
           "CARGO_TARGET_${target.cargoEnvVarTarget}_LINKER" = cc;
           "CC_${target.cargoEnvVarTarget}" = cc;
+          "CFLAGS_${lib.replaceStrings [ "-" ] [ "_" ] target.rustcTarget}" = "-Wno-unused-command-line-argument";
           PKG_CONFIG_ALL_STATIC = "1";
           W0_FW_DIR = module.warp0-fw;
         };

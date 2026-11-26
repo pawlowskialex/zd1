@@ -7,6 +7,6 @@ description = "The module's updater: a system image from the MCU over the consol
 
 [dependencies]
 libc = "0.2"
-sha2 = { version = "0.10", default-features = false }
+sha2 = { version = "0.11", default-features = false }
 zd1-slot.workspace = true
 zd1-sys.workspace = true

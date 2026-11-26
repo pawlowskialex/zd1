@@ -24,7 +24,7 @@ and what is known. What already works: `status.md`; checks that need a person at
   zd1-app lists our speakers from their AirPlay records, so one with AirPlay off isn't found. A `_zd1._tcp` record
   from zd1-netd would find each one by its link; `zd1 --net` could browse it too.
 - **The page's keys** are in its origin's storage, which every page under the same GitHub Pages host shares; a
-  non-extractable WebCrypto key (X25519) would keep the secret out of reach, with snow on a resolver of its own.
+  non-extractable WebCrypto key (X25519) would keep the secret out of reach, with `zd1-noise` on a DH of its own.
 
 ## Module OS
 - **The page and the protocol's last pieces, checked on the unit** (`docs/web.md`, Order of work): on the unit since

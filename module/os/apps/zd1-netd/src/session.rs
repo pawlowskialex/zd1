@@ -78,25 +78,20 @@ pub fn run(s: TcpStream, id: &Identity, shared: &Shared) -> Result<(), String> {
     };
 
     // Noise_XX: -> e; <- e, ee, s, es; -> s, se. The client's static key is its identity from here on.
-    let noise = |e: snow::Error| format!("the handshake: {e}");
-    let mut hs = snow::Builder::new(net::NOISE.parse().map_err(noise)?)
-        .prologue(net::PROLOGUE)
-        .and_then(|b| b.local_private_key(&id.private))
-        .and_then(|b| b.build_responder())
-        .map_err(noise)?;
-    let mut buf = vec![0u8; 65535];
-    hs.read_message(&binary(&mut ws, deadline)?, &mut buf).map_err(noise)?;
-    let n = hs.write_message(&[], &mut buf).map_err(noise)?;
-    ws.send(Message::Binary(buf[..n].to_vec().into())).map_err(|e| e.to_string())?;
-    hs.read_message(&binary(&mut ws, deadline)?, &mut buf).map_err(noise)?;
-    let client: [u8; 32] = hs.get_remote_static().and_then(|k| k.try_into().ok()).ok_or("no client key")?;
+    let noise = |e: zd1_noise::Error| format!("the handshake: {e}");
+    let mut hs = zd1_noise::Speaker::new(id).map_err(noise)?;
+    hs.read(&binary(&mut ws, deadline)?).map_err(noise)?;
+    let (m2, _) = hs.write().map_err(noise)?;
+    ws.send(Message::Binary(m2.into())).map_err(|e| e.to_string())?;
+    let zd1_noise::Step::Done(noise) = hs.read(&binary(&mut ws, deadline)?).map_err(noise)? else {
+        return Err("the handshake didn't end with the third message".into());
+    };
+    let client = noise.remote().ok_or("no client key")?;
     shared.guard.lock().unwrap().connected(&client, Instant::now()); // its network changes are kept
-    let noise = hs.into_transport_mode().map_err(noise)?;
 
     let mut s = Session {
         ws,
         noise,
-        buf,
         client,
         who: format!("{peer} {}", zd1_text::key_id(&client)),
         paired: false,
@@ -136,8 +131,7 @@ fn binary(ws: &mut WebSocket<TcpStream>, deadline: Instant) -> Result<Vec<u8>, S
 
 struct Session {
     ws: WebSocket<TcpStream>,
-    noise: snow::TransportState,
-    buf: Vec<u8>,
+    noise: zd1_noise::Transport<zd1_noise::Responder>,
     client: [u8; 32],
     who: String,
     paired: bool,
@@ -157,11 +151,11 @@ impl Session {
             match self.ws.read() {
                 Ok(Message::Binary(b)) => {
                     self.last = Instant::now();
-                    let n = self.noise.read_message(&b, &mut self.buf).map_err(|e| format!("a message: {e}"))?;
-                    if n < 3 {
+                    let call = self.noise.decrypt(&b).map_err(|e| format!("a message: {e}"))?;
+                    if call.len() < 3 {
                         return Err("a call without a request".into());
                     }
-                    let (seq, req) = (u16::from_le_bytes([self.buf[0], self.buf[1]]), self.buf[2..n].to_vec());
+                    let (seq, req) = (u16::from_le_bytes([call[0], call[1]]), call[2..].to_vec());
                     let reply = self.request(seq, &req, shared)?;
                     let mut r = seq.to_le_bytes().to_vec();
                     r.extend_from_slice(&reply);
@@ -201,9 +195,7 @@ impl Session {
     /// A record to the client, as one Noise message.
     fn send(&mut self, kind: u8, payload: &[u8]) -> Result<(), String> {
         let r = record::encode(kind, payload);
-        let mut out = vec![0u8; r.len() + 16];
-        let n = self.noise.write_message(&r, &mut out).map_err(|e| e.to_string())?;
-        out.truncate(n);
+        let out = self.noise.encrypt(&r).map_err(|e| e.to_string())?;
         self.ws.send(Message::Binary(out.into())).map_err(|e| e.to_string())
     }
 
