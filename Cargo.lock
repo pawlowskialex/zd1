@@ -5970,7 +5970,9 @@ dependencies = [
  "nix",
  "tracing",
  "tracing-subscriber",
+ "zd1-hostlink",
  "zd1-sys",
+ "zd1-text",
 ]
 
 [[package]]

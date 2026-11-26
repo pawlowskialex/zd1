@@ -8,17 +8,19 @@
 //!
 //!   zd1-airplay [--name NAME] [--device hw:0,0] [--pin PIN] [--buffer-kb KB] [--store DIR] [--no-warp0] [-v]
 //!
-//! Name: "Zeppelin Air XXXXXX" from eth0's MAC, like the stock module. Pairing: transient (no PIN, as AirPlay
-//! speakers without HomeKit) unless --pin; the accessory's identity and PIN-paired controllers are kept in
-//! /data/zd1/airplay (`store`), so the speaker stays the same accessory across restarts.
+//! Name: "Zeppelin Air XXXXXX" from eth0's MAC, like the stock module. Pairing: transient (no PIN) unless --pin; the
+//! accessory's identity and paired controllers are kept in /data/zd1/airplay (`store`), so the speaker stays the same
+//! accessory across restarts. Without a PIN the speaker can be added in Apple's Home app ("Add Accessory", without a
+//! code): the person at the speaker allows it with ON/OFF held 5 s (`Home`), the Home app's controller becomes its
+//! admin, and the home's configuration (who may play) is kept beside the pairings.
 //! Warp0 does the decoding when it is free, unless --no-warp0 (module/warp0: the ARM only moves packets and PCM):
 //! realtime ALAC streams (AirPlay 1, AirPlay 2 realtime) decrypted and decoded per packet, buffered AAC streams
 //! (an iPhone's music) and buffered ALAC ones (an Apple TV's lossless, 16- or 24-bit) decoded frame by frame ahead of
 //! playout; anything it can't take runs on the ARM.
 
 use shairplay::{
-    AudioFormat, AudioHandler, AudioSession, DeviceIdentity, RaopServer, RemoteCommand, RemoteControl, SampleFormat,
-    Samples,
+    AudioFormat, AudioHandler, AudioSession, DeviceIdentity, HomeConfiguration, HomeSetup, RaopServer, RemoteCommand,
+    RemoteControl, SampleFormat, Samples,
 };
 use std::sync::{Arc, Mutex};
 use tokio::signal::unix::{SignalKind, signal};
@@ -138,6 +140,31 @@ impl AudioHandler for Handler {
     }
 }
 
+/// Setting the speaker up for a home in the Home app: the person at the speaker allows it (ON/OFF held 5 s within 30 s,
+/// the LED flashing purple), as a network client's pairing; the home's configuration is kept in the store.
+struct Home {
+    speaker: speaker::Speaker,
+    store: Arc<store::DataStore>,
+}
+
+impl HomeSetup for Home {
+    fn allow_setup(&self, peer: std::net::IpAddr) -> bool {
+        tracing::info!(%peer, "the Home app asks to set the speaker up: ON/OFF held 5 s on the speaker allows it");
+        let held = self.speaker.confirm();
+        tracing::info!(%peer, held, "home setup");
+        held
+    }
+
+    fn configuration(&self) -> HomeConfiguration {
+        self.store.home()
+    }
+
+    fn configured(&self, configuration: &HomeConfiguration) {
+        tracing::info!(?configuration, "the home's configuration");
+        self.store.save_home(configuration);
+    }
+}
+
 /// What a sender is told before the speaker's volume is known: shairport-sync's default (-24 dB: 20 %, step 14)
 const UNKNOWN_DB: f32 = -24.0;
 
@@ -201,6 +228,9 @@ pub async fn main() {
     let s2 = shared.clone();
     let speaker = speaker::Speaker::start(SOURCE, move |ev| on_speaker(&s2, ev));
     let out = Output::start(args.device(), speaker.clone());
+    let store =
+        Arc::new(store::DataStore::open(std::path::Path::new(args.get("--store").unwrap_or("/data/zd1/airplay"))));
+    let home = Arc::new(Home { speaker: speaker.clone(), store: store.clone() });
     let handler = Arc::new(Handler { out, shared, speaker });
 
     let mut builder = RaopServer::builder()
@@ -210,9 +240,8 @@ pub async fn main() {
         .sample_format(SampleFormat::Integer)
         .audio_buffer_size(buffer_kb * 1024)
         .decoders(zd1_warp0::decoders(warp0))
-        .pairing_store(Arc::new(store::DataStore::open(std::path::Path::new(
-            args.get("--store").unwrap_or("/data/zd1/airplay"),
-        ))))
+        .pairing_store(store)
+        .home(home)
         .max_clients(4);
     if let Some(pin) = args.get("--pin") {
         builder = builder.pin(pin.to_string());

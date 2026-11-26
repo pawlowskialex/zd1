@@ -59,6 +59,10 @@ waiting, so a press would pair whoever asked when someone next switched the spea
 (`mcu/src/inputs.h`), which nothing on the host link or the remote can fake. Pairing leaves the speaker in standby
 (the 2 s hold on the way): a press wakes it.
 
+The hold is the MCU's `Unlock` from the module (zd1-netd sends it through zd1-linkd's tunnel): from there it only
+waits for ON/OFF held 5 s and answers, opening nothing. zd1-airplay asks it the same way when Apple's Home app sets
+the speaker up for a home (docs/streaming.md, The Home app); one confirmation waits at a time (`Error BUSY`).
+
 **Which pages may open the link**: a browser sends the page's address (`Origin`) with the WebSocket's request, and
 any site the person has open could otherwise reach the speaker from their browser, on the speaker's network, and ask
 to pair. Only the published page and a page served from this computer (`localhost`, `127.0.0.1`: `tools/zeppelin web`)

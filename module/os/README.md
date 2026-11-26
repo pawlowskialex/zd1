@@ -161,7 +161,7 @@ like stock.
 `zd1-airplay` (`apps/zd1-airplay`) is the receiver: our app on **shairplay-rust**, a pure-Rust AirPlay library
 forked and changed for this CPU (`forks.md`: an integer audio path, compressed
 buffering, pairing fixes), with our own fixed-point AAC-LC decoder (`module/codecs/aac`). AirPlay 1 (RSA, AES-CBC, ALAC), AirPlay 2 (transient pair-setup
-with PIN 3939, or `--pin`; ChaCha20-Poly1305; realtime ALAC, buffered AAC (the iPhone's music mode) and buffered
+with PIN 3939, or `--pin`; set up for a home in Apple's Home app with ON/OFF held 5 s, docs/streaming.md; ChaCha20-Poly1305; realtime ALAC, buffered AAC (the iPhone's music mode) and buffered
 ALAC, 24-bit kept 24-bit), FairPlay
 fp-setup, its own mDNS and PTP listener. Init's `airplay` service starts it (restarted if it exits; off with `zd1.noairplay`),
 named "Zeppelin Air XXXXXX" from the MAC like the stock module; log `/var/log/airplay.log`.
