@@ -604,6 +604,12 @@ namespace Antmicro.Renode.Peripherals.CR870
                 }
                 need = true;
             }
+            else if (seq != c.RcvNxt && (fl & (Syn | Fin | Rst)) == 0)
+            {
+                // a segment outside the window, as a keepalive probe (no data, one below RcvNxt): answered with an
+                // ACK (RFC 793), else the guest's TCP gives up on a quiet connection after its probes
+                need = true;
+            }
             if ((fl & Fin) != 0 && seq + (uint)data.Count == c.RcvNxt && !c.GuestFin)
             {
                 c.GuestFin = true;
