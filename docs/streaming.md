@@ -80,8 +80,19 @@ through the same way. Then `POST /configure` sets the home's access control: the
 `acl` who may play (0 everyone; 1 the home's members only, whose devices pair-verify with the keys the admin added:
 other senders get nothing past pairing). The configuration is kept in `/data/zd1/airplay/home` beside the pairings
 and goes with the last admin (removing the speaker from the home); the name the Home app gives is kept, not taken
-(the speaker keeps its own). [HW 2026-11-26: the Home app's order seen, its /pair-add refused by the first
-version; with this one not tried yet: whether it waits at /pair-add while ON/OFF is held.]
+(the speaker keeps its own). The home's devices know the speaker by its pairing identifier (`pi`): pair-verify and
+pair-setup's M6 name it so, and the records carry it as `psi` too, by which the home hub finds it.
+
+[HW 2026-11-26, an iPhone's Home app with the Living Room Apple TV as the home hub] Added: the Home app waited at
+`/pair-add` while ON/OFF was held (~7 s); then the Apple TV pair-verified with the home's key, managed the
+pairings (`/pair-list`, `/pair-remove`, `/pair-add` of a second controller) and sent `/configure`; "Only People
+Sharing This Home" reached the speaker (`Access_Control_Level` 1: `acl=1`), and the iPhone, a member, played to it
+through pair-verify with its home key. Removing the speaker from the home went through the Apple TV
+(`/pair-remove` of the admin: the speaker unpaired). The Home app needs both the `pi` in pair-verify (with the
+device ID the iPhone dropped pair-verify after M2: "No Response") and `psi` in the records (without it nothing
+connected after the setup: "No Response"). A home removed while the speaker didn't hear of it leaves the speaker
+paired: it then refuses a new setup (the iPhone: "Unable to connect") until its pairings go
+(`/data/zd1/airplay/peers` and `home`). Not tried yet: Siri and scenes through the Apple TV.
 
 **Formats.** GET /info offers realtime ALAC/44100/S16/2 and buffered AAC-LC/44100 and /48000, ALAC/44100/S16/2 and
 ALAC/48000/S24/2 (shairport-sync's set with its lossless mode on). A buffered stream's SETUP names one format, but

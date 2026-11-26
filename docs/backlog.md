@@ -64,9 +64,9 @@ and what is known. What already works: `status.md`; checks that need a person at
 - **Pairing faster, what is left**: transient pair-setup's M3 takes 0.52 s (`shairplay` `crypto/mont.rs`, ~1.1 ms per
   3072-bit Montgomery multiplication, ~474 of them); a squaring of its own (252 of them are squarings) would save
   ~10 %. Pairing without a PIN stays transient for senders outside a home.
-- **The Home app**: add the speaker to a home with an iPhone (hw-checks): does the Home app accept it, does it wait at
-  pair-setup M1 for ON/OFF held 5 s (else the hold must come first, which nothing waits for now), what it sends after
-  `/configure`; then Siri and scenes through the Apple TV as the home hub, and "only people sharing this home".
+- **The Home app, what is left**: Siri and scenes through the Apple TV as the home hub; a way to forget the home
+  when it was removed while the speaker didn't hear of it (its pairings then refuse a new setup: today only by
+  removing `/data/zd1/airplay/peers` and `home`), e.g. a long ON/OFF gesture or a setting.
 - **The receive path's cost**: with Warp0 decoding, a realtime stream still takes ~17 % of the ARM (null output):
   the kernel's UDP receive on Ethernet 5-9 % for 126 packets/s (`sulu_eth` block-moves every frame between SRAM rings
   and SDRAM), the receiver ~9 % (tokio, RTP, timing). Measure on Wi-Fi; profile the receiver.
