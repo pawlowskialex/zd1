@@ -1,15 +1,19 @@
 # Our forks of upstream crates
 
-The module's receivers build on upstream Rust crates changed for this CPU and kernel. The changes live on the
-`zeppelin` branch of a fork on GitHub, one commit per change (each one meant as an upstream pull request); the apps
-pin them by commit, once, in the top `Cargo.toml` (shairplay in `[workspace.dependencies]`, librespot and libmdns in
-`[patch.crates-io]`).
+The module's receivers and the network link build on upstream Rust crates changed for this CPU and kernel, or so the
+module's binary links one version of each crate (below). The changes live on the `zeppelin` branch of a fork on
+GitHub (nivalis: `handshake-remote-static`), one commit per change (each one meant as an upstream pull request); the
+apps pin them by commit, once, in the top `Cargo.toml` (shairplay and nivalis in `[workspace.dependencies]`,
+librespot, libmdns, rust-protobuf and ring in `[patch.crates-io]`).
 
 | Fork (branch `zeppelin`) | Upstream | Base | Used by |
 |---|---|---|---|
 | https://github.com/pawlowskialex/shairplay-rust | https://github.com/metaneutrons/shairplay-rust (LGPL-3.0-or-later) | ae442f0 (main after 0.13.0) | `zd1-airplay`: AirPlay 1/2 |
-| https://github.com/pawlowskialex/librespot | https://github.com/librespot-org/librespot (MIT) | `dev` | `zd1-spotify`: every librespot crate comes from the fork, four of them changed |
+| https://github.com/pawlowskialex/librespot | https://github.com/librespot-org/librespot (MIT) | `dev` | `zd1-spotify`: every librespot crate comes from the fork |
 | https://github.com/pawlowskialex/libmdns | https://github.com/librespot-org/libmdns (MIT) | v0.10.1 | Spotify discovery |
+| https://github.com/pawlowskialex/rust-protobuf | https://github.com/stepancheg/rust-protobuf (MIT) | v3.7.2 | librespot's messages |
+| https://github.com/pawlowskialex/nivalis (branch `handshake-remote-static`) | https://github.com/mathieuemery/nivalis (MIT OR Apache-2.0) | main | `zd1-noise` (`protocol/noise`): the network link's Noise session, the speaker's and the clients' |
+| upstream itself, no fork | https://github.com/briansmith/ring (ISC and others) | main b287c58 (0.17.16000, unreleased) | rustls under librespot: ring 0.17.14 is on getrandom 0.2 |
 
 To change one: clone the fork, work on `zeppelin` (a commit per change, rebased onto upstream when it moves; the
 committer and author email the GitHub noreply address, or the push is refused), push,
@@ -31,6 +35,11 @@ the one it builds on), then two upstream PRs as their authors wrote them, then t
 | playback: a refused audio key (`AudioKeyError::AesKey`) stops the player on the track and sends `PlayerEvent::AudioKeyUnavailable` instead of `Unavailable`: librespot-org/librespot#1799 (Carmine Paolino, Kristoffer Haugland), its commit as is | the account's keys are refused for every track: the player skipped through the whole queue in seconds [HW 2026-10-28] | `src/player.rs`, `src/player_event_handler.rs` |
 | connect, four commits: a skip that fails (context not resolved yet) stops on the current track instead of returning with the state left loading; five unavailable tracks in a row stop playback; play and play/pause while stopped load the current track again; `AudioKeyUnavailable` leaves the device stopped on its track (on #1799) | the speaker sat "buffering" in the app after a failed track, every later pick seemingly unanswered; a paused failing load skipped on paused, so a pause didn't end a run of failures; play on a stopped device (shown paused) did nothing [HW 2026-10-28: each pick, play and next now one load and paused, re-picks answered] | `connect/src/spirc.rs` |
 | discovery: the zeroconf HTTP server binds IPv4 when the dual-stack socket fails: librespot-org/librespot#1762 (Igor Baranov), its commit as is | the kernel has no IPv6 (EAFNOSUPPORT): discovery didn't start | `src/server.rs` |
+| core: the OAuth login behind a default feature, `oauth`; HTTP through a proxy behind another, `http-proxy` (zd1-spotify takes neither: Connect logins, no proxy; a configured proxy is refused, not bypassed) | oauth2 and reqwest, hyper-proxy2 with its own rustls 0.22, hyper-rustls 0.26, webpki-roots 0.26 and second sha2, rand and base64, for logins and proxies the receiver never uses | `core/{Cargo.toml,src/lib.rs,src/error.rs,src/http_client.rs}`, `Cargo.toml` |
+| deps: the RustCrypto crates' current generation (aes 0.9, ctr 0.10, hmac 0.13, pbkdf2 0.13, rsa 0.10, sha1 0.11 rc), num-bigint 0.5, rand 0.10, quick-xml 0.42, base64 0.23, tokio-tungstenite 0.30, tempfile without its getrandom (+ known-answer tests for the blob login, the product info's parsing) | what shairplay, zd1-noise and the rest already link: the previous generations were a second copy of the same code [host: the access point's handshake against Spotify's AP] | `core/`, `audio/`, `discovery/`, `connect/`, `playback/`, `Cargo.toml`s |
+| core: the HTTP rate limit (300 requests a domain in 30 s) by our own cell-rate limiter, `rate_limit.rs` (+ tests), instead of governor | governor and its own hashbrown, spinning_top, futures-timer, portable-atomic | `core/src/{rate_limit,http_client}.rs` |
+| core: the dealer's websocket TLS from a rustls configuration on webpki-roots 1, the HTTP client's roots (+ test) | tokio-tungstenite's webpki feature is on webpki-roots 0.26 (a shim of 1.0): both linked | `core/src/dealer/mod.rs` |
+| libmdns: if-addrs 0.15 and rand 0.10 | the versions mdns-sd and the RustCrypto crates use | `Cargo.toml`, `src/services.rs` |
 | libmdns: a failed SO_REUSEPORT is logged, not fatal (SO_REUSEADDR alone shares the port; + a test) | Linux 2.6.24 has no SO_REUSEPORT (3.9 added it); zd1-airplay's mDNS responder has the port too | `src/address_family.rs` |
 
 ## Our changes to shairplay-rust
@@ -96,3 +105,19 @@ upstream keeps FairPlay (`/fp-setup`, AirPlay 1's `fpaeskey`) behind its `fairpl
 | Restructuring (run 10, the proposal in the review): handlers return `Result`, failures answered with their RTSP status in one place (pairing failures as HAP's error TLVs); the transport: the server owns the plain-or-ChaCha framing, answers each request on the blocking pool, writes within 10 s; `Sessions`, one registry of connections and the stream each plays (takeover, TEARDOWN, a removed pairing and the server's stop through it; a stream's tasks end with it; pairing secrets dropped and wiped); one audio pipeline (`Decoding` in order through the stream's decoder, `Output`, `Timeline`; `RaopBuffer` gone; AirPlay 2 realtime packets authenticated before reordering); tests (streams end to end with Apple's ALAC frames, pair-setup M5, NTP), the fuzz targets on a `fuzzing` feature, a 32-bit CI run | one way to do each thing, input bounded at the edge, every task owned by something that ends [EMU: AirPlay 1 L16, and ALAC on the ARM, at the tone's level; ALAC set up on Warp0 (emulated too slowly to judge by ear); the DMAP probe answered] | `raop/{rtsp,sessions,pipeline,rtp,realtime_audio,buffered_audio,connection,handlers_ap1,handlers_ap2}.rs`, `net/server.rs`, `tests/`, `fuzz/` |
 | mDNS: the records announced again when the status flags change (`RaopShared::reannounce`: a task registers the services again; the flags and features from one place) (+ tests, on Linux a browser) | a first pairing (bit 10) reached senders only after a restart | `net/mdns.rs`, `raop/{server,connection,handlers_ap2}.rs` |
 | The Home app (`RaopServerBuilder::home`, `HomeSetup`): without a PIN, its "Add Accessory" without a code: the first `/pair-add` from a transient session (or a persistent pair-setup with 3939) while no controller is paired and the application allows it, the controller the admin and the session its (Unavailable once paired); the accessory named by its `pi` in pair-verify and M6, `psi` in the records and GET /info; `/pair-add`, `/pair-remove`, `/pair-list` (the `/pairings` handler); `POST /configure` from the admin (access control: status flag bit 10, `acl` 0 everyone / 1 the home's members only; a name), kept by the application; the last admin's removal ends the home (+ tests) | the speaker in a home: its rooms, Siri and scenes through the home hub; zd1-airplay allows the setup with ON/OFF held 5 s (docs/streaming.md) [HW 2026-11-26: added in an iPhone's Home app, managed by the Apple TV as home hub, members only, a member playing; docs/streaming.md] | `raop/{types,server,connection,handlers_ap2,rtsp}.rs`, `crypto/pairing_homekit.rs`, `net/mdns.rs` |
+| deps: rsa 0.10 and sha1 0.11 (rc) | the RustCrypto generation the rest of the module links (sha2, hmac, the ciphers, ed25519/x25519-dalek 3): the previous one was a second copy [host: the OpenSSL-made known answers for the Apple-Challenge and the OAEP key pass] | `crypto/rsa.rs`, `Cargo.toml` |
+
+## Our changes to nivalis, rust-protobuf; ring
+| Change | Why (on the module) | Files |
+|---|---|---|
+| nivalis: `HandshakeState::remote_static_pk()`: the peer's static key once it was read (+ test) | an XX client checks the speaker's key after the second message, before it sends its own (`zd1-noise`, `Handshake::remote`) | `src/state/handshake_state.rs`, `tests/unexpected_keys.rs` |
+| nivalis: X448 behind a default feature, `x448` (the test vectors need it) | cx448 is on the previous RustCrypto generation (rand_core 0.6, elliptic-curve 0.13, sha3 0.10), linked only for a curve the link doesn't use | `Cargo.toml`, `src/crypto/dh/mod.rs` |
+| rust-protobuf: thiserror 2 in every crate | 3.7.2 is on thiserror 1, the rest of the module on 2 | `*/Cargo.toml` |
+| ring: upstream's main (0.17.16000, semver-compatible with 0.17.14), not a fork, until a release has it | 0.17.14 is on getrandom 0.2, the rest on 0.4. From git it has no `pregenerated/` assembly: its build script makes it with perl when a `.git` is beside its `Cargo.toml` (a checkout; nix's vendored copy gets one, `nix/default.nix`), and makes its C's warnings errors, so the cross builds pass `-Wno-unused-command-line-argument` (the cc wrapper's link flags on every compile) | `Cargo.toml`, `nix/default.nix`, `nix/module/apps.nix` |
+
+## One version of each crate
+`nix flake check` fails when a crate is in the module's binary in more than one version (`nix/dups.py`: the multicall
+with every feature, armv5te, its normal dependencies without proc-macros; by hand `python3 -I nix/dups.py`, it names
+who holds each version). Each extra version is the same code a second time in the system image and the module's RAM.
+The way out is a crate update, a change in one of these forks, or a `[patch.crates-io]` until a release has it; the
+host's tools and the page aren't held to it.

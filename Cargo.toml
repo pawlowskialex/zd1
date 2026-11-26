@@ -11,6 +11,7 @@ members = [
   "protocol/gen",
   "protocol/release",
   "protocol/text",
+  "protocol/noise",
   "host/core",
   "host/cli",
   "host/web",
@@ -32,6 +33,7 @@ default-members = [
   "protocol/gen",
   "protocol/release",
   "protocol/text",
+  "protocol/noise",
   "host/core",
   "host/cli",
   "module/dm870",
@@ -55,6 +57,7 @@ zd1-spi = { path = "protocol/spi" }
 zd1-hostlink = { path = "protocol/host" }
 zd1-release = { path = "protocol/release" }
 zd1-text = { path = "protocol/text" }
+zd1-noise = { path = "protocol/noise" }
 zd1-host = { path = "host/core" }
 zd1-link = { path = "module/link" }
 zd1-aac = { path = "module/codecs/aac/rust" }
@@ -86,20 +89,31 @@ zd1-update = { path = "module/os/apps/zd1-update" }
 zd1-airplay = { path = "module/os/apps/zd1-airplay" }
 
 # our forks (module/os/forks.md)
-shairplay = { git = "https://github.com/pawlowskialex/shairplay-rust", rev = "50ff866868610e1584c06937c79a12a8279683de", default-features = false }
+# the network link's Noise (zd1-noise): our fork's branch with a Lean proof of the builder's key checks
+nivalis = { git = "https://github.com/pawlowskialex/nivalis", rev = "9d29b9f40a0dd948f25be863f2e2baff1a3c9f4c", default-features = false }
+shairplay = { git = "https://github.com/pawlowskialex/shairplay-rust", rev = "675f0c5e0482a4441e0ee23e5e50f0fc3333d96d", default-features = false }
 
 # librespot (upstream dev) and libmdns 0.10.1 with our changes: the zeppelin branches of our forks (module/os/forks.md). Every
 # librespot crate comes from the fork, so the changed ones and the rest are one workspace.
 [patch.crates-io]
-librespot-audio = { git = "https://github.com/pawlowskialex/librespot", rev = "e188a633758efeee3fe2531e50966210c40a3d6e" }
-librespot-connect = { git = "https://github.com/pawlowskialex/librespot", rev = "e188a633758efeee3fe2531e50966210c40a3d6e" }
-librespot-core = { git = "https://github.com/pawlowskialex/librespot", rev = "e188a633758efeee3fe2531e50966210c40a3d6e" }
-librespot-discovery = { git = "https://github.com/pawlowskialex/librespot", rev = "e188a633758efeee3fe2531e50966210c40a3d6e" }
-librespot-metadata = { git = "https://github.com/pawlowskialex/librespot", rev = "e188a633758efeee3fe2531e50966210c40a3d6e" }
-librespot-oauth = { git = "https://github.com/pawlowskialex/librespot", rev = "e188a633758efeee3fe2531e50966210c40a3d6e" }
-librespot-playback = { git = "https://github.com/pawlowskialex/librespot", rev = "e188a633758efeee3fe2531e50966210c40a3d6e" }
-librespot-protocol = { git = "https://github.com/pawlowskialex/librespot", rev = "e188a633758efeee3fe2531e50966210c40a3d6e" }
-libmdns = { git = "https://github.com/pawlowskialex/libmdns", rev = "6da01928f2d8502988d93f8dbaecfc30e6c034a1" }
+librespot-audio = { git = "https://github.com/pawlowskialex/librespot", rev = "8e9c4b5ccd72d8e3261e7fd3dbe28cad2babe8cd" }
+librespot-connect = { git = "https://github.com/pawlowskialex/librespot", rev = "8e9c4b5ccd72d8e3261e7fd3dbe28cad2babe8cd" }
+librespot-core = { git = "https://github.com/pawlowskialex/librespot", rev = "8e9c4b5ccd72d8e3261e7fd3dbe28cad2babe8cd" }
+librespot-discovery = { git = "https://github.com/pawlowskialex/librespot", rev = "8e9c4b5ccd72d8e3261e7fd3dbe28cad2babe8cd" }
+librespot-metadata = { git = "https://github.com/pawlowskialex/librespot", rev = "8e9c4b5ccd72d8e3261e7fd3dbe28cad2babe8cd" }
+librespot-oauth = { git = "https://github.com/pawlowskialex/librespot", rev = "8e9c4b5ccd72d8e3261e7fd3dbe28cad2babe8cd" }
+librespot-playback = { git = "https://github.com/pawlowskialex/librespot", rev = "8e9c4b5ccd72d8e3261e7fd3dbe28cad2babe8cd" }
+librespot-protocol = { git = "https://github.com/pawlowskialex/librespot", rev = "8e9c4b5ccd72d8e3261e7fd3dbe28cad2babe8cd" }
+libmdns = { git = "https://github.com/pawlowskialex/libmdns", rev = "ac76ef82395e63fbf26a2b9ba756c3d600e90ca9" }
+# releases that would link a second version of a crate in the module (no duplicates there: nix/dups.py), until
+# upstream releases what fixes it: ring's main is on getrandom 0.4 (0.17.14: 0.2); protobuf 3.7.2 with thiserror 2
+# (our fork; upstream's repository is idle since 2025-09)
+ring = { git = "https://github.com/briansmith/ring", rev = "b287c58f1dc2764e98c7c48583c2726ded52e6c7" }
+protobuf = { git = "https://github.com/pawlowskialex/rust-protobuf", rev = "25bf3460780a41618f1e69d47d7458f37a2d53ef" }
+protobuf-support = { git = "https://github.com/pawlowskialex/rust-protobuf", rev = "25bf3460780a41618f1e69d47d7458f37a2d53ef" }
+protobuf-json-mapping = { git = "https://github.com/pawlowskialex/rust-protobuf", rev = "25bf3460780a41618f1e69d47d7458f37a2d53ef" }
+protobuf-codegen = { git = "https://github.com/pawlowskialex/rust-protobuf", rev = "25bf3460780a41618f1e69d47d7458f37a2d53ef" }
+protobuf-parse = { git = "https://github.com/pawlowskialex/rust-protobuf", rev = "25bf3460780a41618f1e69d47d7458f37a2d53ef" }
 
 # The module's userspace: small (the root filesystem is RAM), one codegen unit, LTO across std (built from rust-src
 # with this profile: `cargo module`), panics abort. The audio hot paths at full speed: our AAC decoder, the ALAC

@@ -8,6 +8,7 @@
   buildPackages,
   craneLib,
   pkg-config,
+  perl,
   alsa-lib,
   warp0-fw,
   workspace,
@@ -27,9 +28,16 @@ let
 
     # build scripts run on the build machine; Rust's std on macOS links libiconv
     depsBuildBuild = lib.optional stdenv.buildPlatform.isDarwin buildPackages.libiconv;
-    nativeBuildInputs = [ pkg-config ];
+    nativeBuildInputs = [
+      pkg-config
+      perl # ring's assembly (nix/default.nix, the vendored ring)
+    ];
     buildInputs = [ alsa-lib ];
     PKG_CONFIG_ALL_STATIC = "1";
+    # the cc wrapper gives clang its link flags (-rtlib=compiler-rt) on every compile too: unused there, a warning that
+    # ring's build from git makes an error
+    "CFLAGS_${lib.replaceStrings [ "-" ] [ "_" ] stdenv.hostPlatform.rust.rustcTarget}" =
+      "-Wno-unused-command-line-argument";
     W0_FW_DIR = warp0-fw; # the Warp0 images zd1-warp0 (module/warp0/rust) embeds
     # the static set's -static (its stdenv appends it to NIX_CFLAGS_LINK) reaches the macOS cc too: the build scripts
     # don't link ("library not found for -lcrt0.o"). rustc links the module's binaries statically by itself (musl,

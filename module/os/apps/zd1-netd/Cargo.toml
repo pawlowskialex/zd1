@@ -7,16 +7,10 @@ description = "The network link: paired clients reach the speaker's host link ov
 
 [dependencies]
 libc = "0.2"
-sha2 = { version = "0.10", default-features = false }
-# Noise without `std`: its std feature would pull in ring and BLAKE2, which we don't use
-snow = { version = "0.10", default-features = false, features = [
-  "use-chacha20poly1305",
-  "use-sha2",
-  "use-curve25519",
-  "use-getrandom",
-] }
-tungstenite = { version = "0.28", default-features = false, features = ["handshake"] }
+sha2 = { version = "0.11", default-features = false }
+tungstenite = { version = "0.30", default-features = false, features = ["handshake"] }
 zd1-hostlink.workspace = true
+zd1-noise.workspace = true
 zd1-release.workspace = true
 zd1-settings.workspace = true
 zd1-slot.workspace = true

@@ -31,10 +31,7 @@ fn identity() -> Result<Identity, String> {
     if let Some(i) = std::fs::read_to_string(&path).ok().as_deref().and_then(Identity::from_text) {
         return Ok(i);
     }
-    let k = snow::Builder::new(net::NOISE.parse().map_err(|e| format!("{e:?}"))?)
-        .generate_keypair()
-        .map_err(|e| format!("a key: {e:?}"))?;
-    let i = Identity { private: k.private.try_into().unwrap(), public: k.public.try_into().unwrap() };
+    let i = zd1_noise::generate();
     std::fs::create_dir_all(zd1_settings::NET).map_err(|e| format!("{}: {e}", zd1_settings::NET))?;
     zd1_sys::write_private(&path, &i.to_text()).map_err(|e| format!("{path}: {e}"))?;
     say(&format!("a new speaker key: {}", key_id(&i.public)));

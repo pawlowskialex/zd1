@@ -27,17 +27,12 @@ pub use crate::spec::net::KeyPair as Identity;
 
 /// A new key for this client: made once, then kept.
 pub fn new_identity() -> Result<Identity> {
-    let k = builder()?.generate_keypair().map_err(|e| Error::Failed(format!("a key: {e}")))?;
-    Ok(Identity { private: k.private.try_into().unwrap(), public: k.public.try_into().unwrap() })
-}
-
-fn builder() -> Result<snow::Builder<'static>> {
-    Ok(snow::Builder::new(net::NOISE.parse().map_err(|e| Error::Failed(format!("{}: {e}", net::NOISE)))?))
+    Ok(zd1_noise::generate())
 }
 
 pub struct NetLink<S: Socket> {
     sock: S,
-    noise: RefCell<snow::TransportState>,
+    noise: RefCell<zd1_noise::Transport<zd1_noise::Initiator>>,
     /// records that came while waiting for the hello's reply, for the next poll
     inbox: RefCell<Vec<u8>>,
     /// the speaker's key (the front-end remembers it with the address)
@@ -51,22 +46,15 @@ impl<S: Socket> NetLink<S> {
     /// error (not the speaker this client paired with: forget it to pair again). `name`: what this client calls
     /// itself when it pairs.
     pub async fn connect(sock: S, me: &Identity, known: Option<[u8; 32]>, name: &str) -> Result<NetLink<S>> {
-        let e = |e: snow::Error| Error::Failed(format!("the session's handshake: {e}"));
-        let mut hs = builder()?
-            .prologue(net::PROLOGUE)
-            .and_then(|b| b.local_private_key(&me.private))
-            .and_then(|b| b.build_initiator())
-            .map_err(e)?;
-        let mut buf = vec![0u8; 1024];
-        let n = hs.write_message(&[], &mut buf).map_err(e)?;
-        sock.send(&buf[..n]).await?;
+        let e = |e: zd1_noise::Error| Error::Failed(format!("the session's handshake: {e}"));
+        let mut hs = zd1_noise::Client::new(me).map_err(e)?;
+        let (m1, _) = hs.write().map_err(e)?;
+        sock.send(&m1).await?;
         let m =
             sock.recv(10_000).await?.ok_or_else(|| Error::Timeout("the speaker didn't answer the handshake".into()))?;
-        hs.read_message(&m, &mut buf).map_err(e)?;
-        let speaker: [u8; 32] = hs
-            .get_remote_static()
-            .and_then(|k| k.try_into().ok())
-            .ok_or_else(|| Error::Failed("no speaker key".into()))?;
+        hs.read(&m).map_err(e)?;
+        // the speaker's key, checked before this client's own goes in the third message
+        let speaker = hs.remote().ok_or_else(|| Error::Failed("no speaker key".into()))?;
         if known.is_some_and(|k| k != speaker) {
             return Err(Error::Device(format!(
                 "the speaker at this address has another key ({}, not {}): not the one this client paired with \
@@ -75,9 +63,11 @@ impl<S: Socket> NetLink<S> {
                 key_id(&known.unwrap())
             )));
         }
-        let n = hs.write_message(&[], &mut buf).map_err(e)?;
-        sock.send(&buf[..n]).await?;
-        let noise = hs.into_transport_mode().map_err(e)?;
+        let (m3, step) = hs.write().map_err(e)?;
+        let zd1_noise::Step::Done(noise) = step else {
+            return Err(Error::Failed("the session's handshake didn't end with its third message".into()));
+        };
+        sock.send(&m3).await?;
         Ok(NetLink {
             sock,
             noise: RefCell::new(noise),
@@ -88,21 +78,18 @@ impl<S: Socket> NetLink<S> {
     }
 
     async fn send(&self, plain: &[u8]) -> Result<()> {
-        let mut out = vec![0u8; plain.len() + 16];
-        let n = self.noise.borrow_mut().write_message(plain, &mut out).map_err(|e| Error::Failed(e.to_string()))?;
-        self.sock.send(&out[..n]).await
+        let m = self.noise.borrow_mut().encrypt(plain).map_err(|e| Error::Failed(e.to_string()))?;
+        self.sock.send(&m).await
     }
 
     /// The next record within `ms`, decrypted.
     async fn recv(&self, ms: u32) -> Result<Option<Vec<u8>>> {
         let Some(m) = self.sock.recv(ms).await? else { return Ok(None) };
-        let mut out = vec![0u8; m.len()];
-        let n = self
+        let out = self
             .noise
             .borrow_mut()
-            .read_message(&m, &mut out)
+            .decrypt(&m)
             .map_err(|e| Error::Failed(format!("a message from the speaker: {e}")))?;
-        out.truncate(n);
         Ok(Some(out))
     }
 }

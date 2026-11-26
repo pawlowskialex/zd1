@@ -31,7 +31,7 @@ page / zd1 ── WebSocket ws://SPEAKER/zd1 ── Noise_XX_25519_ChaChaPoly_SH
 ```
 1. **HTTP on port 80**, `GET /zd1` upgraded to a WebSocket (binary messages only). Anything else is 404 (the place for
    the home-automation API later).
-2. **Noise_XX** (`snow`, prologue `zd1-net 1`): three handshake messages, one per WebSocket message (client, speaker,
+2. **Noise_XX** (nivalis via `zd1-noise`, `protocol/noise`; prologue `zd1-net 1`): three handshake messages, one per WebSocket message (client, speaker,
    client), then each WebSocket message is one Noise transport message. Both ends have a static X25519 key: the
    speaker's is made at its first start and kept in `/data/zd1/net/key`; a client's is its own (the page's in the
    browser profile's IndexedDB, `zd1`'s in `~/.config/zd1/net-key`). The handshake proves both and gives keys that
