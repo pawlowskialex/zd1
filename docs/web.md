@@ -171,7 +171,10 @@ digits of SHA-256 over its app (`mcu/stamp.py`; the same in every release until 
 release over the network doesn't ask for the 5 s hold). The `.bcd`'s: `zd1.boot=` on its kernel command line, over
 the stub, the kernel and the command line (`module/os/assemble.py`, payload), not the rescue, which is the release's
 system and new every time: an older rescue is still the way back, and it is renewed with the stub or the kernel (over
-USB: the boot image never goes over the network). The whole image, rescue included, is `zd1.image=`: our MCU firmware
+USB: the boot image never goes over the network). That identity depends only on those: the stub is built with its
+vendored crates' paths remapped (`nix/boot.nix`): their store path changes with any `Cargo.lock` change, and in
+the stub's strings it reorders them, a new `zd1.boot=` from crates the stub doesn't use. A pull request's comment
+says whether its boot image is the latest release's (`.github/workflows/pr.yml`). The whole image, rescue included, is `zd1.image=`: our MCU firmware
 records it and has a new one's rescue install itself into a slot (`docs/module/storage.md`).
 
 The Pages workflow (`.github/workflows/pages.yml`) attaches a tag's

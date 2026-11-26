@@ -67,7 +67,9 @@ CI pushes what it builds (x86_64-linux) to a public cache: add it to your nix co
 pawlowskialex-zd1.cachix.org-1:fAJlCZ696sXLcIrYO9EZWCVLkw0T90T6gsjUoR6TOv8=`, or `cachix use pawlowskialex-zd1`).
 A pull request's run (`.github/workflows/pr.yml`) builds the images of its head, the Zeppelin Air's and the
 Lightning model's `.fw`, as artifacts kept 30 days, and links them in a comment on the PR: a change can be tried on a
-speaker without building it.
+speaker without building it. The comment also says whether its boot image is the latest release's: a new one is
+rewritten on every speaker that updates (`docs/web.md`, Releases), so it should come only from a change to the stub,
+the kernel or its command line, and a release that brings one says so in its notes.
 
 | `nix build .#…` | What |
 |---|---|

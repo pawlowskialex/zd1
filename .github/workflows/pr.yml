@@ -22,6 +22,7 @@ jobs:
         with: { name: "${{ vars.CACHIX_NAME }}", authToken: "${{ secrets.CACHIX_AUTH_TOKEN }}" }
       - name: build the images
         id: build
+        env: { GH_TOKEN: "${{ github.token }}" }
         run: |
           set -eu
           v="$(git rev-parse --short HEAD)"
@@ -34,6 +35,14 @@ jobs:
           nix run .#zd1 -- image out/zd1/* > out/zd1/manifest.json
           cp "$(nix build .#zd1l-fw --print-out-paths)/zd1l.fw" "out/zd1l/zd1l-$v.fw"
           sha256sum out/*/*
+          # the boot image's identity against the latest release's: a new one is rewritten on every speaker that
+          # updates (over USB, ~6 min more), so it should come only from a change to the stub, the kernel or its
+          # command line (module/os/assemble.py, payload)
+          boot="$(jq -r 'select(.kind == "bcd") | .version' out/zd1/manifest.json)"
+          rel="$(gh release view --json tagName --jq .tagName 2>/dev/null || true)"
+          was="$( [ -z "$rel" ] || gh release download "$rel" -p manifest.json -O - 2>/dev/null \
+            | jq -r 'select(.kind == "bcd") | .version' || true)"
+          { echo "boot=$boot"; echo "release=$rel"; echo "release_boot=$was"; } >>"$GITHUB_OUTPUT"
       - uses: actions/upload-artifact@v4
         id: zd1
         with: { name: "zd1-${{ steps.build.outputs.version }}", path: out/zd1, retention-days: 30 }
@@ -46,12 +55,25 @@ jobs:
           V: "${{ steps.build.outputs.version }}"
           ZD1: "${{ steps.zd1.outputs.artifact-url }}"
           ZD1L: "${{ steps.zd1l.outputs.artifact-url }}"
+          BOOT: "${{ steps.build.outputs.boot }}"
+          REL: "${{ steps.build.outputs.release }}"
+          REL_BOOT: "${{ steps.build.outputs.release_boot }}"
           PR: "${{ github.event.pull_request.number }}"
           SAME_REPO: "${{ github.event.pull_request.head.repo.full_name == github.repository }}"
         run: |
           set -eu
           run="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
           mark='<!-- zd1-test-builds -->'
+          if [ -z "$REL_BOOT" ]; then
+            boot="The boot image is \`$BOOT\` (no release's to compare with)."
+          elif [ "$BOOT" = "$REL_BOOT" ]; then
+            boot="The boot image is $REL's (\`$BOOT\`): speakers that update keep theirs."
+          else
+            boot="**The boot image is new: \`$BOOT\`, $REL's is \`$REL_BOOT\`.** Every speaker that updates gets it
+          rewritten (over USB, about 6 minutes more; over the network only the system goes, and the page asks for USB).
+          Expected only from a change to the boot stub, the kernel or its command line; anything else is a build that
+          isn't reproducible, and the release notes must say so either way."
+          fi
           cat >body.md <<EOF
           $mark
           **Test builds of $V** ([run]($run); kept 30 days, a download needs a GitHub login). Not a release: try them
@@ -62,6 +84,8 @@ jobs:
           - [\`zd1l-$V\`]($ZD1L), the Zeppelin Air with Lightning: \`zd1l-$V.fw\`, both chips, for its BL2 web updater
             from key-hold with the expert confirm (\`docs/module/boot-chain.md\`, "The ZD1L BL2"); the way back is
             B&W's \`blobs/zd1l/zd1lv20435.fw\`.
+
+          $boot
           EOF
           cat body.md >>"$GITHUB_STEP_SUMMARY"
           [ -n "$PR" ] && [ "$SAME_REPO" = true ] || exit 0
