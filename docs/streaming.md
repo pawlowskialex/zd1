@@ -70,16 +70,18 @@ whichever answered for it, the other one listed and chosen but silent [HW 2026-1
 Lightning].
 
 **The Home app.** Without a PIN the speaker can be added to a home in Apple's Home app ("Add Accessory", "More
-options", no code: shairplay's `HomeSetup`, as shairport-sync and goplay2 are added). The Home app's persistent
-pair-setup with the code 3939 goes on only while no controller is paired and if the person at the speaker holds
-ON/OFF 5 s within 30 s (its LED flashes purple: the MCU's `Unlock` from the module, which confirms and opens nothing
-else, as for a network client's pairing); its controller becomes the speaker's admin and adds the home's others
-(`/pair-add`). Then `POST /configure` sets the home's access control: the status flags carry bit 10 (0x404), mDNS's
+options", no code: shairplay's `HomeSetup`, as shairport-sync and goplay2 are added). An iPhone pairs
+transiently as any sender, sets up a remote-control session (`/fp-setup`, SETUP, RECORD) and posts `/pair-add` with
+the home's controller on it [HW 2026-11-26]. That first AddPairing goes on only while no controller is paired and if
+the person at the speaker holds ON/OFF 5 s within 30 s (its LED flashes purple: the MCU's `Unlock` from the module,
+which confirms and opens nothing else, as for a network client's pairing); the controller becomes the speaker's
+admin, the session its, and it adds the home's others (`/pair-add`). A persistent pair-setup with 3939 is let
+through the same way. Then `POST /configure` sets the home's access control: the status flags carry bit 10 (0x404), mDNS's
 `acl` who may play (0 everyone; 1 the home's members only, whose devices pair-verify with the keys the admin added:
 other senders get nothing past pairing). The configuration is kept in `/data/zd1/airplay/home` beside the pairings
 and goes with the last admin (removing the speaker from the home); the name the Home app gives is kept, not taken
-(the speaker keeps its own). [Not tried with the Home app yet: whether it accepts the speaker, and whether it waits
-at its first pair-setup message while ON/OFF is held.]
+(the speaker keeps its own). [HW 2026-11-26: the Home app's order seen, its /pair-add refused by the first
+version; with this one not tried yet: whether it waits at /pair-add while ON/OFF is held.]
 
 **Formats.** GET /info offers realtime ALAC/44100/S16/2 and buffered AAC-LC/44100 and /48000, ALAC/44100/S16/2 and
 ALAC/48000/S24/2 (shairport-sync's set with its lossless mode on). A buffered stream's SETUP names one format, but
