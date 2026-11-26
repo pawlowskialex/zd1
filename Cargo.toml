@@ -86,7 +86,7 @@ zd1-update = { path = "module/os/apps/zd1-update" }
 zd1-airplay = { path = "module/os/apps/zd1-airplay" }
 
 # our forks (module/os/forks.md)
-shairplay = { git = "https://github.com/pawlowskialex/shairplay-rust", rev = "dfa3fea41254c8e5fadc10522a31cf07e2477889", default-features = false }
+shairplay = { git = "https://github.com/pawlowskialex/shairplay-rust", rev = "42f982914681f906c47fb20d934b0e852cc45d13", default-features = false }
 
 # librespot (upstream dev) and libmdns 0.10.1 with our changes: the zeppelin branches of our forks (module/os/forks.md). Every
 # librespot crate comes from the fork, so the changed ones and the rest are one workspace.

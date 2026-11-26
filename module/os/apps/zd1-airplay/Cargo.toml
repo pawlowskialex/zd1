@@ -6,7 +6,7 @@ license.workspace = true
 description = "AirPlay 1/2 receiver for the module (shairplay-rust, integer audio path), controlled by the speaker (zd1-linkd)"
 
 [dependencies]
-shairplay = { workspace = true, default-features = false, features = ["ap2-core", "ptp-timestamps"] }
+shairplay = { workspace = true, default-features = false, features = ["ap2-core", "fairplay", "ptp-timestamps"] }
 tokio = { version = "1", features = ["rt", "macros", "signal"] }
 tracing = "0.1"
 zd1-compat.workspace = true
