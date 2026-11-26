@@ -190,6 +190,14 @@ pub fn default_name(mac: Option<Mac>) -> String {
     }
 }
 
+/// The speaker's host name, what its mDNS responders announce its services on (AirPlay's `NAME-airplay.local`, Spotify's
+/// and Snapcast's `NAME.local`): from its whole MAC, so two speakers on one network never claim the same one. With
+/// the image's fixed `zd1`, every speaker said its services were on `zd1-airplay.local`: a sender reached one of
+/// them, whichever was picked (a Zeppelin Air and one with Lightning on one network, 2026-11-26).
+pub fn host_name(mac: &Mac) -> String {
+    format!("zeppelin-air-{}", mac.iter().map(|b| format!("{b:02x}")).collect::<String>())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -213,6 +221,7 @@ mod tests {
         assert_eq!(parse_mac("ec:66:d1:00:00:4"), None);
         assert_eq!(default_name(Some(m)), "Zeppelin Air 000042");
         assert_eq!(default_name(None), "Zeppelin Air");
+        assert_eq!(host_name(&[0xec, 0x66, 0xd1, 0x01, 0xea, 0xde]), "zeppelin-air-ec66d101eade");
     }
 
     #[test]

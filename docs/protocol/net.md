@@ -20,7 +20,9 @@ the first request asks the person ("allow this site to access devices on your lo
 that granted the mixed-content block is lifted for private IP literals and `.local` names (no `targetAddressSpace`
 needed for those); WebSockets from Chrome 154. No certificate can name a LAN address, so plain HTTP with that
 permission is the way; WebUSB already limits the page to Chromium on the desktop. The page takes an address (an IP, or
-the speaker's `NAME.local`: our OS answers mDNS for its host name); browsers can't browse mDNS, `zd1` can.
+the speaker's host name with `.local`: `zeppelin-air-<MAC>-airplay.local`, which its AirPlay receiver answers for
+while it is on, and `zeppelin-air-<MAC>.local` while Spotify Connect is [HW 2026-11-26, then `zd1-airplay.local` on
+every speaker]); browsers can't browse mDNS, `zd1` can.
 
 ## The link
 ```

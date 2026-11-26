@@ -172,7 +172,7 @@ fn actions_keys() -> impl Iterator<Item = String> {
 
 /// The name before anyone chose one: "Zeppelin Air XXXXXX" from the unit's MAC.
 pub fn default_name() -> String {
-    zd1_sys::default_name(zd1_persparam::unit_mac().ok())
+    zd1_sys::default_name(Some(zd1_persparam::speaker_mac()))
 }
 
 /// The value in effect: the stored one, else the default.
