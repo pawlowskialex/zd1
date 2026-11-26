@@ -62,12 +62,24 @@ gives up is what Apple keeps for HomePods (Home Theater mode, Atmos, eARC, the r
 bits match a Sonos Amp's except MFi authentication (bit 26: Apple's chip; ours is FairPlay, bit 14, as
 shairport-sync's) and artwork / now-playing text (bits 15, 17: nothing here shows them). The accessory's identity
 (the Ed25519 seed behind the advertised `pk`) and paired controllers are kept in `/data/zd1/airplay`, so the speaker
-is the same accessory across restarts; without a PIN, pairing is transient (SRP per connection), as for AirPlay
-speakers without HomeKit. Its mDNS services point at `<hostname>-airplay.local`: the plain host name is claimed by
-Spotify's and Snapcast's responders too. The host name is the speaker's own, `zeppelin-air-<MAC>` (`zd1_sys::host_name`,
-set by init): with the image's `zd1` every speaker's services pointed at `zd1-airplay.local`, and with two speakers on
-one network a sender streamed to whichever answered for it, the other one listed and chosen but silent [HW
-2026-11-26: a Zeppelin Air and one with Lightning].
+is the same accessory across restarts; without a PIN, pairing is transient (SRP per connection). Its mDNS services
+point at `<hostname>-airplay.local`: the plain host name is claimed by Spotify's and Snapcast's responders too. The
+host name is the speaker's own, `zeppelin-air-<MAC>` (`zd1_sys::host_name`, set by init): with the image's `zd1`
+every speaker's services pointed at `zd1-airplay.local`, and with two speakers on one network a sender streamed to
+whichever answered for it, the other one listed and chosen but silent [HW 2026-11-26: a Zeppelin Air and one with
+Lightning].
+
+**The Home app.** Without a PIN the speaker can be added to a home in Apple's Home app ("Add Accessory", "More
+options", no code: shairplay's `HomeSetup`, as shairport-sync and goplay2 are added). The Home app's persistent
+pair-setup with the code 3939 goes on only while no controller is paired and if the person at the speaker holds
+ON/OFF 5 s within 30 s (its LED flashes purple: the MCU's `Unlock` from the module, which confirms and opens nothing
+else, as for a network client's pairing); its controller becomes the speaker's admin and adds the home's others
+(`/pair-add`). Then `POST /configure` sets the home's access control: the status flags carry bit 10 (0x404), mDNS's
+`acl` who may play (0 everyone; 1 the home's members only, whose devices pair-verify with the keys the admin added:
+other senders get nothing past pairing). The configuration is kept in `/data/zd1/airplay/home` beside the pairings
+and goes with the last admin (removing the speaker from the home); the name the Home app gives is kept, not taken
+(the speaker keeps its own). [Not tried with the Home app yet: whether it accepts the speaker, and whether it waits
+at its first pair-setup message while ON/OFF is held.]
 
 **Formats.** GET /info offers realtime ALAC/44100/S16/2 and buffered AAC-LC/44100 and /48000, ALAC/44100/S16/2 and
 ALAC/48000/S24/2 (shairport-sync's set with its lossless mode on). A buffered stream's SETUP names one format, but

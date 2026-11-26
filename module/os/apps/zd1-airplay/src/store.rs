@@ -3,10 +3,11 @@
 //! admin (HAP's `/pairings`). Without it every start was a new accessory under the same device ID (a new `pk` in the
 //! TXT record after each restart). At most [`MAX_CONTROLLERS`]: a new one pushes out the oldest that isn't an admin;
 //! with only admins left, the store is full. No expiry: a pairing lasts until it is removed (`/pairings`, or the data
-//! partition goes). Files are small and change rarely (the identity once, a line per pairing change): written whole
-//! to a temporary file, synced, renamed over the old.
+//! partition goes). And a home's configuration from the Home app (`home`: `HomeSetup`), which lasts as long as its
+//! pairings. Files are small and change rarely (the identity once, a line per pairing change): written whole to a
+//! temporary file, synced, renamed over the old.
 
-use shairplay::PairingStore;
+use shairplay::{HomeAccess, HomeConfiguration, PairingStore};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
@@ -52,6 +53,37 @@ impl DataStore {
         if let Err(e) = r {
             tracing::warn!(name, %e, "pairing store: not saved");
         }
+    }
+
+    /// The home's configuration as `save_home` left it (`home`: `access_control on|off`, `access everyone|members`,
+    /// `name NAME`); the default without one.
+    pub fn home(&self) -> HomeConfiguration {
+        let text = std::fs::read_to_string(self.dir.join("home")).unwrap_or_default();
+        let mut home = HomeConfiguration::default();
+        for line in text.lines() {
+            match line.split_once(' ') {
+                Some(("access_control", v)) => home.access_control = v == "on",
+                Some(("access", v)) => {
+                    home.access = if v == "members" { HomeAccess::HomeMembers } else { HomeAccess::Everyone }
+                }
+                Some(("name", v)) => home.name = Some(v.to_string()),
+                _ => {}
+            }
+        }
+        home
+    }
+
+    pub fn save_home(&self, home: &HomeConfiguration) {
+        let access = match home.access {
+            HomeAccess::Everyone => "everyone",
+            _ => "members",
+        };
+        let mut text = format!("access_control {}\naccess {access}\n", if home.access_control { "on" } else { "off" });
+        // one line: a name with a line break keeps its first
+        if let Some(name) = home.name.as_deref().and_then(|n| n.lines().next()) {
+            text.push_str(&format!("name {name}\n"));
+        }
+        self.write("home", text.as_bytes());
     }
 
     fn save_peers(&self, peers: &[Controller]) {
@@ -147,6 +179,24 @@ mod tests {
         s.remove("AA:BB");
         s.remove("phone");
         assert!(!DataStore::open(&dir).has_any_pairing());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn the_home_survives_a_restart() {
+        let dir = std::env::temp_dir().join(format!("zd1-airplay-home-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let s = DataStore::open(&dir);
+        assert_eq!(s.home(), HomeConfiguration::default());
+        let home = HomeConfiguration {
+            access_control: true,
+            access: HomeAccess::HomeMembers,
+            name: Some("Living Room Zeppelin".into()),
+        };
+        s.save_home(&home);
+        assert_eq!(DataStore::open(&dir).home(), home);
+        s.save_home(&HomeConfiguration::default());
+        assert_eq!(DataStore::open(&dir).home(), HomeConfiguration::default());
         let _ = std::fs::remove_dir_all(&dir);
     }
 
