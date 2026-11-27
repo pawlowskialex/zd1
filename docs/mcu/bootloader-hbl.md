@@ -62,13 +62,18 @@ first; after the EOT's ACK 0x29 = 0x2020 and, a second later, status 0x2500. The
 its receive began (its download step clears the one before), and takes none once the status says finished (a status
 change is always read first): with the OK and the status together it finished the transfer and never said Done
 [EMU 2026-11-19]. Only after we asked the MCU for it (reg 0xD7: `/data/zd1/mcu/asked`, written and synced before
-the ask, gone when our MCU firmware greets us again or 15 s after an ask it didn't take): the image stays staged after
-a transfer, and B&W's bootloader calling on its own (the ZD1L's key-hold, `Bl2Updater`) wants BL2 itself, its web
-updater. Else, or without a staged image, the HCR reboots into BL2 as before (the bootloader's relay, `zd1 module
+the ask, gone when our MCU firmware greets us again or 15 s after an ask it didn't take): B&W's bootloader calling on its
+own (the ZD1L's key-hold, `Bl2Updater`) wants BL2 itself, its web updater. The staged image goes once the MCU runs
+the app the system carries: a rescue from before 0.5.1 serves whatever is staged, so a copy left there kept such a
+unit's bootloader from ever reaching BL2 [EMU 2026-11-27: 0.4.1's rescue, its system's app staged, `Bl2Updater` from
+0.5.0's MCU firmware: "DownloadFirmwares() - Done", "Restart", no BL2; jurajs5's ZD1L (0.5.0, a 0.4.0 boot image)
+timed out the page the same way]. Else, or without a staged image, the HCR reboots into BL2 as before (the bootloader's relay, `zd1 module
 bl2`).
 
 - **BL2's web updater from our firmware** (`Bl2Updater`, `zd1 bl2-updater`; the page's Update on a ZD1L whose boot
-  image differs): ON/OFF held 5 s, then `selfdfu_enter` (ISP_FORCE) with nothing asked; the HBL powers the module,
+  image differs): ON/OFF held 5 s, then, once ON/OFF has been up for 1 s, `selfdfu_enter` (ISP_FORCE) with nothing asked (the
+  HBL takes ON/OFF held 3 s in its waiting states as "back to the app", which the confirming hold, still down, mustn't
+  reach; in the emulator a hold lasting 3.5 s into the HBL didn't); the HBL powers the module,
   the stub starts the rescue, which reboots into BL2 at the HBL's HCR; BL2 waits with its web updater on the
   Ethernet for a `.fw`, as after the key-hold, and the HBL takes its MCU part. The ISP_FORCE the HBL clears at once
   makes a power cut a way back with nothing written. [EMU 2026-11-27: `zemu run` of `zd1lunit.py`'s unit with this
@@ -112,7 +117,8 @@ A bootloader quiet for 7 s mid-transfer gets the block again; 30 s ends it.
   page asks it on a ZD1L between writing the system and starting its slot, or before a module restart when only the
   MCU is behind (`docs/web.md`); else it refuses, and by hand `zd1 allow` over USB first), and goes where it is taken
   (`mcu/src/mcufw.c`): our preloader on the ZD1 (GPLP0 bit 25, the good slot in GPLP1 for our boot stub, the module
-  off, a watchdog reset), the HBL on the ZD1L (ISP_FORCE: `selfdfu_enter`). The image stays staged. The system
+  off, a watchdog reset), the HBL on the ZD1L (ISP_FORCE: `selfdfu_enter`). The image stays staged until the MCU runs
+  it. The system
   asks by itself when the MCU runs another version than the app it carries (by content; neither a `-dirty` build) (`/usr/lib/zd1/mcu/zd1.dmb`, the same
   build's), at the MCU's hello on a confirmed slot, until the bootloader has taken that version twice: the MCU follows
   its OS (`docs/protocol/net.md`; `zd1-linkd`, `mcufw::follow`).

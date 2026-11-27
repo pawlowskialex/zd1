@@ -46,6 +46,8 @@ key_event_t inputs_key(void) {
     return k;
 }
 const inputs_t *inputs(void) { return &st; }
+bool inputs_onoff_down(void) { return d[D_ONOFF].stable; }
+
 bool inputs_confirm_take(void) {
     bool c = confirm;
     confirm = false;

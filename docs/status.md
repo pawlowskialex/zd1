@@ -120,11 +120,11 @@ None of these has been seen on the unit. Treat them as "the code does something 
 - **Recovery tiers** not listed above (`docs/recovery/factory-reset.md`), whether the stock module app comes up after `zd1 rollback` (both directions otherwise on the unit, above).
 - B&W's recovery-utility MCU image (erases the user page, sends HCR 0x2421, holds PB01 high); BL2's handling of HCR
   0x2421 and of the strap.
-- **The MCU's app from the module on the ZD1L** (`docs/mcu/bootloader-hbl.md`): our OS playing BL2 to B&W's bootloader;
-  the page's update of a ZD1L over USB that asks for it (`docs/web.md`: the system, the hold, the slot's start);
-  `Bl2Updater` (BL2's web updater from our firmware) and the page's update through it. The
-  model in `Info` [EMU: `zemu run os --mcu` with B&W's ZD1L bootloader and our app at 0x80008000 says "Zeppelin Air
-  with Lightning", HWID 0xBE; with `--mcu` "Zeppelin Air"].
+- **On a ZD1L, a tester's** [HW 2026-11-27, jurajs5, 0.5.0 from 0.3.1 through the page over USB]: the main board's
+  firmware from the module (our OS playing BL2 to B&W's bootloader: 7f925d7 to 0.5.0's efb257dfb4d7, the system in
+  its slot), and `Info`'s model ("Zeppelin Air with Lightning", HWID 0xBE). Not yet: `Bl2Updater` and the page's
+  boot image through it (`docs/mcu/bootloader-hbl.md`; 0.5.0 left the MCU's app staged, which a rescue older than it
+  serves to B&W's bootloader instead of starting BL2).
 - **The Lightning model's image with the system as the rescue** (the ZD1's is on the unit, above).
 - **The network link's rest** (`docs/protocol/net.md`; `zd1 --net` is on the unit, above): the page's WebAssembly
   over the network (Chrome's Local Network Access from the hosted page not tried anywhere); a provisional change that

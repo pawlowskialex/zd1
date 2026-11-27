@@ -142,7 +142,8 @@ def run(a):
                 elif kind == "press":
                     s.press(float(v))
                 elif kind == "confirm":
-                    s.confirm(float(v))
+                    at, _, hold = v.partition(":")
+                    s.confirm(float(at), int(float(hold) * 1000) if hold else 5500)
                 elif kind == "sh":
                     rc, out = s.sh(v, a.timeout)
                     if a.quiet:
@@ -253,9 +254,9 @@ def main(argv=None):
     g.add_argument(
         "--confirm",
         action=Step,
-        metavar="SECS",
+        metavar="SECS[:HOLD]",
         help="ON/OFF held 5 s, SECS (virtual) from now, while the next steps run (a person at the speaker: pairing, "
-        "an MCU update from the module)",
+        "an MCU update from the module); :HOLD holds it that many seconds (5.5 by default), as a person does",
     )
     g.add_argument("--spi", action=Step, metavar="CMDS", help='the SPI test host (module alone): "rd 0x11 rdv 0xc0"')
     g.add_argument(

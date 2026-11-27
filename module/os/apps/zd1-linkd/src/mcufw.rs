@@ -15,7 +15,8 @@
 
 use std::time::{Duration, Instant};
 
-/// The image the MCU is to get, staged by whoever wants the MCU updated (the system at ready, a host).
+/// The image the MCU is to get, staged by whoever wants the MCU updated (the system at ready, a host); gone once the MCU
+/// runs the app this system carries.
 pub const PENDING: &str = "/data/zd1/mcu/pending.dmb";
 /// The MCU's app this system carries (module/os/assemble.py: the release's `zd1.dmb`): the MCU follows its OS.
 pub const CARRIED: &str = "/usr/lib/zd1/mcu/zd1.dmb";

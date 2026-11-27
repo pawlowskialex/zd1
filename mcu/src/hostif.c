@@ -80,6 +80,10 @@ static volatile bool confirm_wait, confirmed; /* an Unlock waits for the press (
 static bool confirm_allow; /* ... and it is an Allow: the hold allows an app from the module (mcufw_allow) */
 static bool confirm_bl2;   /* ... or a Bl2Updater: held, into B&W's bootloader for BL2's web updater */
 static uint32_t bl2_at;    /* a Bl2Updater answered: into the bootloader from then (its reply out first), 0: none */
+static uint32_t bl2_up_at; /* ... once ON/OFF has been up since then (0: still down), BL2_UP_MS */
+/* B&W's bootloader takes ON/OFF held 3 s as "back to the app" in its waiting states: the hold that confirmed a
+ * Bl2Updater, still down, mustn't reach them */
+#define BL2_UP_MS 1000u
 /* the confirmation takes ON/OFF held 5 s (a Pair, an Allow, a Bl2Updater), not a press (the USB gate's Unlock) */
 static bool confirm_hold(void) { return cur_net || confirm_allow || confirm_bl2; }
 static bool module_wait;     /* a Module request waits for its op (dm870_op_result) */
@@ -940,8 +944,14 @@ static void request_done(void);
 void hostif_poll(uint32_t now) {
     uptime = now;
     if (bl2_at && tick_after(now, bl2_at)) {
-        bl2_at = 0;
-        mcufw_bl2_updater();
+        if (inputs_onoff_down())
+            bl2_up_at = 0;
+        else if (!bl2_up_at)
+            bl2_up_at = now | 1;
+        else if (tick_after(now, bl2_up_at + BL2_UP_MS)) {
+            bl2_at = bl2_up_at = 0;
+            mcufw_bl2_updater();
+        }
     }
     pipe_poll();
     if (polled) {
@@ -974,7 +984,8 @@ void hostif_poll(uint32_t now) {
             else if (confirm_bl2) {
                 /* the reply out first: on USB it is read within the poll, over the network our OS passes it on */
                 bl2_at = (now + (cur_net ? 2000 : 500)) | 1;
-                log_puts("[mcufw] confirmed: into B&W's bootloader for BL2's web updater\n");
+                bl2_up_at = 0;
+                log_puts("[mcufw] confirmed: into B&W's bootloader for BL2's web updater once ON/OFF is let go\n");
             } else if (cur_net)
                 log_puts("[net] confirmed: our OS pairs the client\n");
             else {
