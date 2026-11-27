@@ -26,7 +26,7 @@ the unit's history, where its files are.
   Use the emulator to develop and debug (boot the image, run the commands, trace the hardware it touches), not as
   a gate: there are no regression tests, and a change goes to the unit once it does what you want here.
 - Know the way back before touching the unit: a DFU backup of the MCU (`zd1 dfu backup`) before
-  an MCU flash (a ZD1L: B&W's `.fw` through its BL2, `bl2web`); `zd1 module esc` (BL1's menu into BL2) or JTAG for
+  an MCU flash (a ZD1L: B&W's `.fw` through its BL2, `zd1 bl2web`); `zd1 module esc` (BL1's menu into BL2) or JTAG for
   the module.
 - Per-unit data stays in `units/` (gitignored): MAC, Wi-Fi settings, live NAND/SRAM/EEPROM dumps, console logs that
   print the module's saved settings. Never paste a Wi-Fi passphrase into a doc, commit or log.
@@ -53,10 +53,10 @@ the unit's history, where its files are.
 | `zd1 slot [try a\|b\|rescue \| good a\|b \| clear \| install] [--restart]` | which system slot the MCU starts the module with (`docs/module/storage.md`); `install`: the rescue installs itself into a slot (`Boot INSTALL`); changing it is gated |
 | `zd1 allow` | (hardware, a person) ON/OFF held 5 s within 30 s lets the MCU take the app our OS staged, once, until 60 s after the module's next ready (`docs/mcu/bootloader-hbl.md`); stop and ask the person at the unit |
 | `zd1 image FILE...` | what a file is and its version, by content (MCU images, `.bcd`, systems, `.fw`, backups) |
-| `python3 tools/zeppelin bl2web <ip> <image> --yes` | (hardware, with OK) install a module image through BL2's web updater (a `.bcd`; a ZD1L's BL2: a B&W `.fw`, both chips) |
+| `zd1 bl2web <ip> <image> --yes`, `zd1 bl2-updater [IMAGE]` | (hardware, with OK) install a module image through BL2's web updater (a `.bcd`; a ZD1L's BL2: a B&W `.fw`, both chips; host/core's `bl2web`, the page's too); `bl2-updater` starts it from our firmware (ON/OFF held 5 s: stop and ask the person at the unit) and with IMAGE sends it there |
 | `zd1-app [URL]` (`nix run .#app`) | (hardware, reads unless the page is told to change something) the page in a window of its own (`host/app`): the speaker's USB devices granted from the start and its local address reachable, both done natively; `ZD1_APP_LOG=1` prints each WebUSB call and the page's console, `ZD1DFU_EMU` the emulator's bridge |
 | `python3 tools/zeppelin usprobe` | (hardware) plays an inaudible 19 kHz coded tone and listens with the Mac mic: "does the speaker play?" without anyone listening. Detects down to about -60 dBFS; music playing masks it |
-| a USB Ethernet dongle on the Mac (`en8`) | (hardware) the module on wired Ethernet at 169.254.1.1 (its link-local fallback: no DHCP server); bind to the dongle (`ping -b en8`, `curl --interface en8`, `bl2web --iface=en8`): with the module on Wi-Fi too the Mac may route 169.254.1.1 over Wi-Fi |
+| a USB Ethernet dongle on the Mac (`en8`) | (hardware) the module on wired Ethernet at 169.254.1.1 (its link-local fallback: no DHCP server); bind to the dongle (`ping -b en8`, `curl --interface en8`, `zd1 bl2web --iface en8`): with the module on Wi-Fi too the Mac may route 169.254.1.1 over Wi-Fi |
 | `python3 emu/zemu run [IMAGE] [--sh CMD]... [--keep]` | boots our OS (or any module image; `--mcu` adds the main board) in the emulator, runs shell commands, traces MMIO (`--trace`), GDB (`--gdb`); `emu/run/NAME/` has every log (`emu/README.md`) |
 | `cargo test -p zd1-host -p zd1-hostlink` | the DFU frames against the decompiled original, the host link's types against its table, offline |
 | `nix fmt` / `nix flake check` | every file formatted and linted (`nix/treefmt.nix`, `CONTRIBUTING.md`); the check adds clippy on every crate, warnings fail, the crates' tests (the host's, and the module's that build on the host: on Linux all of them) and `zd1-protogen --check` (`checks.host-tests`), the MCU's protocol C tests (`mcu/test`), and the privacy check (`nix/privacy.py`: no per-unit data in tracked files). Run `nix fmt` before committing |

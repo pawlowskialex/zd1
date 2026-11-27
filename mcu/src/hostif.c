@@ -356,6 +356,7 @@ static union {
     zd1h_amp_t amp;
     zd1h_debug_t debug;
     zd1h_lock_t lock;
+    zd1h_hold_t hold;
     zd1h_key_t key;
     zd1h_select_t select;
     zd1h_volume_t volume;
@@ -427,11 +428,12 @@ static void req_allow(void) {
              "it brings)\n");
 }
 
-/* Into B&W's bootloader for BL2's web updater (the ZD1L: docs/mcu/bootloader-hbl.md), once a person held ON/OFF 5 s:
- * it leaves USB and the network, and the module runs BL2's web updater instead of our OS until a .fw is written (or a
- * power cut, or ON/OFF held 3 s) */
-static void req_bl2_updater(void) {
-    if (!mcufw_hbl_present()) {
+/* BL2's web updater, once a person held ON/OFF 5 s. The ZD1L (Bl2Updater, Hold BL2WEB): into B&W's bootloader
+ * (docs/mcu/bootloader-hbl.md), which leaves USB and the network; the module runs BL2's web updater until a .fw is
+ * written (or a power cut, or ON/OFF held 3 s). The ZD1 (Hold BL2WEB only, `any`): the module into BL2 (dm870_bl2_web), our
+ * firmware staying */
+static void req_bl2_updater(bool any) {
+    if (!any && !mcufw_hbl_present()) {
         error(ZD1H_ERR_ARG, "no B&W bootloader that takes updates from the network here (the Zeppelin Air: DFU)");
         return;
     }
@@ -439,7 +441,7 @@ static void req_bl2_updater(void) {
     confirm_until = uptime + CONFIRM_MS;
     confirm_wait = confirm_bl2 = true; /* hostif_poll finishes it */
     led_flash(FLASH_AMBER, CONFIRM_MS);
-    log_puts("[mcufw] hold ON/OFF on the speaker for 5 s within 30 s to start BL2's web updater (B&W's bootloader)\n");
+    log_puts("[mcufw] hold ON/OFF on the speaker for 5 s within 30 s to start BL2's web updater\n");
 }
 
 static void req_lock(void) {
@@ -765,7 +767,17 @@ static void run(const uint8_t *b, uint16_t n) {
         return;
     case ZD1H_ID_BL2_UPDATER:
         if (decoded(&ZD1H_BL2_UPDATER, b, n))
-            req_bl2_updater();
+            req_bl2_updater(false);
+        return;
+    case ZD1H_ID_HOLD: /* every action a person allows by a hold, in one request */
+        if (!decoded(&ZD1H_HOLD, b, n))
+            return;
+        if (q.hold.action == ZD1H_HOLD_FOR_APP)
+            req_allow();
+        else if (q.hold.action == ZD1H_HOLD_FOR_BL2WEB)
+            req_bl2_updater(true);
+        else
+            error(ZD1H_ERR_ARG, "no such action");
         return;
     case ZD1H_ID_LOCK:
         if (decoded(&ZD1H_LOCK, b, n))
@@ -943,7 +955,10 @@ static void request_done(void);
 
 void hostif_poll(uint32_t now) {
     uptime = now;
-    if (bl2_at && tick_after(now, bl2_at)) {
+    if (bl2_at && tick_after(now, bl2_at) && !mcufw_hbl_present()) {
+        bl2_at = 0; /* a ZD1: BL2 through our OS (no bootloader of B&W's in between: ON/OFF held is nothing to it) */
+        dm870_bl2_web();
+    } else if (bl2_at && tick_after(now, bl2_at)) {
         if (inputs_onoff_down())
             bl2_up_at = 0;
         else if (!bl2_up_at)
@@ -985,7 +1000,9 @@ void hostif_poll(uint32_t now) {
                 /* the reply out first: on USB it is read within the poll, over the network our OS passes it on */
                 bl2_at = (now + (cur_net ? 2000 : 500)) | 1;
                 bl2_up_at = 0;
-                log_puts("[mcufw] confirmed: into B&W's bootloader for BL2's web updater once ON/OFF is let go\n");
+                log_puts(mcufw_hbl_present()
+                             ? "[mcufw] confirmed: into B&W's bootloader for BL2's web updater once ON/OFF is let go\n"
+                             : "[mcufw] confirmed: the module into BL2's web updater\n");
             } else if (cur_net)
                 log_puts("[net] confirmed: our OS pairs the client\n");
             else {

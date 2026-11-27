@@ -1,6 +1,6 @@
 // The Lightning model through its updater (BL2's web updater, from key-hold; docs/protocol/net.md, The ZD1L's first
-// install): the release's .fw for our software, or B&W's own .fw to go back, with the requests bl2web sends
-// (tools/zeppelin/knos/bl2web.py, seen working on ZD1Ls; js/bl2.js). In a browser the updater's answers can't be read
+// install): the release's .fw for our software, or B&W's own .fw to go back, with host/core's bl2web
+// (js/bl2.js; `zd1 bl2web`; the same requests as the Python tool seen working on ZD1Ls). In a browser the updater's answers can't be read
 // (no CORS headers): the file goes blind, and the page waits for our software to answer at the address. Where they
 // can (zd1-app), the page says what answers there before anything is sent, sees a refusal, and follows the write; and
 // it can look for the updater on this computer's networks.
@@ -27,9 +27,9 @@ export async function ours(addr) {
 }
 
 /// What the page can say of the updater at `addr` (null: nothing to say before it is tried).
-async function look(addr, signal) {
+async function look(addr) {
   try {
-    const b = await bl2Look(addr, { signal });
+    const b = await bl2Look(addr, { timeoutMs: 4000 });
     if (b.kind === "zd1l") {
       // what it has installed, where it says (a main board it hasn't asked says 0)
       const has = [
@@ -50,8 +50,7 @@ async function look(addr, signal) {
       };
     if (b.kind === "other") return { ok: false, text: `Something answers at ${addr}, but not the speaker's updater.` };
     return null;
-  } catch (e) {
-    if (e?.name === "AbortError") throw e;
+  } catch {
     return {
       ok: false,
       text:
@@ -103,23 +102,15 @@ export async function findUpdater() {
   line.hidden = false;
   line.className = "small";
   const all = await candidates();
-  const stop = new AbortController();
   let next = 0,
     done = 0,
     found = null;
   const worker = async () => {
     while (!found && next < all.length) {
       const addr = all[next++];
-      const t = new AbortController();
-      const timer = setTimeout(() => t.abort(), 3500);
-      stop.signal.addEventListener("abort", () => t.abort(), { once: true });
       try {
-        if ((await bl2Look(addr, { signal: t.signal })).kind === "zd1l") {
-          found = addr;
-          stop.abort();
-        }
+        if ((await bl2Look(addr, { timeoutMs: 3500 })).kind === "zd1l") found = addr;
       } catch {}
-      clearTimeout(timer);
       line.textContent = `Looking for its updater on this computer's networks: ${++done} of ${all.length} addresses…`;
     }
   };
@@ -177,7 +168,7 @@ export async function writeFw(addr, fw, name, { own, phase, of }) {
   try {
     read = await bl2Upload(addr, fw, name);
   } catch (e) {
-    if (e instanceof TypeError) throw new Error((await look(addr))?.text ?? `Nothing answers at ${addr}.`);
+    if (e?.code === "DEVICE") throw new Error((await look(addr))?.text ?? `Nothing answers at ${addr}.`);
     throw e;
   }
   if (read) {

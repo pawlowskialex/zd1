@@ -5988,6 +5988,7 @@ name = "zd1-host"
 version = "0.1.0"
 dependencies = [
  "crc32fast",
+ "futures-lite",
  "js-sys",
  "miniz_oxide 0.8.9",
  "nusb",

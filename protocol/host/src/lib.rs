@@ -666,6 +666,21 @@ enums! {
         /// S/PDIF (optical AUX)
         Optical = 4,
     }
+    /// What a hold of ON/OFF allows (`Hold`).
+    HoldFor {
+        /// nothing (refused)
+        None = 0,
+        /// the main board takes the app our OS has staged (SPI reg 0xD7) once, within 10 minutes and no later than 60
+        /// s after the module's next ready (as `Allow`; docs/mcu/bootloader-hbl.md)
+        App = 1,
+        /// the module into BL2's web updater on its Ethernet. A Lightning model: through B&W's bootloader once ON/OFF
+        /// is up (as `Bl2Updater`), which takes the `.fw`'s MCU part; the speaker leaves USB and the network. A ZD1:
+        /// HCR 0x21 (our OS reboots into BL2), whose 2010 web updater takes an `os-V.bcd` and resets the module after
+        /// its burn; at our OS's first word after that the MCU starts the module again as at power-up (the new boot
+        /// image's rescue installing itself into a slot), after 20 minutes with nothing written all the same; our
+        /// firmware stays on USB. Nothing on the network meanwhile (docs/module/updater.md)
+        Bl2Web = 2,
+    }
     /// Which speaker this is, as the MCU firmware tells it from its bootloader (mcu/src/model.c).
     Model {
         /// a firmware that doesn't say (older than the field), or B&W's bootloader with a HWID it doesn't know
@@ -824,6 +839,13 @@ messages! {
     /// this firmware with nothing written. `Error ARG` on a model without that bootloader (the Zeppelin Air: DFU),
     /// `Error DENIED` if nobody held it.
     0x23 Bl2Updater -> Ok [free, 35000 ms, net] {}
+    /// A person at the speaker allows `action` (ON/OFF held 5 s within 30 s, the LED flashing amber; a shorter press
+    /// works as always), the MCU then acting on it: every action of the speaker's own that needs a person, in one
+    /// request (`Allow` and `Bl2Updater` before it, which firmwares keep answering). `Error DENIED` if nobody held it,
+    /// `Error ARG` for an action this model can't do.
+    0x24 Hold -> Ok [free, 35000 ms, net] {
+        action: HoldFor,
+    }
     /// Close the gate now, or open it for good (kept in the EEPROM across power cycles: a lab unit driven by tools
     /// unattended; the user's choice, made at the speaker since this request is gated).
     0x0F Lock -> Ok [gated, 1000 ms] {

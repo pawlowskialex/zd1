@@ -40,19 +40,21 @@ images offered under `images/` instead (`index.json` names them). The three view
 - **Running**: what people reach for first. The top bar links to its panels. On top, under the speaker's drawing and
   name: Playing (the sources, volume, bass, the amp's sentence). A banner when a release is newer than what runs,
   naming what it updates (the main board's firmware, the module's system, its boot image, each with where it
-  stands), with its notes and one **Update** that brings what is behind to it: with the module's boot image behind (the
-  State record's `boot` against the `.bcd`'s `zd1.boot=`, both by content), the boot image and the MCU in one visit to
-  the bootloader (~7 min; the boot image alone ~6), the release's system then installing itself from it; else the
-  system, then the MCU; nothing when up to date, and the module not judged while it
-  starts. A main board with no USB DFU (the Lightning model: `Info.model`, or a firmware older than that field
-  refusing `Dfu`; `software.js` `noDfu`, `updateFromModule`): the system written into the slot that doesn't run, the
-  hold that allows the MCU firmware it carries (`Allow`), then the slot started once, at whose ready the module asks the
-  MCU, which leaves USB for B&W's bootloader and comes back with it (MCU behind alone: the hold, then a module restart
-  for that ready). Its boot image is the release's `zd1l-V.fw` through BL2's web updater (never the Zeppelin Air's
-  `.bcd`: another HWID and CnE): with an Ethernet cable in and a firmware that has it, Update starts the updater
-  (`Bl2Updater`, the hold), waits for it at the speaker's Ethernet address and sends the `.fw` there (`zd1l.js`
-  `writeFw`), the whole release in one go (~10 min); else the page says to put it on by hand, the Lightning install by
-  address after the key-hold. Then
+  stands), with its notes and one **Update** that runs the cheapest plan to it (host/core's `plan`, `planUpdate`; the
+  module not judged while it starts). The plan is a shortest path over the speaker's state: which parts are behind (the
+  boot image by the State record's `boot` against the `.bcd`'s `zd1.boot=`, the system, the main board), the model and
+  the link, what the main board's firmware can do (`Allow`, `Bl2Updater`), Ethernet, an MCU app staged on the module
+  (a system before 0.5.1 keeps it; a rescue before 0.5.1 serves it to B&W's bootloader instead of starting BL2). The
+  routes, each with its precondition, the parts it brings, its time and the holds or unplugging it asks: the system over
+  USB; the system then the hold then its slot's start, at whose ready the main board takes the app it carries from the
+  module (a Lightning model; a ZD1 through its preloader); the hold and a module restart for that; the signed system
+  over the network, whose hold allows the main board the same; the rescue into a slot; DFU (a backup first); the relay;
+  `install` (the relay and DFU in one visit); BL2's XModem; BL2's web updater from our firmware on the module's
+  Ethernet (`Hold` BL2_WEB): a Lightning model's takes `zd1l-V.fw` (both chips), a Zeppelin Air's `os-V.bcd` (the module
+  alone); the key-hold, by hand. A route that brings the system as the
+  boot image's rescue doesn't copy it again into a slot that holds those bytes. The page runs the plan without routes
+  done by hand and says what it leaves and why (over USB; by hand, with the plan that has them). The same banner picks
+  up an install that stopped: the module on its rescue, in BL2 with no image, or on B&W's software. Then
   Network (the Wi-Fi and Ethernet as sentences from the State record with the plain reason when it failed, the name,
   the known networks in their order with Prefer and Forget, Add a network from a scan or by hand, the radio's limits,
   each interface's addresses), Receivers (a row each: on/off, its status, its options: AirPlay's PIN and pairings,
@@ -334,8 +336,8 @@ cases (a wrong key, none in range, two networks). Next, in order:
   page `host/web/src/lib.rs` (`state()`, `list(record)`, `exportSettings`, `Bootloader.install` / `rollback`,
   `Speaker.updateBoot` / `installFromRescue` / `updateBootInBl2`, `connectNet`, `spec()`), `www/app.js` (the wiring) and its ES modules in `www/js/` (no build step): `connection.js` (`events`,
   `connect`, `job`), `backups.js` (IndexedDB), `network.js` (`drawSettings`, `wifiStatus`), `receivers.js`,
-  `software.js` (`drawDfu`, `drawInstall`, `drawReleases`, `unfinished`, `updateTo`, `updateOverNetwork`), `console.js`
-  (the console pane), `zd1l.js` + `bl2.js` (the ZD1L's install through its BL2, no-cors), `speaker.js`, `hero.js` (the top: the drawing, the
+  `software.js` (`drawDfu`, `drawInstall`, `drawReleases`, `planFacts`, `drawUpdate`, `runPlan` and its `STEPS`), `console.js`
+  (the console pane), `zd1l.js` + `bl2.js` (BL2's web updater: host/core's `bl2web` through the page's fetch, read in zd1-app, blind in a browser; the ZD1L's install by address), `speaker.js`, `hero.js` (the top: the drawing, the
   title, the status), `led.js`, `zd-speaker.js`, `diagnostics.js`, `ui.js`, `shared.js`, `design.js` (the catalogue);
   the local manifest
   `tools/zeppelin/web.py`; the workflow `.github/workflows/pages.yml`.

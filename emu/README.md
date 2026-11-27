@@ -164,7 +164,7 @@ From Python (a longer sequence, a loop): `emu/zemu/rig.py`, `Session` with `star
   checks it) is the 4 bytes after the reversed key "DIWH" in NAND block 1 of a `--nand-image`.
 - **A stock ZD1L** (`emu/tools/zd1lunit.py OUT`: the test unit's NAND with the ZD1L's HWID, BL2 and B&W's module
   image, the MCU flash with its "Net HBL" bootloader and B&W's app): held at power-up it goes into BL2's web updater,
-  which takes a `.fw` for both chips (`bl2web.py`, or the page's code: `host/web/test/zd1l.mjs`), and after the burn
+  which takes a `.fw` for both chips (`zd1 bl2web`, or the page's: `host/web/test/zd1l.mjs`), and after the burn
   starts what it installed. `--renode 'zd1:flashc BootprotSize 0x8000' --renode 'zd1:board Adc "2:0x300"'`; the whole
   first install of `zd1l.fw` is ~6 min (`docs/mcu/bootloader-hbl.md`).
 - **Where host time goes** (a slow boot): `ZEMU_SAMPLE=cr870 ZEMU_SAMPLE_STEP=0.01 zemu run ...`, then

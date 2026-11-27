@@ -67,7 +67,7 @@ on a 2010 ARM9 for all of this. What works and how it was checked: `docs/status.
 - **AirPlay is reverse-engineered**, not Apple's: an iOS or macOS update could break something.
 - **One unit tested**, a 30-pin Zeppelin Air. The **Zeppelin Air with Lightning connector** (2013) installs
   differently: its MCU bootloader has no USB, so both chips go on as one B&W `.fw` through its network module's
-  updater (ON/OFF held at power-up, an Ethernet cable to your router), from the page or `tools/zeppelin bl2web`.
+  updater (ON/OFF held at power-up, an Ethernet cable to your router), from the page or `zd1 bl2web`.
   Owners run an earlier build of ours on theirs; this one (the rescue and the slots) has run whole only in the
   emulator, so the page offers it as an alpha. Its dock is unsupported either way.
   The **Zeppelin A7** runs another MCU build on other hardware: not without changes.

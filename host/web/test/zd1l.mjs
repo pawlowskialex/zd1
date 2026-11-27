@@ -1,11 +1,11 @@
-// The page's side of a ZD1L's BL2 (js/bl2.js: the Lightning model's install and the way back, docs/protocol/net.md),
-// in node against the emulator's BL2. Node reads the answers a browser can't (no CORS headers), as zd1-app does: what
+// The page's side of a ZD1L's BL2 (js/bl2.js over host/core's bl2web: the Lightning model's install and the way back,
+// docs/protocol/net.md), in node against the emulator's BL2, from the built page (`nix build .#web`). Node reads the answers a browser can't (no CORS headers), as zd1-app does: what
 // answers (bl2Look), every request answered, the upload's redirect to the apply page followed, the confirm armed (it
 // redirects to the status page; unarmed it goes to FWUCHandlerPage and burns nothing), then the write followed on the
 // status page to its end (bl2Burn). A stock ZD1L held at power-up (emu/tools/zd1lunit.py):
 //   zemu run OUT/nand.bin --nand --mcu OUT/mcu_flash.bin --fwd 18080:80 --renode 'zd1:flashc BootprotSize 0x8000' \
 //     --renode 'zd1:board Adc "2:0x300"' --renode 'zd1:board Pins "0:PA08=0,1500:PA08=1"' \
-//     --wait mcu 'BSL Ready' --sleep 30 --host 'node host/web/test/zd1l.mjs host/web/www 127.0.0.1:18080 zd1l.fw'
+//     --wait mcu 'BSL Ready' --sleep 30 --host "node host/web/test/zd1l.mjs $(nix build --no-link --print-out-paths .#web) 127.0.0.1:18080 zd1l.fw"
 import fs from "node:fs";
 import path from "node:path";
 
@@ -14,7 +14,11 @@ if (!dirArg || !addr || !file) {
   console.error("usage: node zd1l.mjs PAGE_DIR HOST:PORT FILE.fw");
   process.exit(2);
 }
-const { bl2Burn, bl2Look, bl2Upload } = await import(path.join(path.resolve(dirArg), "js", "bl2.js"));
+// the built page (`nix build .#web`): bl2.js is host/core's client through the page's WebAssembly
+const dir = path.resolve(dirArg);
+const wasm = await import(path.join(dir, "pkg", "zd1_web.js"));
+await wasm.default({ module_or_path: fs.readFileSync(path.join(dir, "pkg", "zd1_web_bg.wasm")) });
+const { bl2Burn, bl2Look, bl2Upload } = await import(path.join(dir, "js", "bl2.js"));
 const look = await bl2Look(addr, { mode: "cors" });
 console.log("look:", JSON.stringify(look));
 if (look.kind !== "zd1l") {
@@ -47,7 +51,9 @@ if (bad.length) {
 console.log("ok   BL2 took the file and the confirm: it burns both chips now");
 const t0 = Date.now();
 try {
-  await bl2Burn(addr, (s) => console.log(`  ${Math.round((Date.now() - t0) / 1000)} s: ${JSON.stringify(s)}`));
+  await bl2Burn(addr, (s) => console.log(`  ${Math.round((Date.now() - t0) / 1000)} s: ${JSON.stringify(s)}`), {
+    mode: "cors",
+  });
 } catch (e) {
   console.log(`FAIL ${e.message}`);
   process.exit(1);

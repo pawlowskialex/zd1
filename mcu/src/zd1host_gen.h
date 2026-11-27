@@ -143,6 +143,10 @@
 #define ZD1H_DSP_IN_MODULE       2  /* I2S from the network module */
 #define ZD1H_DSP_IN_AUX          3  /* the codec's ADC (analog AUX) */
 #define ZD1H_DSP_IN_OPTICAL      4  /* S/PDIF (optical AUX) */
+/* HoldFor: What a hold of ON/OFF allows (`Hold`). */
+#define ZD1H_HOLD_FOR_NONE         0  /* nothing (refused) */
+#define ZD1H_HOLD_FOR_APP          1  /* the main board takes the app our OS has staged (SPI reg 0xD7) once, within 10 minutes and no later than 60 s after the module's next ready (as `Allow`; docs/mcu/bootloader-hbl.md) */
+#define ZD1H_HOLD_FOR_BL2WEB       2  /* the module into BL2's web updater on its Ethernet. A Lightning model: through B&W's bootloader once ON/OFF is up (as `Bl2Updater`), which takes the `.fw`'s MCU part; the speaker leaves USB and the network. A ZD1: HCR 0x21 (our OS reboots into BL2), whose 2010 web updater takes an `os-V.bcd` and resets the module after its burn; at our OS's first word after that the MCU starts the module again as at power-up (the new boot image's rescue installing itself into a slot), after 20 minutes with nothing written all the same; our firmware stays on USB. Nothing on the network meanwhile (docs/module/updater.md) */
 /* Model: Which speaker this is, as the MCU firmware tells it from its bootloader (mcu/src/model.c). */
 #define ZD1H_MODEL_UNKNOWN      0  /* a firmware that doesn't say (older than the field), or B&W's bootloader with a HWID it doesn't know */
 #define ZD1H_MODEL_ZD1          1  /* the Zeppelin Air (B&W's DFU bootloader) */
@@ -164,6 +168,7 @@
 #define ZD1H_ID_UNLOCK         0x0E
 #define ZD1H_ID_ALLOW          0x22
 #define ZD1H_ID_BL2_UPDATER    0x23
+#define ZD1H_ID_HOLD           0x24
 #define ZD1H_ID_LOCK           0x0F  /* gated */
 #define ZD1H_ID_PEEK           0x04  /* gated */
 #define ZD1H_ID_POKE           0x05  /* gated */
@@ -205,16 +210,16 @@
 /* the requests (HelloReply.requests: bit id % 8 of byte id / 8; the emulator's build has more), the gated ones, and
  * the ones a paired client may make over the network (docs/protocol/net.md: they come through SPI reg 0xD9) */
 #ifdef ZD1_EMU
-static const uint8_t zd1h_requests[32] = {0xF6,0xFF,0xFF,0xFF,0x0C,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00};
+static const uint8_t zd1h_requests[32] = {0xF6,0xFF,0xFF,0xFF,0x1C,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00};
 #else
-static const uint8_t zd1h_requests[32] = {0xF6,0xFF,0xFF,0xF7,0x0C,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00};
+static const uint8_t zd1h_requests[32] = {0xF6,0xFF,0xFF,0xF7,0x1C,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00};
 #endif
 static inline bool zd1h_gated(uint8_t id){
     static const uint8_t g[32] = {0xF0,0xB5,0x6F,0xBB,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00};
     return (g[id >> 3] >> (id & 7)) & 1;
 }
 static inline bool zd1h_net(uint8_t id){
-    static const uint8_t g[32] = {0x06,0x08,0x9F,0x50,0x08,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00};
+    static const uint8_t g[32] = {0x06,0x08,0x9F,0x50,0x18,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00};
     return (g[id >> 3] >> (id & 7)) & 1;
 }
 
@@ -254,6 +259,8 @@ typedef struct { uint8_t unused_; } zd1h_unlock_t;
 typedef struct { uint8_t unused_; } zd1h_allow_t;
 /* Bl2Updater: Into B&W's bootloader for BL2's web updater, on a model whose bootloader takes its updates from the network (the ZD1L's "Net HBL", docs/mcu/bootloader-hbl.md): the MCU waits up to 30 s for ON/OFF held 5 s (its LED flashes amber); held, it answers, then goes into the bootloader, which powers the module and asks it for BL2. Our OS, which asked the MCU for no app, sends it there: BL2's web updater on wired Ethernet (a DHCP lease of its own, maybe another address than our OS's), which takes a B&W `.fw` for both chips (the release's `zd1l-V.fw`) and restarts into it. Nothing on USB and no network link meanwhile; a power cut, or ON/OFF held 3 s while it waits, goes back to this firmware with nothing written. `Error ARG` on a model without that bootloader (the Zeppelin Air: DFU), `Error DENIED` if nobody held it. */
 typedef struct { uint8_t unused_; } zd1h_bl2_updater_t;
+/* Hold: A person at the speaker allows `action` (ON/OFF held 5 s within 30 s, the LED flashing amber; a shorter press works as always), the MCU then acting on it: every action of the speaker's own that needs a person, in one request (`Allow` and `Bl2Updater` before it, which firmwares keep answering). `Error DENIED` if nobody held it, `Error ARG` for an action this model can't do. */
+typedef struct { uint8_t action; } zd1h_hold_t;
 /* Lock: Close the gate now, or open it for good (kept in the EEPROM across power cycles: a lab unit driven by tools unattended; the user's choice, made at the speaker since this request is gated). */
 typedef struct { bool open; } zd1h_lock_t;
 /* Peek: Read memory (gated: the MCU's RAM passes settings through). */
@@ -415,6 +422,8 @@ static const zd1h_msg_t ZD1H_INFO_REPLY = { 0x42, 32, zd1h_info_reply_fields, si
 static const zd1h_msg_t ZD1H_UNLOCK = { 0x0E, 0, 0, sizeof(zd1h_unlock_t) };
 static const zd1h_msg_t ZD1H_ALLOW = { 0x22, 0, 0, sizeof(zd1h_allow_t) };
 static const zd1h_msg_t ZD1H_BL2_UPDATER = { 0x23, 0, 0, sizeof(zd1h_bl2_updater_t) };
+static const zd1h_field_t zd1h_hold_fields[] = { { ZD1H_T_U8, 0, offsetof(zd1h_hold_t, action), 0 } };
+static const zd1h_msg_t ZD1H_HOLD = { 0x24, 1, zd1h_hold_fields, sizeof(zd1h_hold_t) };
 static const zd1h_field_t zd1h_lock_fields[] = { { ZD1H_T_BOOL, 0, offsetof(zd1h_lock_t, open), 0 } };
 static const zd1h_msg_t ZD1H_LOCK = { 0x0F, 1, zd1h_lock_fields, sizeof(zd1h_lock_t) };
 static const zd1h_field_t zd1h_peek_fields[] = { { ZD1H_T_U32, 0, offsetof(zd1h_peek_t, addr), 0 }, { ZD1H_T_U16, 0, offsetof(zd1h_peek_t, len), 0 }, { ZD1H_T_BOOL, 0, offsetof(zd1h_peek_t, words), 0 } };

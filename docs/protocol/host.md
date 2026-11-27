@@ -54,6 +54,7 @@ The host's timeout is the request's own: the MCU answers within it, or the host 
 | 0x21 | SystemUpdate | gated | our OS | `op` [UpdateOp](#updateop)<br>`offset` u32: DATA: where `data` goes in the image<br>`data` bytes <= 32768: BEGIN: the header; DATA: the next piece of the image | UpdateReply | 60 s | The module's system over the network (docs/protocol/net.md; our OS answers it): BEGIN with the signed header (`protocol/release`) in `data`, refused unless a key the speaker trusts signed it and it is no older than the running system, then a person at the speaker allows it (`Allow`: ON/OFF held 5 s within 30 s; `Error DENIED` if nobody did); DATA, the image in order from `offset`; END: the image checked, the slot that doesn't run stamped (DONE), then started once (ready makes it the good one). ABORT: the slot holds no system. |
 | 0x22 | Allow |  |  | - | Ok | 35 s | A person at the speaker allows a system update from the network, and the MCU firmware it brings: the MCU waits up to 30 s for ON/OFF held 5 s (its LED flashes amber; a shorter press works as always); held, it takes an app our OS gives it (SPI reg 0xD7) once, within 10 minutes and no later than 60 s after the module's next ready (the update's trial, or the good slot's after one that failed), and none without. Our OS asks it at `SystemUpdate` BEGIN (docs/protocol/net.md). `Error DENIED` if nobody held it, `Error BUSY` while another confirmation waits. |
 | 0x23 | Bl2Updater |  | net | - | Ok | 35 s | Into B&W's bootloader for BL2's web updater, on a model whose bootloader takes its updates from the network (the ZD1L's "Net HBL", docs/mcu/bootloader-hbl.md): the MCU waits up to 30 s for ON/OFF held 5 s (its LED flashes amber); held, it answers, then goes into the bootloader, which powers the module and asks it for BL2. Our OS, which asked the MCU for no app, sends it there: BL2's web updater on wired Ethernet (a DHCP lease of its own, maybe another address than our OS's), which takes a B&W `.fw` for both chips (the release's `zd1l-V.fw`) and restarts into it. Nothing on USB and no network link meanwhile; a power cut, or ON/OFF held 3 s while it waits, goes back to this firmware with nothing written. `Error ARG` on a model without that bootloader (the Zeppelin Air: DFU), `Error DENIED` if nobody held it. |
+| 0x24 | Hold |  | net | `action` [HoldFor](#holdfor) | Ok | 35 s | A person at the speaker allows `action` (ON/OFF held 5 s within 30 s, the LED flashing amber; a shorter press works as always), the MCU then acting on it: every action of the speaker's own that needs a person, in one request (`Allow` and `Bl2Updater` before it, which firmwares keep answering). `Error DENIED` if nobody held it, `Error ARG` for an action this model can't do. |
 | 0x0F | Lock | gated |  | `open` bool: true: open for good; false: locked (and no longer open for good) | Ok | 1 s | Close the gate now, or open it for good (kept in the EEPROM across power cycles: a lab unit driven by tools unattended; the user's choice, made at the speaker since this request is gated). |
 | 0x04 | Peek | gated |  | `addr` u32: address<br>`len` u16: bytes, at most 248<br>`words` bool: 32-bit reads (registers): `addr` and `len` multiples of 4; the data big-endian, as in memory | Data | 1 s | Read memory (gated: the MCU's RAM passes settings through). |
 | 0x05 | Poke | gated |  | `addr` u32: address<br>`data` bytes <= 240: the bytes<br>`words` bool: 32-bit writes (registers): `addr` and the length multiples of 4, the data big-endian | Ok | 1 s | Write memory. |
@@ -441,6 +442,15 @@ The DSP's input.
 | 2 | MODULE | I2S from the network module |
 | 3 | AUX | the codec's ADC (analog AUX) |
 | 4 | OPTICAL | S/PDIF (optical AUX) |
+
+### HoldFor
+What a hold of ON/OFF allows (`Hold`).
+
+| Value | Name | |
+|---|---|---|
+| 0 | NONE | nothing (refused) |
+| 1 | APP | the main board takes the app our OS has staged (SPI reg 0xD7) once, within 10 minutes and no later than 60 s after the module's next ready (as `Allow`; docs/mcu/bootloader-hbl.md) |
+| 2 | BL2WEB | the module into BL2's web updater on its Ethernet. A Lightning model: through B&W's bootloader once ON/OFF is up (as `Bl2Updater`), which takes the `.fw`'s MCU part; the speaker leaves USB and the network. A ZD1: HCR 0x21 (our OS reboots into BL2), whose 2010 web updater takes an `os-V.bcd` and resets the module after its burn; at our OS's first word after that the MCU starts the module again as at power-up (the new boot image's rescue installing itself into a slot), after 20 minutes with nothing written all the same; our firmware stays on USB. Nothing on the network meanwhile (docs/module/updater.md) |
 
 ### Model
 Which speaker this is, as the MCU firmware tells it from its bootloader (mcu/src/model.c).

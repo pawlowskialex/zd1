@@ -77,7 +77,7 @@ Steps (all on the owner's own unit, with their OK):
    `a7v20477.fw`), then upload `out.fw` **whole** to the module's **BL2 web updater**: key-hold ON/OFF while plugging
    mains in → the module comes up on wired Ethernet (DHCP) serving the firmware-update page → upload `out.fw`. BL2
    burns both parts (module `.bcd` to NAND, the patched MCU `.dmb` to the MCU over SPI) and resets. Proven on a real
-   ZD1L [HW 2026-11-16] (`docs/module/boot-chain.md`, "The ZD1L BL2"). `python3 tools/zeppelin bl2web IP out.fw
+   ZD1L [HW 2026-11-16] (`docs/module/boot-chain.md`, "The ZD1L BL2"). `zd1 bl2web IP out.fw
    --yes` runs this BL2's upload sequence (the apply page, then the expert confirm). On our own ZD1, by contrast, the
    MCU route is DFU of the `.hex` (`zd1 dfu write`); the ZD1L/A7 ship the MCU app as a `.dmb`, which is what BL2's
    SPI path consumes.

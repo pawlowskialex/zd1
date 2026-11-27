@@ -9,7 +9,7 @@ Then (docs/mcu/bootloader-hbl.md): the key-hold into its updater, an upload to B
     zemu run OUTDIR/nand.bin --nand --mcu OUTDIR/mcu_flash.bin --fwd 18080:80 \\
       --renode 'zd1:flashc BootprotSize 0x8000' --renode 'zd1:board Adc "2:0x300"' \\
       --renode 'zd1:board Pins "0:PA08=0,1500:PA08=1"' --wait mcu 'BSL Ready' --sleep 30 \\
-      --host 'python3 -I tools/zeppelin/knos/bl2web.py 127.0.0.1:18080 zd1l.fw --yes' ...
+      --host 'zd1 bl2web 127.0.0.1:18080 zd1l.fw --yes' ...
 """
 
 import os
