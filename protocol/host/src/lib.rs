@@ -666,6 +666,18 @@ enums! {
         /// S/PDIF (optical AUX)
         Optical = 4,
     }
+    /// Which speaker this is, as the MCU firmware tells it from its bootloader (mcu/src/model.c).
+    Model {
+        /// a firmware that doesn't say (older than the field), or B&W's bootloader with a HWID it doesn't know
+        Unknown = 0,
+        /// the Zeppelin Air (B&W's DFU bootloader)
+        Zd1 = 1,
+        /// the Zeppelin Air with Lightning (B&W's "Net HBL", HWID 0xBE): no USB DFU, its MCU firmware comes from the
+        /// module (docs/mcu/bootloader-hbl.md)
+        Zd1l = 2,
+        /// the A7 (B&W's "Net HBL", HWID 0xA7)
+        A7 = 3,
+    }
     /// The gate in front of the requests that change the speaker.
     Gate {
         /// gated requests need `Unlock` (a press of ON/OFF on the speaker) first
@@ -768,6 +780,10 @@ messages! {
         volume_cap: u8,
         /// the module's console is open over the host link (`Console`)
         console_open: bool,
+        /// which speaker this is
+        model: Model,
+        /// the HWID in B&W's bootloader ("Net HBL": the ZD1L's 0xBE, the A7's 0xA7), 0 without one
+        hbl_hwid: u8,
     }
     /// Open the gate: the MCU waits up to 30 s for a press of ON/OFF on the speaker (its LED flashes purple; the
     /// press does nothing else), then gated requests run until 10 minutes after the last one. `Error DENIED` if

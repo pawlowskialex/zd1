@@ -1,9 +1,9 @@
 // The software: the bootloader's view (install, repair, roll back), the slots, the releases, installs from files.
-import { imageInfo } from "../pkg/zd1_web.js";
+import { imageInfo, Speaker } from "../pkg/zd1_web.js";
 import { backups, drawBackups, restoreBackup } from "./backups.js";
 import { act, connect, events, job, show } from "./connection.js";
 import { app } from "./shared.js";
-import { refresh } from "./speaker.js";
+import { modelOf, refresh } from "./speaker.js";
 import { $, ask, el, failed, names, notice } from "./ui.js";
 
 // ---- the bootloader: the installer ------------------------------------------------------------------------------
@@ -187,7 +187,7 @@ export function drawSoftware(b) {
   }
   backups()
     .then((l) => {
-      if (!l.length || !usb || drawn !== softwareDrawn) return; // drawn again meanwhile: that one adds it
+      if (!l.length || !usb || noDfu() || drawn !== softwareDrawn) return; // drawn again meanwhile: that one adds it
       const x = el("button", {
         className: "quiet",
         textContent: `Restore the MCU firmware ${l[0].holds} (backed up ${new Date(l[0].date).toLocaleDateString()})`,
@@ -246,6 +246,20 @@ export async function fetchImage(img) {
 /// order), -1 for a build the list doesn't have.
 export const position = (running, kind) => (running ? releases.findIndex((r) => r[kind]?.version === running) : -1);
 
+/// The main board takes no firmware over USB: B&W's bootloader on a Zeppelin Air with Lightning (and an A7) has no USB
+/// DFU. Its firmware comes from the module's system instead (the MCU follows its OS), once a person at the speaker
+/// allows it (ON/OFF held 5 s; docs/mcu/bootloader-hbl.md), and the module's boot image from B&W's updater
+/// ([`BOOT_BY_IP`]). The MCU says which model it is (`Info.model`); a firmware older than that field said so when it
+/// refused DFU (`app.noDfu`: that firmware's version, connection.js).
+export const noDfu = () => ["zd1l", "a7"].includes(modelOf(app.info)) || (!!app.noDfu && app.noDfu === app.info?.fw);
+
+/// Where a Lightning model's boot image comes from: B&W's updater, as at its first install (js/zd1l.js).
+const BOOT_BY_IP =
+  "On the Lightning model the module's boot image goes on through B&W's updater, as at the first install: unplug " +
+  "the speaker from the mains, hold ON/OFF while plugging it in (its light goes white), connect it to the router with " +
+  "an Ethernet cable, then the welcome view's Lightning install by its address. The settings stay. It can wait: the " +
+  "system runs on the boot image it has.";
+
 /// The banner on top: what there is to do, with the one button (none: it's for the person at the speaker).
 function banner(title, text, label, f, notes) {
   const u = label ? el("button", { className: "primary", textContent: label }) : null;
@@ -280,6 +294,23 @@ function banner(title, text, label, f, notes) {
 /// one: the boot image through BL2's XModem.
 function unfinished(rel) {
   const ms = names(app.S.ModState)[app.info.mod_state];
+  // a Lightning model: the release's boot image is the Zeppelin Air's (its HWID, its CnE), never for it
+  if (ms === "bl2" && noDfu()) {
+    banner(
+      "The module's boot image is missing",
+      `The module stopped in its bootloader with no boot image to start: an update of it didn't finish. ${BOOT_BY_IP}`,
+    );
+    return true;
+  }
+  if (ms === "stock" && noDfu()) {
+    banner(
+      "The install isn't finished",
+      "The module still runs B&W's software. On the Lightning model ours goes on through B&W's updater: unplug the " +
+        "speaker from the mains, hold ON/OFF while plugging it in (its light goes white), connect it to the router with " +
+        "an Ethernet cable, then the welcome view's Lightning install by its address.",
+    );
+    return true;
+  }
   if (ms === "bl2" && rel.bcd?.ours) {
     banner(
       "The module's boot image is missing",
@@ -311,11 +342,13 @@ function unfinished(rel) {
     banner(
       "The install isn't finished",
       "The module runs its rescue: it has no system in a slot yet. " +
-        (needs.includes("boot")
-          ? `${rel.version}'s boot image goes on, then its system from it (about 8 minutes).`
-          : needs.includes("rescue")
-            ? "It installs itself into one (about a minute)."
-            : "The system goes on (about 2 minutes)."),
+        (needs.includes("boot") && noDfu()
+          ? "The system goes on (about 2 minutes); the boot image through B&W's updater later (Software says how)."
+          : needs.includes("boot")
+            ? `${rel.version}'s boot image goes on, then its system from it (about 8 minutes).`
+            : needs.includes("rescue")
+              ? "It installs itself into one (about a minute)."
+              : "The system goes on (about 2 minutes)."),
       `Finish: install ${rel.version}`,
       () => updateTo(rel, needs, true),
     );
@@ -325,6 +358,17 @@ function unfinished(rel) {
 }
 
 async function writeBootInBl2(rel) {
+  // the Zeppelin Air's boot image: a firmware too old to say the model could be on a Lightning model's main board
+  if (
+    modelOf(app.info) !== "zd1" &&
+    !(await ask(
+      "A Zeppelin Air (30-pin dock)?",
+      "This writes the boot image of the Zeppelin Air with the 30-pin dock. The main board's firmware is too old to " +
+        `say which model this is. On a Zeppelin Air with Lightning don't: ${BOOT_BY_IP}`,
+      "It's the 30-pin one: write it",
+    ))
+  )
+    return;
   await job(`Write the module's boot image (${rel.version})`, false, async () => {
     const r = await app.sp.updateBootInBl2(await fetchImage(rel.bcd));
     return `Done: the module runs ${r.os}.`;
@@ -405,13 +449,17 @@ export function drawReleases() {
     const where = `It updates ${updates}.${starting ? " The module is starting: its system is checked once it is up." : ""}`;
     const named = `release ${rel.version}${rel.date ? ` (${rel.date})` : ""}`;
     v.append(el("p", { textContent: needs.length ? `Latest: ${named}. ${where}` : `Up to date: ${named}.` }));
+    // a Lightning model: its boot image isn't the page's to write (BOOT_BY_IP); the rest is
+    const byIp = noDfu() && behind;
+    if (byIp) v.append(el("p", { className: "small", textContent: BOOT_BY_IP }));
     if (rel.notes) v.append(el("p", { className: "small notes", textContent: rel.notes }));
     // behind: the banner on top of the page says so, with the one button
+    const doable = byIp ? needs.filter((k) => k !== "boot") : needs;
     if (needs.length)
       banner(
         `Release ${rel.version} is available`,
-        where,
-        `Update to ${rel.version}`,
+        where + (byIp ? " The boot image goes on through B&W's updater (Software says how)." : ""),
+        doable.length ? `Update to ${rel.version}` : null,
         () => updateTo(rel, needs),
         rel.notes,
       );
@@ -428,7 +476,7 @@ export function drawReleases() {
       ["system", "its system"],
       ["mcu", "its MCU firmware"],
     ]) {
-      if (!r[kind] || (kind === "mcu" && app.sp?.link() === "net")) continue; // the MCU's: over USB only
+      if (!r[kind] || (kind === "mcu" && (app.sp?.link() === "net" || noDfu()))) continue; // the MCU's: USB DFU only
       const b = el("button", { className: "quiet", textContent: `Install ${label}` });
       b.onclick = () => installRelease(r, kind);
       row.append(b);
@@ -451,6 +499,7 @@ export function drawReleases() {
 /// second upload); without one: the system into a slot, then the MCU firmware.
 export async function updateTo(rel, needs, finishing = false) {
   if (app.sp.link() === "net") return updateOverNetwork(rel, needs);
+  if (noDfu()) return updateFromModule(rel, needs, finishing);
   const has = (k) => needs.includes(k);
   const steps = !has("boot")
     ? needs
@@ -532,6 +581,163 @@ export async function updateTo(rel, needs, finishing = false) {
   return r;
 }
 
+/// A Lightning model over USB (`noDfu`): the module's system into the slot that doesn't run, and the main board's
+/// firmware from it: a person at the speaker allows that (`Allow`: ON/OFF held 5 s) after the system is written and
+/// before its slot starts; at the start's ready the module asks the MCU, which goes into B&W's bootloader and takes the
+/// app over SPI (mcu/src/mcufw.c, module/os/apps/zd1-linkd). With the system already there the module restarts for that
+/// ready. Its boot image isn't for USB here (`BOOT_BY_IP`).
+async function updateFromModule(rel, needs, finishing) {
+  const has = (k) => needs.includes(k);
+  const sys = has("system") ? "system" : has("rescue") ? "rescue" : null;
+  const mcu = has("mcu") ? rel.mcu?.version : null;
+  if (!sys && !mcu) return notice(BOOT_BY_IP, "warn");
+  const plan = [
+    sys === "system" &&
+      "the module's system goes into the slot that doesn't run (the old one stays as the way back) and starts once",
+    sys === "rescue" && "the release's system goes from the boot image into the slot that doesn't run, and starts once",
+    mcu &&
+      `${sys ? "then " : ""}the main board takes its firmware from the module's system: someone at the speaker allows ` +
+        "it (ON/OFF held 5 s while its light flashes amber), " +
+        (sys ? "" : "the module restarts, ") +
+        "then the main board leaves USB for about a minute, its light blinking white, and comes back with it",
+  ]
+    .filter(Boolean)
+    .join("; ");
+  if (
+    !finishing &&
+    !(await ask(
+      `Update to ${rel.version}?`,
+      `${plan[0].toUpperCase()}${plan.slice(1)}. A few minutes; sound stops meanwhile.` +
+        (has("boot") ? " The boot image goes on through B&W's updater, later (Software says how)." : ""),
+      "Update",
+    ))
+  )
+    return;
+  const of = (sys ? 1 : 0) + (mcu ? 1 : 0);
+  const r = await job(`Update to ${rel.version}`, false, async () => {
+    const said = [];
+    let n = 0,
+      allowed = false;
+    // the hold, asked where it counts: nobody at the speaker leaves the main board as it is, the rest goes on
+    const allow = async () => {
+      try {
+        await app.sp.allow();
+        allowed = true;
+      } catch (e) {
+        if (e?.code !== "DENIED") throw e;
+        said.push(`the main board kept ${app.info?.fw ?? "its firmware"} (ON/OFF wasn't held: Update again for it)`);
+      }
+    };
+    let tried = null; // a slot whose verdict comes once the main board is back
+    if (sys === "system") {
+      events.phase(++n, of, "the module's system");
+      const w = await app.sp.updateSystem(await fetchImage(rel.system), false);
+      if (mcu) await allow();
+      let r;
+      try {
+        r = await app.sp.startSlot(w.slot);
+      } catch (e) {
+        // allowed, the main board leaves USB at the slot's ready (the module asks it then), maybe before the verdict
+        // was read: it comes after the main board is back
+        if (!allowed || !GONE.includes(e?.code)) throw e;
+        app.sp.close();
+        app.sp = null;
+        tried = w.slot;
+      }
+      if (r?.outcome === "fellBack")
+        throw new Error(
+          `The system in slot ${r.slot.toUpperCase()} didn't come up: the module is back on slot ${r.now.toUpperCase()}` +
+            (allowed ? "; the main board keeps its firmware." : "."),
+        );
+      if (r) said.push(`system ${rel.system.version} in slot ${r.slot.toUpperCase()}`);
+    } else if (sys === "rescue") {
+      events.phase(++n, of, "the module's system");
+      const r = await app.sp.installFromRescue();
+      if (r.outcome === "fellBack")
+        throw new Error(
+          `The system in slot ${r.slot.toUpperCase()} didn't come up: the module is back on slot ${r.now.toUpperCase()}.`,
+        );
+      said.push(`system ${rel.system.version} in slot ${r.slot.toUpperCase()}`);
+    }
+    if (mcu && sys !== "system") {
+      await allow();
+      // a ready for the module to ask at (it asks at each one, the MCU takes it only allowed)
+      if (allowed) await app.sp.call("Module", { op: "RESTART", timeout_s: 0 });
+    }
+    if (allowed) {
+      events.phase(++n, of, "the main board's firmware, from the module");
+      const i = await mcuFromModule(mcu, !tried);
+      said.push(`main board ${i.fw}`);
+    }
+    if (tried) {
+      // the good slot, which the main board keeps (its EEPROM) through its bootloader: the one tried if it got ready
+      const b = await app.sp.call("BootState", {});
+      const good = names(app.S.Slot)[b.good];
+      if (good !== tried)
+        throw new Error(
+          `The main board runs ${app.info.fw}, but the system in slot ${tried.toUpperCase()} didn't come up: the ` +
+            `module is back on slot ${good.toUpperCase()}.`,
+        );
+      said.unshift(`system ${rel.system.version} in slot ${tried.toUpperCase()}`);
+    }
+    return `Done: ${said.join(", ")}.${has("boot") ? " The boot image: through B&W's updater (Software says how)." : ""}`;
+  });
+  refresh(true);
+  return r;
+}
+
+/// The errors of a USB device going away mid-call: gone, or a transfer that failed or timed out with it.
+const GONE = ["GONE", "DEVICE", "TIMEOUT"];
+
+/// The main board taking the app the module's system carries, allowed (`updateFromModule`): it leaves USB for its
+/// bootloader, which powers the module and takes the app over SPI (about 45 s, its light blinking white), and comes back
+/// running `version` (`connected`: still there, else it has left already). Its Info once it does; an error if it doesn't
+/// leave within 3 minutes, or isn't back with it in 5.
+async function mcuFromModule(version, connected = true) {
+  const t0 = Date.now(),
+    secs = () => Math.round((Date.now() - t0) / 1000);
+  const pause = (ms) => new Promise((r) => setTimeout(r, ms));
+  let left = !connected;
+  while (Date.now() - t0 < 300_000) {
+    events.wait(
+      left ? "the main board takes its firmware from the module" : "the module asks the main board to take it",
+      secs(),
+    );
+    await pause(2000);
+    if (!app.sp) {
+      // back on USB once its bootloader started the app (the WebUSB grant holds for it: a new USB serial may need
+      // Connect again)
+      app.sp = (await Speaker.connect(events).catch(() => null)) ?? null;
+      continue;
+    }
+    let i;
+    try {
+      i = await app.sp.call("Info", {});
+    } catch (e) {
+      if (!GONE.includes(e?.code)) throw e;
+      app.sp.close();
+      app.sp = null;
+      left = true;
+      continue;
+    }
+    app.info = i;
+    if (i.fw === version) {
+      events.step(`the main board runs ${i.fw} (${secs()} s)`);
+      return i;
+    }
+    if (!left && Date.now() - t0 > 180_000)
+      throw new Error(
+        `The main board still runs ${i.fw}: the module didn't hand it ${version}. Diagnostics' log says why (its ` +
+          "[zd1-linkd] and [mcufw] lines).",
+      );
+  }
+  throw new Error(
+    `The main board didn't come back on USB with ${version} in 5 minutes. If its light is steady again, connect again ` +
+      "(the browser may ask for it once more); if it stays white, B&W's updater has the way back (the Lightning " +
+      "install by its address, after ON/OFF held while plugging it in).",
+  );
+}
+
 /// Over the network: the module's system alone, the release's signed image (the speaker checks its signature), allowed
 /// by a person at the speaker (ON/OFF held 5 s), which allows the main board's firmware it brings too; a boot image
 /// that differs needs USB (docs/protocol/net.md).
@@ -539,8 +745,13 @@ async function updateOverNetwork(rel, needs) {
   if (!needs.includes("system"))
     return notice(
       needs.includes("boot")
-        ? "This release's boot image differs from the speaker's: that goes over USB (connect it with a cable)."
-        : "The main board's firmware doesn't match its system: update over USB.",
+        ? noDfu()
+          ? `This release's boot image differs from the speaker's. ${BOOT_BY_IP}`
+          : "This release's boot image differs from the speaker's: that goes over USB (connect it with a cable)."
+        : noDfu()
+          ? "The main board's firmware doesn't match its system: it takes it from the module once someone at the " +
+            "speaker allows it, which goes over USB (connect it with a cable, then Update)."
+          : "The main board's firmware doesn't match its system: update over USB.",
       "warn",
     );
   if (!rel.signed)
@@ -562,7 +773,12 @@ async function updateOverNetwork(rel, needs) {
       throw new Error(
         `The system in slot ${r.slot.toUpperCase()} didn't come up: the speaker is back on slot ${r.now.toUpperCase()}.`,
       );
-    return `Done: system ${rel.signed.version} in slot ${r.slot.toUpperCase()}${needs.includes("boot") ? "; the boot image goes over USB" : ""}.`;
+    const boot = !needs.includes("boot")
+      ? ""
+      : noDfu()
+        ? "; the boot image through B&W's updater (Software says how)"
+        : "; the boot image goes over USB";
+    return `Done: system ${rel.signed.version} in slot ${r.slot.toUpperCase()}${boot}.`;
   });
   refresh(true);
   return r;
@@ -629,6 +845,12 @@ export async function installMcu(name, data) {
     return notice(`${name} is not MCU firmware (Intel HEX, the app region's .bin, or a backup).`, "warn");
   if (app.sp?.link() === "net")
     return notice("The main board's firmware goes over USB (over the network it follows its system).", "warn");
+  if (app.sp && noDfu())
+    return notice(
+      "This speaker's main board takes no firmware over USB (B&W's bootloader on the Lightning model has none): it " +
+        "comes from the module's system, which the update banner asks for.",
+      "warn",
+    );
   const from = i.kind === "backup" ? ` (the backup read ${new Date(i.when).toLocaleString()})` : "";
   if (
     !(await ask(

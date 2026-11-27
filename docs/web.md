@@ -44,7 +44,12 @@ images offered under `images/` instead (`index.json` names them). The three view
   State record's `boot` against the `.bcd`'s `zd1.boot=`, both by content), the boot image and the MCU in one visit to
   the bootloader (~7 min; the boot image alone ~6), the release's system then installing itself from it; else the
   system, then the MCU; nothing when up to date, and the module not judged while it
-  starts. Then
+  starts. A main board with no USB DFU (the Lightning model: `Info.model`, or a firmware older than that field
+  refusing `Dfu`; `software.js` `noDfu`, `updateFromModule`): the system written into the slot that doesn't run, the
+  hold that allows the MCU firmware it carries (`Allow`), then the slot started once, at whose ready the module asks the
+  MCU, which leaves USB for B&W's bootloader and comes back with it (MCU behind alone: the hold, then a module restart
+  for that ready); its boot image never from the page (it is the Zeppelin Air's `.bcd`, another HWID and CnE): the
+  page says to put it on through B&W's updater, the Lightning install by address after the key-hold. Then
   Network (the Wi-Fi and Ethernet as sentences from the State record with the plain reason when it failed, the name,
   the known networks in their order with Prefer and Forget, Add a network from a scan or by hand, the radio's limits,
   each interface's addresses), Receivers (a row each: on/off, its status, its options: AirPlay's PIN and pairings,
@@ -222,7 +227,8 @@ Install and Help say so.
 idle time, the volume cap). Software is upkeep: up to date, it waits near the end (versions of both boards, the latest release and the verdict,
 "back to slot X" and "restore the previous MCU firmware"); behind a release, a banner under the speaker says so with
 the notes and one Update button that brings both boards to the release (the system, then the MCU; with a new boot
-image, it and the MCU in one visit to the bootloader, its system installing itself). **Diagnostics** folded, with a
+image, it and the MCU in one visit to the bootloader, its system installing itself; the Lightning model's MCU from its
+system, its boot image through B&W's updater). **Diagnostics** folded, with a
 "save a report" button (versions, diagnostics, both logs in one file). An **Advanced** fold: the debug services, settings export and import, reset
 to defaults, the module's console (its way back from a broken image without a terminal program).
 

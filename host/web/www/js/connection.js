@@ -258,6 +258,15 @@ for (const type of ["click", "change", "submit"])
     true,
   );
 
+/// A main board that refused DFU (a Lightning model: B&W's bootloader there has no USB): its firmware, too old to say
+/// the model (`Info.model`), is known by it from now on (software.js `noDfu`), and the updates go the module's way.
+function refusedDfu(e) {
+  if (!/no USB DFU/.test(e?.message ?? "")) return false; // the MCU's ARG, or a flow's error carrying its words
+  app.noDfu = app.info?.fw ?? null;
+  app.drawnFor = ""; // the releases drawn again for it
+  return true;
+}
+
 /// One operation at a time from the page's side (the WebAssembly queues them too); the press dialog closes after.
 /// Until it ends the control that started it is `aria-busy`, and once it has taken long enough to see (most do over
 /// the network) the page is `waiting`: that control breathes, the pointer says so (button.css).
@@ -272,6 +281,7 @@ export async function op(f) {
   try {
     return await f(from);
   } catch (e) {
+    refusedDfu(e);
     if (!(e?.code === "GONE" && sp && app.sp !== sp)) failed(e); // not one the page let go of (Disconnect)
   } finally {
     $("press").close();
@@ -323,6 +333,7 @@ export async function job(title, stoppable, f) {
     $("job").classList.add("ok");
     return r ?? true;
   } catch (e) {
+    const lightning = refusedDfu(e);
     $("job").classList.add("failed");
     $("job-outcome").textContent =
       e?.code === "CANCELLED"
@@ -334,7 +345,10 @@ export async function job(title, stoppable, f) {
                 ? " The speaker's connection went away: plug it in again and connect; the page shows the state it is in and the way out (in its bootloader: Repair, or a backup)."
                 : e?.code === "DEVICE"
                   ? " The browser couldn't open the speaker: connect again (or unplug it and plug it in first); the page shows the state it is in and what is left to do."
-                  : ""
+                  : lightning
+                    ? " This is a Zeppelin Air with Lightning: its main board's firmware comes from the module's " +
+                      "system, allowed by ON/OFF held 5 s. The update banner does it that way now."
+                    : ""
             }`;
   } finally {
     jobRunning = false;

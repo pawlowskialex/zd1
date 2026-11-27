@@ -672,6 +672,32 @@ impl Speaker {
         Ok(o.into())
     }
 
+    /// A slot installed (`updateSystem` without `start`) started once: { outcome, slot, now } ([`outcome`]). USB only.
+    #[wasm_bindgen(js_name = startSlot)]
+    pub async fn start_slot(&self, slot: String) -> Result<JsValue, JsValue> {
+        let slot: spec::Slot = slot.parse().map_err(|_| js_err(Error::Failed(format!("no slot {slot:?}"))))?;
+        let mut m = self.usb().await?;
+        let r = update::start_once(&mut m, slot).await;
+        self.put(Conn::Usb(m));
+        Ok(outcome(&r.map_err(js_err)?).into())
+    }
+
+    /// A person at the speaker allows the MCU firmware the module's system carries (`Allow`: ON/OFF held 5 s within
+    /// 30 s, events.prompt "allow"): the MCU takes it once, until 60 s after the module's next ready (a ZD1L's way to
+    /// a new MCU firmware: its bootloader has no USB; docs/mcu/bootloader-hbl.md). USB only (over the network
+    /// `SystemUpdate` asks it itself).
+    pub async fn allow(&self) -> Result<(), JsValue> {
+        let mut m = self.usb().await?;
+        self.ev.prompt(
+            zd1_host::Confirm::Allow,
+            "allow the main board's firmware from the module: hold ON/OFF on the speaker for 5 s within 30 s, while \
+             its LED flashes amber",
+        );
+        let r = m.call(&msg::Allow).await;
+        self.put(Conn::Usb(m));
+        r.map(drop).map_err(js_err)
+    }
+
     /// The module's boot image (our .bcd: stub, kernel, rescue) through the bootloader's relay, then our firmware
     /// started again, which has the new boot image's rescue install itself into a slot (`install::boot_image`). This
     /// connection ends: connect again afterwards. { os, outcome, slot, now } ([`outcome`]). USB only.
