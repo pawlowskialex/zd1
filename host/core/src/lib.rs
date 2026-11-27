@@ -29,6 +29,7 @@ pub mod lab;
 pub mod link;
 pub mod mcu;
 pub mod net;
+pub mod plan;
 pub mod settings;
 pub mod speaker;
 pub mod update;

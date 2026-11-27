@@ -17,6 +17,9 @@ The flows, the design, what has been measured on the unit, and what is open. Tag
 
 ## The flows
 
+Which of them, in which order: `host/core/src/plan.rs` (the page's Update, `docs/web.md`): the cheapest sequence to the
+release from the speaker's state, its tests checked against every sequence of up to four routes for every state.
+
 | When | Path | Time | State |
 |---|---|---|---|
 | **first install** on a stock speaker | **`zd1 install`** (`host/core/src/install.rs`, the page's Install): key-hold DFU → the relay of `os.bcd` (stub, kernel, rescue) → MCU firmware over DFU with a backup → start → the module's first boot is the rescue installing itself (the MCU sees a boot image it hasn't recorded), which copies itself into a slot and has the MCU start it once; the host waits for that (`docs/module/storage.md`, The boot). `--no-bcd`: the boot image is there (a repair), the system image into a slot | 7.2 min (the relay ~5, the MCU firmware ~20 s, the rescue's self-install and the slot's start ~1) | as one flow on the unit [HW 2026-11-21, a17a268 from v0.1.5]; the page's Install [HW 2026-11-03] |

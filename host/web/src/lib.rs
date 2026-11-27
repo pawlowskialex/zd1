@@ -260,6 +260,63 @@ pub fn spec() -> JsValue {
     o.into()
 }
 
+/// The update plan (host/core's `plan`) from the page's facts: { model: "zd1" | "zd1l", link: "usb" | "net", module:
+/// "os" | "rescue" | "bl2" | "stock", boot, system, mcu (behind), rescueIsRelease, ethernet, allow, updater, staged,
+/// has: { system, signed, bcd, mcu, fw } }, with routes done by hand or without (`byHand`) -> { steps: [{ route, boot,
+/// system, mcu }], secs, left: { boot, system, mcu } } (route: `plan::Route::name`).
+#[wasm_bindgen(js_name = planUpdate)]
+pub fn plan_update(facts: JsValue, by_hand: bool) -> Result<JsValue, JsValue> {
+    use zd1_host::plan::{self, Facts, Has, Link, Model, Module};
+    let get = |o: &JsValue, k: &str| Reflect::get(o, &k.into()).unwrap_or(JsValue::UNDEFINED);
+    let flag = |o: &JsValue, k: &str| get(o, k).is_truthy();
+    let word = |k: &str| get(&facts, k).as_string().unwrap_or_default();
+    let has = get(&facts, "has");
+    let f = Facts {
+        model: if word("model") == "zd1l" { Model::Zd1l } else { Model::Zd1 },
+        link: if word("link") == "net" { Link::Net } else { Link::Usb },
+        module: match word("module").as_str() {
+            "rescue" => Module::Rescue,
+            "bl2" => Module::Bl2,
+            "stock" => Module::Stock,
+            _ => Module::Os,
+        },
+        boot: flag(&facts, "boot"),
+        system: flag(&facts, "system"),
+        mcu: flag(&facts, "mcu"),
+        rescue_is_release: flag(&facts, "rescueIsRelease"),
+        ethernet: flag(&facts, "ethernet"),
+        allow: flag(&facts, "allow"),
+        updater: flag(&facts, "updater"),
+        staged: flag(&facts, "staged"),
+        has: Has {
+            system: flag(&has, "system"),
+            signed: flag(&has, "signed"),
+            bcd: flag(&has, "bcd"),
+            mcu: flag(&has, "mcu"),
+            fw: flag(&has, "fw"),
+        },
+    };
+    let p = plan::plan(&f, by_hand);
+    let steps = Array::new();
+    for s in &p.steps {
+        let o = Object::new();
+        set(&o, "route", s.route.name());
+        set(&o, "boot", s.boot);
+        set(&o, "system", s.system);
+        set(&o, "mcu", s.mcu);
+        steps.push(&o);
+    }
+    let left = Object::new();
+    set(&left, "boot", p.left_boot);
+    set(&left, "system", p.left_system);
+    set(&left, "mcu", p.left_mcu);
+    let o = Object::new();
+    set(&o, "steps", steps);
+    set(&o, "secs", p.secs);
+    set(&o, "left", left);
+    Ok(o.into())
+}
+
 /// What a file is (host/core's `image::identify`): { kind: "mcu", version, built, start, end } (Intel HEX or the app
 /// region's .bin), { kind: "backup", version, when } (an MCU backup: installs as MCU firmware), { kind: "system",
 /// version, stamp, size } (a gzip'd cpio of a slot's root), { kind: "signed", version, built, stamp, size } (one signed
