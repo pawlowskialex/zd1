@@ -197,6 +197,7 @@ struct App {
     stamps: Arc<Mutex<[String; 2]>>,         // what slots A and B hold (zd1-slot's stamps; read in a thread)
     update: Option<std::process::Child>,     // zd1-update while it runs
     hbl_peer: bool,                          // the host used the configuration channel as the MCU's bootloader does
+    asked_at: Option<Instant>,               // we asked the MCU for its bootloader (mcufw::ASKED), when
     mcufw: Option<mcufw::Serve>,             // the MCU's own firmware going to its bootloader (we play BL2)
     tunnel: tunnel::Tunnel,                  // the network's requests for the MCU (SPI reg 0xD9)
     pieces: Vec<(u64, u8, Vec<u8>)>,         // a record a network client reads in pieces: (client, record, its bytes)
@@ -747,6 +748,11 @@ impl App {
                 let _ = std::fs::create_dir_all("/run/zd1");
                 let _ = std::fs::write("/run/zd1/mcu-version", format!("{v}\n"));
                 self.say(&format!("[zd1-linkd] MCU firmware {v}\n"));
+                // our MCU firmware runs: no ask of ours is out (a bootloader calling later is on its own)
+                if std::fs::remove_file(mcufw::ASKED).is_ok() {
+                    self.say("[zd1-linkd] our MCU firmware is back: the ask for its bootloader is over\n");
+                }
+                self.asked_at = None;
                 // every hello gets our state (the speaker's comes after it, 0xD2), not only the first
                 self.greeted = true;
                 self.mcu = v;
@@ -978,8 +984,12 @@ impl App {
             Err(e) => self.say(&format!("[zd1-linkd] mcu-update: {}: {e}\n", mcufw::PENDING)),
             Ok(()) if !self.greeted => self.say("[zd1-linkd] mcu-update: no MCU firmware of ours to ask\n"),
             Ok(()) => {
-                // the MCU cuts our power on its way to its bootloader: what is staged must be on the NAND first (an
-                // image written just before lost its tail [EMU 2026-11-19])
+                // the MCU cuts our power on its way to its bootloader: what is staged, and that we asked, must be on
+                // the NAND first (an image written just before lost its tail [EMU 2026-11-19])
+                if let Err(e) = std::fs::write(mcufw::ASKED, b"") {
+                    return self.say(&format!("[zd1-linkd] mcu-update: {}: {e}\n", mcufw::ASKED));
+                }
+                self.asked_at = Some(Instant::now());
                 unsafe {
                     libc::sync();
                 }
@@ -993,6 +1003,10 @@ impl App {
     /// never greeted) and spoke as the bootloader does, with a good `.dmb` staged. Else the HCR means BL2 itself.
     fn mcu_firmware_to_serve(&mut self) -> Option<Vec<u8>> {
         if self.greeted || !self.hbl_peer {
+            return None;
+        }
+        if !std::path::Path::new(mcufw::ASKED).exists() {
+            self.say("[zd1-linkd] the MCU's bootloader calls on its own (we asked for nothing): BL2 itself\n");
             return None;
         }
         let image = std::fs::read(mcufw::PENDING).ok()?;
@@ -1141,6 +1155,7 @@ pub fn main() {
         stamps: watch_stamps(),
         update: None,
         hbl_peer: false,
+        asked_at: None,
         mcufw: None,
         tunnel: tunnel::Tunnel::default(),
         pieces: Vec::new(),
@@ -1212,6 +1227,11 @@ pub fn main() {
             }
             app.reap_update();
             app.push_state();
+            if app.asked_at.is_some_and(|t| t.elapsed() >= mcufw::ASK_LAPSES) {
+                app.asked_at = None;
+                let _ = std::fs::remove_file(mcufw::ASKED);
+                app.say("[zd1-linkd] the MCU didn't go to its bootloader (nobody allowed it): the ask lapsed\n");
+            }
         }
         if app.link.activity() != before {
             last_activity = timers(app.link.mmio()).now();

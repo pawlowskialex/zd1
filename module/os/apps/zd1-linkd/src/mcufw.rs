@@ -23,6 +23,13 @@ pub const CARRIED: &str = "/usr/lib/zd1/mcu/zd1.dmb";
 /// twice. Asking alone doesn't count: the MCU waits for a person's confirmation (mcu/src/mcufw.c).
 pub const FOLLOWED: &str = "/data/zd1/mcu/follow";
 pub const TRIES: u32 = 2;
+/// We asked our MCU firmware for its bootloader (reg 0xD7) and it may have gone: only then is the bootloader's call
+/// for BL2 answered with [`PENDING`]. Any other time it is B&W's bootloader on its own (the ZD1L's key-hold, the host
+/// link's `Bl2Updater`) and wants BL2 itself, its web updater: a staged image stays staged. On the NAND (the MCU cuts
+/// our power on its way), gone when our MCU firmware greets us again or [`ASK_LAPSES`] after an ask it didn't take.
+pub const ASKED: &str = "/data/zd1/mcu/asked";
+/// The MCU takes an ask at once or never (no allowance): still powered this long after it, we weren't taken up on it.
+pub const ASK_LAPSES: Duration = Duration::from_secs(15);
 
 /// What to do about the MCU at its hello (docs/protocol/net.md, The MCU follows its OS).
 #[derive(Debug, PartialEq)]

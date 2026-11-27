@@ -106,6 +106,10 @@ enum Cmd {
     /// one our OS has staged once, until 60 s after the module's next ready (10 minutes at most; `zd1-ctl mcu-update`
     /// on the module; a network update asks this itself, docs/protocol/net.md).
     Allow,
+    /// A Zeppelin Air with Lightning into BL2's web updater (ON/OFF held 5 s within 30 s): the MCU into B&W's
+    /// bootloader, the module into BL2 on wired Ethernet, which takes a `.fw` for both chips (`zd1l-V.fw`: the page's
+    /// Lightning install, or `tools/zeppelin bl2web ADDR FILE --yes`). A power cut, or ON/OFF held 3 s, goes back.
+    Bl2Updater,
     /// The module OS's settings (docs/module/settings.md): all of them, one, or one changed ("" = its default); an
     /// action's key does it (wifi.add, wifi.forget, wifi.first, airplay.forget, reset).
     Settings {
@@ -784,6 +788,14 @@ async fn speaker_cmd<L: Link>(m: &mut Mcu<L>, cmd: Cmd, ev: &Rc<dyn Events>) -> 
             ev.prompt(Confirm::Press, "press ON/OFF on the speaker within 30 s (its LED flashes purple)");
             m.call(&msg::Unlock).await?;
             println!("unlocked");
+        }
+        Cmd::Bl2Updater => {
+            ev.prompt(Confirm::Updater, "hold ON/OFF on the speaker for 5 s within 30 s, while its LED flashes amber");
+            m.call(&msg::Bl2Updater).await?;
+            println!(
+                "into B&W's bootloader: BL2's web updater comes up on the speaker's Ethernet in about a minute (its own \
+                 DHCP lease); a power cut or ON/OFF held 3 s goes back"
+            );
         }
         Cmd::Allow => {
             ev.prompt(Confirm::Allow, "hold ON/OFF on the speaker for 5 s within 30 s, while its LED flashes amber");

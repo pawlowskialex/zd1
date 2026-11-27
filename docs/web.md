@@ -48,8 +48,11 @@ images offered under `images/` instead (`index.json` names them). The three view
   refusing `Dfu`; `software.js` `noDfu`, `updateFromModule`): the system written into the slot that doesn't run, the
   hold that allows the MCU firmware it carries (`Allow`), then the slot started once, at whose ready the module asks the
   MCU, which leaves USB for B&W's bootloader and comes back with it (MCU behind alone: the hold, then a module restart
-  for that ready); its boot image never from the page (it is the Zeppelin Air's `.bcd`, another HWID and CnE): the
-  page says to put it on through B&W's updater, the Lightning install by address after the key-hold. Then
+  for that ready). Its boot image is the release's `zd1l-V.fw` through BL2's web updater (never the Zeppelin Air's
+  `.bcd`: another HWID and CnE): with an Ethernet cable in and a firmware that has it, Update starts the updater
+  (`Bl2Updater`, the hold), waits for it at the speaker's Ethernet address and sends the `.fw` there (`zd1l.js`
+  `writeFw`), the whole release in one go (~10 min); else the page says to put it on by hand, the Lightning install by
+  address after the key-hold. Then
   Network (the Wi-Fi and Ethernet as sentences from the State record with the plain reason when it failed, the name,
   the known networks in their order with Prefer and Forget, Add a network from a scan or by hand, the radio's limits,
   each interface's addresses), Receivers (a row each: on/off, its status, its options: AirPlay's PIN and pairings,

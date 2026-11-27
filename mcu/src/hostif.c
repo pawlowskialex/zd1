@@ -77,7 +77,11 @@ static void hello_fill(zd1h_hello_reply_t *h) {
 static bool unlocked;                /* by a press, until unlock_until */
 static uint32_t unlock_until;
 static volatile bool confirm_wait, confirmed; /* an Unlock waits for the press (the main loop: inputs -> hostif_key) */
-static bool confirm_allow;   /* ... and it is an Allow: the hold allows an app from the module (mcufw_allow) */
+static bool confirm_allow; /* ... and it is an Allow: the hold allows an app from the module (mcufw_allow) */
+static bool confirm_bl2;   /* ... or a Bl2Updater: held, into B&W's bootloader for BL2's web updater */
+static uint32_t bl2_at;    /* a Bl2Updater answered: into the bootloader from then (its reply out first), 0: none */
+/* the confirmation takes ON/OFF held 5 s (a Pair, an Allow, a Bl2Updater), not a press (the USB gate's Unlock) */
+static bool confirm_hold(void) { return cur_net || confirm_allow || confirm_bl2; }
 static bool module_wait;     /* a Module request waits for its op (dm870_op_result) */
 static bool query_wait;      /* a GetSetting / SetSetting / Record waits for the module's answer (dm870_query_result) */
 static bool swallow_release; /* the press was ours: its release (short / hold) is too */
@@ -113,7 +117,7 @@ void hostif_first_start(void) {
 
 bool hostif_key(uint8_t key) {
     /* the USB gate's Unlock takes a press; a Pair or an Allow takes ON/OFF held 5 s (hostif_poll) */
-    if (confirm_wait && !cur_net && !confirm_allow && key == KEY_ONOFF) {
+    if (confirm_wait && !confirm_hold() && key == KEY_ONOFF) {
         confirmed = true;
         swallow_release = true;
         return true;
@@ -400,7 +404,7 @@ static void req_unlock(void) {
         ok();
         return;
     }
-    confirmed = confirm_allow = false;
+    confirmed = confirm_allow = confirm_bl2 = false;
     confirm_until = uptime + CONFIRM_MS;
     confirm_wait = true; /* hostif_poll finishes it */
     led_flash(FLASH_PURPLE, CONFIRM_MS);
@@ -411,12 +415,27 @@ static void req_unlock(void) {
 /* A person allows our OS's system update from the network and the MCU firmware it brings (our OS asks at its start):
  * ON/OFF held 5 s, whoever asks; held, mcufw takes one app from the module (mcufw.h) */
 static void req_allow(void) {
-    confirmed = false;
+    confirmed = confirm_bl2 = false;
     confirm_until = uptime + CONFIRM_MS;
     confirm_wait = confirm_allow = true; /* hostif_poll finishes it */
     led_flash(FLASH_AMBER, CONFIRM_MS);
     log_puts("[mcufw] hold ON/OFF on the speaker for 5 s within 30 s to allow a system update (and the MCU firmware "
              "it brings)\n");
+}
+
+/* Into B&W's bootloader for BL2's web updater (the ZD1L: docs/mcu/bootloader-hbl.md), once a person held ON/OFF 5 s:
+ * it leaves USB and the network, and the module runs BL2's web updater instead of our OS until a .fw is written (or a
+ * power cut, or ON/OFF held 3 s) */
+static void req_bl2_updater(void) {
+    if (!mcufw_hbl_present()) {
+        error(ZD1H_ERR_ARG, "no B&W bootloader that takes updates from the network here (the Zeppelin Air: DFU)");
+        return;
+    }
+    confirmed = confirm_allow = false;
+    confirm_until = uptime + CONFIRM_MS;
+    confirm_wait = confirm_bl2 = true; /* hostif_poll finishes it */
+    led_flash(FLASH_AMBER, CONFIRM_MS);
+    log_puts("[mcufw] hold ON/OFF on the speaker for 5 s within 30 s to start BL2's web updater (B&W's bootloader)\n");
 }
 
 static void req_lock(void) {
@@ -740,6 +759,10 @@ static void run(const uint8_t *b, uint16_t n) {
         if (decoded(&ZD1H_ALLOW, b, n))
             req_allow();
         return;
+    case ZD1H_ID_BL2_UPDATER:
+        if (decoded(&ZD1H_BL2_UPDATER, b, n))
+            req_bl2_updater();
+        return;
     case ZD1H_ID_LOCK:
         if (decoded(&ZD1H_LOCK, b, n))
             req_lock();
@@ -916,6 +939,10 @@ static void request_done(void);
 
 void hostif_poll(uint32_t now) {
     uptime = now;
+    if (bl2_at && tick_after(now, bl2_at)) {
+        bl2_at = 0;
+        mcufw_bl2_updater();
+    }
     pipe_poll();
     if (polled) {
         polled = false;
@@ -932,7 +959,7 @@ void hostif_poll(uint32_t now) {
         log_puts("[con] the module's console: closed (the host stopped polling)\n");
     }
     if (inputs_confirm_take()) { /* the confirmation: a network Pair or an Allow waiting */
-        if (confirm_wait && (cur_net || confirm_allow))
+        if (confirm_wait && confirm_hold())
             confirmed = true;
         else
             log_puts("[key] ON/OFF held 5 s: nothing waits for a confirmation\n");
@@ -944,7 +971,11 @@ void hostif_poll(uint32_t now) {
             led_flash(FLASH_GREEN, 500);
             if (confirm_allow)
                 mcufw_allow();
-            else if (cur_net)
+            else if (confirm_bl2) {
+                /* the reply out first: on USB it is read within the poll, over the network our OS passes it on */
+                bl2_at = (now + (cur_net ? 2000 : 500)) | 1;
+                log_puts("[mcufw] confirmed: into B&W's bootloader for BL2's web updater\n");
+            } else if (cur_net)
                 log_puts("[net] confirmed: our OS pairs the client\n");
             else {
                 unlocked = true;
@@ -955,11 +986,12 @@ void hostif_poll(uint32_t now) {
         } else if (tick_after(now, confirm_until)) {
             confirm_wait = false;
             led_flash(FLASH_RED, 500);
-            log_puts(confirm_allow ? "[mcufw] not allowed\n"
-                     : cur_net     ? "[net] not confirmed: not paired\n"
-                                   : "[gate] not confirmed: still locked\n");
-            error(ZD1H_ERR_DENIED, cur_net || confirm_allow ? "nobody held ON/OFF on the speaker for 5 s within 30 s"
-                                                            : "nobody pressed ON/OFF on the speaker within 30 s");
+            log_puts(confirm_bl2     ? "[mcufw] not confirmed: BL2's web updater not started\n"
+                     : confirm_allow ? "[mcufw] not allowed\n"
+                     : cur_net       ? "[net] not confirmed: not paired\n"
+                                     : "[gate] not confirmed: still locked\n");
+            error(ZD1H_ERR_DENIED, confirm_hold() ? "nobody held ON/OFF on the speaker for 5 s within 30 s"
+                                                  : "nobody pressed ON/OFF on the speaker within 30 s");
         } else
             return;
         request_done();

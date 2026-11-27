@@ -121,7 +121,8 @@ None of these has been seen on the unit. Treat them as "the code does something 
 - B&W's recovery-utility MCU image (erases the user page, sends HCR 0x2421, holds PB01 high); BL2's handling of HCR
   0x2421 and of the strap.
 - **The MCU's app from the module on the ZD1L** (`docs/mcu/bootloader-hbl.md`): our OS playing BL2 to B&W's bootloader;
-  the page's update of a ZD1L over USB that asks for it (`docs/web.md`: the system, the hold, the slot's start). The
+  the page's update of a ZD1L over USB that asks for it (`docs/web.md`: the system, the hold, the slot's start);
+  `Bl2Updater` (BL2's web updater from our firmware) and the page's update through it. The
   model in `Info` [EMU: `zemu run os --mcu` with B&W's ZD1L bootloader and our app at 0x80008000 says "Zeppelin Air
   with Lightning", HWID 0xBE; with `--mcu` "Zeppelin Air"].
 - **The Lightning model's image with the system as the rescue** (the ZD1's is on the unit, above).
