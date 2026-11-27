@@ -5,6 +5,7 @@
 mod dfu;
 mod files;
 mod fmt;
+mod http;
 mod net;
 mod term;
 
@@ -16,10 +17,11 @@ use std::path::PathBuf;
 use std::rc::Rc;
 use term::Term;
 use zd1_host::image::McuImage;
-use zd1_host::spec::{BootOp, Key, ModOp, Slot, SpecEnum};
+use zd1_host::spec::{BootOp, HoldFor, Key, ModOp, Slot, SpecEnum};
 use zd1_host::usb::{Bus, EmuBus, NusbBus};
 use zd1_host::{
-    Confirm, Error, Events, Link, Mcu, Result, console, flash, install, lab, msg, settings, speaker, update, xmodem,
+    Confirm, Error, Events, Link, Mcu, Result, bl2web, console, flash, install, lab, msg, settings, speaker, update,
+    xmodem,
 };
 
 #[derive(Parser)]
@@ -106,10 +108,36 @@ enum Cmd {
     /// one our OS has staged once, until 60 s after the module's next ready (10 minutes at most; `zd1-ctl mcu-update`
     /// on the module; a network update asks this itself, docs/protocol/net.md).
     Allow,
-    /// A Zeppelin Air with Lightning into BL2's web updater (ON/OFF held 5 s within 30 s): the MCU into B&W's
-    /// bootloader, the module into BL2 on wired Ethernet, which takes a `.fw` for both chips (`zd1l-V.fw`: the page's
-    /// Lightning install, or `tools/zeppelin bl2web ADDR FILE --yes`). A power cut, or ON/OFF held 3 s, goes back.
-    Bl2Updater,
+    /// The module into BL2's web updater on its Ethernet (ON/OFF held 5 s within 30 s), which takes the release's file
+    /// (`zd1 bl2web ADDR FILE --yes`): a Lightning model's `zd1l-V.fw` for both chips (the MCU into B&W's
+    /// bootloader; a power cut, or ON/OFF held 3 s, goes back), a Zeppelin Air's `os-V.bcd` (the module alone; back by
+    /// itself after 20 minutes with nothing written).
+    Bl2Updater {
+        /// then this file to it (`zd1 bl2web`'s steps): the release's `zd1l-V.fw` or `os-V.bcd`
+        file: Option<PathBuf>,
+        /// where the updater answers (default: the module's Ethernet address now; BL2 asks DHCP for itself, usually
+        /// the same lease)
+        #[arg(long)]
+        addr: Option<String>,
+        /// reach it through this network interface (`zd1 bl2web --iface`)
+        #[arg(long)]
+        iface: Option<String>,
+    },
+    /// A file to BL2's web updater at ADDR (the module in BL2: `zd1 bl2-updater`, a Lightning model's key-hold, `zd1
+    /// module esc`): which BL2 answers, then with --yes the file, written once confirmed, its write followed
+    /// (host/core's bl2web). The Zeppelin Air's (2010) takes a `.bcd`, the Lightning model's (2012) a B&W `.fw` for
+    /// both chips. WRITES THE MODULE'S APP PARTITION (and on a Lightning model the MCU's app).
+    Bl2web {
+        /// HOST[:PORT] (80 by default)
+        target: String,
+        file: PathBuf,
+        /// upload and write (else only look at what answers)
+        #[arg(long)]
+        yes: bool,
+        /// through this network interface (a USB Ethernet dongle beside the Wi-Fi: `en8`)
+        #[arg(long)]
+        iface: Option<String>,
+    },
     /// The module OS's settings (docs/module/settings.md): all of them, one, or one changed ("" = its default); an
     /// action's key does it (wifi.add, wifi.forget, wifi.first, airplay.forget, reset).
     Settings {
@@ -499,6 +527,10 @@ fn exit_status(e: &Error) -> i32 {
 fn offline(cmd: &Cmd) -> Option<Result<i32>> {
     let r = match cmd {
         Cmd::Image { files } => files.iter().try_for_each(|f| files::image_json(f).map(|j| println!("{j}"))),
+        Cmd::Bl2web { target, file, yes, iface } => (|| {
+            let h = http::Tcp::new(target, iface.clone())?;
+            block_on(bl2web(&h, file, *yes))
+        })(),
         Cmd::Sign { image, key, out } => (|| {
             let seed = signing_key(key)?;
             let signed = zd1_host::image::sign_system(&read(image)?, &seed)?;
@@ -525,6 +557,40 @@ fn offline(cmd: &Cmd) -> Option<Result<i32>> {
         _ => return None,
     };
     Some(r.map(|_| 0))
+}
+
+/// `file` to the BL2 web updater behind `h` (`zd1 bl2web`): what answers, then with `yes` the upload and its write.
+async fn bl2web(h: &http::Tcp, file: &std::path::Path, yes: bool) -> Result<()> {
+    let data = read(file)?;
+    let which = bl2web::look(h).await?;
+    println!("{}:{}: {which:?}", h.host, h.port);
+    let lightning = match which {
+        bl2web::Bl2::Zd1l { .. } => true,
+        bl2web::Bl2::Zd1 => false,
+        _ => return Err(Error::Failed("no BL2 web updater answers there".into())),
+    };
+    if !yes {
+        println!("dry run: --yes to upload {} ({} bytes) and write it", file.display(), data.len());
+        return Ok(());
+    }
+    let name = file.file_name().map_or("image".into(), |n| n.to_string_lossy().into_owned());
+    let t0 = zd1_host::now_ms();
+    bl2web::upload(h, lightning, &data, &name).await?;
+    println!("taken and confirmed ({:.0} s): the updater writes it", (zd1_host::now_ms() - t0) / 1000.0);
+    bl2web::burn(h, lightning, |p| {
+        let part = match p.part.as_str() {
+            "1" => "the main board's part: ",
+            "2" => "the module's part: ",
+            _ => "",
+        };
+        eprintln!("  {part}{}", p.percent.map_or("?".into(), |n| format!("{n} %")));
+    })
+    .await?;
+    println!(
+        "written ({:.0} s): the speaker starts it (the Zeppelin Air's main board starts the module again as at power-up)",
+        (zd1_host::now_ms() - t0) / 1000.0
+    );
+    Ok(())
 }
 
 /// A signing key's file (`zd1 keygen`): the seed, 64 hex digits.
@@ -789,17 +855,53 @@ async fn speaker_cmd<L: Link>(m: &mut Mcu<L>, cmd: Cmd, ev: &Rc<dyn Events>) -> 
             m.call(&msg::Unlock).await?;
             println!("unlocked");
         }
-        Cmd::Bl2Updater => {
+        Cmd::Bl2Updater { file, addr, iface } => {
             ev.prompt(
                 Confirm::Updater,
                 "hold ON/OFF on the speaker for 5 s within 30 s, while its LED flashes amber, then let go (the updater \
                  starts once ON/OFF is up)",
             );
-            m.call(&msg::Bl2Updater).await?;
-            println!(
-                "into B&W's bootloader: BL2's web updater comes up on the speaker's Ethernet in about a minute (its own \
-                 DHCP lease); a power cut or ON/OFF held 3 s goes back"
-            );
+            // the module's Ethernet address now: BL2's own lease is usually the same (the speaker's MAC)
+            let at = match (&addr, &file) {
+                (Some(a), _) => Some(a.clone()),
+                (None, Some(_)) => {
+                    let st = settings::state(m).await?;
+                    if !st.eth_link || st.eth_ip.is_empty() {
+                        return Err(Error::Failed("the module has no address on its Ethernet: --addr".into()));
+                    }
+                    Some(st.eth_ip)
+                }
+                (None, None) => None,
+            };
+            if m.supports("Hold") {
+                m.call(&msg::Hold { action: HoldFor::Bl2Web }).await?;
+            } else {
+                m.call(&msg::Bl2Updater).await?;
+            }
+            match (file, at) {
+                (Some(file), Some(at)) => {
+                    let h = http::Tcp::new(&at, iface.clone())?;
+                    let t0 = zd1_host::now_ms();
+                    loop {
+                        zd1_host::sleep(5000).await;
+                        if let Ok(b @ (bl2web::Bl2::Zd1 | bl2web::Bl2::Zd1l { .. })) = bl2web::look(&h).await {
+                            eprintln!("{at}: {b:?}");
+                            break;
+                        }
+                        if zd1_host::now_ms() - t0 > 240_000.0 {
+                            return Err(Error::Timeout(format!(
+                                "no updater at {at} within 4 minutes (another address? `zd1 bl2web ADDR FILE --yes`)"
+                            )));
+                        }
+                    }
+                    bl2web(&h, &file, true).await?;
+                }
+                _ => println!(
+                    "BL2's web updater comes up on the speaker's Ethernet in about a minute (a DHCP lease of its own): \
+                     `zd1 bl2web ADDR FILE --yes`; with nothing written, a power cut goes back (a Lightning model: \
+                     ON/OFF held 3 s too; a Zeppelin Air: by itself after 20 minutes)"
+                ),
+            }
         }
         Cmd::Allow => {
             ev.prompt(Confirm::Allow, "hold ON/OFF on the speaker for 5 s within 30 s, while its LED flashes amber");

@@ -120,7 +120,7 @@ doesn't read it), HWID 0xBE, our build date. The MCU part is our app (`.#mcu`'s 
 version (`ZD1L_v2-04-35.dmb`, 2.04.35, release 20435), as the telnet-hook `.fw` the ZD1L's BL2 burned. It goes in
 through BL2's web updater from key-hold, with the expert confirm (`docs/module/boot-chain.md`, "The ZD1L BL2": BL2
 sends the MCU part first and needs the MCU's bootloader for it): the page's Install (Zeppelin Air with Lightning, a
-release's `zd1l-V.fw`) or `python3 tools/zeppelin bl2web IP zd1l.fw --yes`; the way back is the same with
+release's `zd1l-V.fw`) or `zd1 bl2web IP zd1l.fw --yes`; the way back is the same with
 `blobs/zd1l/zd1lv20435.fw`. The image of 2026-11-17 (the system as the boot initramfs, no slots) runs on ZD1Ls [HW,
 the owners]; the one with the system in the rescue's place, from a stock ZD1L to slot A through the page's upload,
 in the emulator only [EMU 2026-11-21, `emu/tools/zd1lunit.py`].

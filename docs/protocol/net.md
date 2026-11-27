@@ -188,7 +188,7 @@ without pairing); a WebSocket message at most 40 KB; a session idle for 5 minute
 ## The ZD1L's first install from the page
 A stock ZD1L held in BL2 (its key-hold: the light goes white, BL2 on wired Ethernet with DHCP; `docs/module/boot-chain.md`,
 The ZD1L BL2) takes `zd1l.fw` through BL2's web updater (`host/web/www/js/zd1l.js`). BL2 sends no CORS headers, so
-the page sends `bl2web`'s sequence (`tools/zeppelin/knos/bl2web.py`, which ZD1L owners ran) without reading the
+the page sends host/core's `bl2web` sequence (`zd1 bl2web`; the Python `bl2web.py` ZD1L owners ran before it) without reading the
 answers (`no-cors`): the status page (only a network error says nothing is there), prepare, the upload (its 302 to the
 apply page, which the browser follows: it arms the confirm), the expert page, the expert confirm. Then it waits up to
 15 minutes for our OS's link to answer at the address and connects. A refused file (another model) or a new address

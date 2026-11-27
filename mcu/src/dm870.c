@@ -418,6 +418,22 @@ static void xm_keep(const uint8_t *b, uint16_t n) {
 /* a slot our OS asked to start once (reg 0xD8; 0: none): the module restarts after the drain */
 static uint8_t try_slot;
 
+/* BL2's web updater from our firmware (the host link's Hold BL2WEB on a ZD1, dm870_bl2_web): asked (`web`), BL2 up
+ * (`web_up`), until when it may stay there with nothing written. After its burn BL2 resets the module, and our boot
+ * stub, which nobody knocks, starts the new boot image's rescue without a word: at our OS's first word the module is
+ * started again as at power-up, so the stub asks and the rescue installs itself into a slot. */
+#define WEB_MS (20u * 60 * 1000)
+static bool web, web_up;
+static uint32_t web_until;
+static void power_cycle(bool hold_only);
+static void web_over(const char *why) {
+    web = web_up = false;
+    log_puts("[mod] BL2's web updater: ");
+    log_puts(why);
+    log_puts(": the module starts again as at power-up\n");
+    power_cycle(false);
+}
+
 /* Up to 32 notifications, none started after DRAIN_MS (the rest stays pending: the next call) */
 #define DRAIN_MS 100
 static unsigned drain(void) {
@@ -442,6 +458,11 @@ static unsigned drain(void) {
             continue;
         }
         uint16_t kept = n < sizeof nbuf ? n : sizeof nbuf;
+        if (reg == ZD1_REG_STATUS && n >= 2 && web_up &&
+            (nbuf[0] == ZD1_STATUS_BOOTING >> 8 || nbuf[0] == ZD1_STATUS_READY >> 8)) {
+            web_over("our OS again after it");
+            return count + 1; /* the module is off now: nothing more to drain */
+        }
         if (reg == ZD1_REG_STATUS && n >= 2 && (nbuf[0] << 8 | nbuf[1]) == ZD1_STATUS_BOOTING && bu == BU_READY) {
             /* the module restarted by itself: wait for its ready again (and answer its boot stub) */
             log_puts("[mod] restarted: booting\n");
@@ -636,6 +657,8 @@ void dm870_poll(void) {
     bringup_poll();
     op_poll();
     query_poll();
+    if (web && tick_after(tick_ms(), web_until))
+        web_over("nothing written in 20 minutes");
     if (bu != BU_IDLE && bu != BU_READY)
         return;
     if (!mod_up || !gpio_get_pin_value(PIN_MOD_REQ))
@@ -701,6 +724,10 @@ static void bl2_poll(uint32_t now) {
     stub_check(st);
     if (st == ZD1_STATUS_BL2) {
         log_puts("BL2 is running (status 0x2300)\n");
+        if (web) {
+            web_up = true;
+            log_puts("[mod] BL2's web updater: it asks DHCP on the module's Ethernet and waits for an os.bcd\n");
+        }
         bu = BU_IDLE;
         op = OP_NONE;
         op_result = 1;
@@ -733,11 +760,17 @@ static void op_poll(void) {
         log_hexn(last_status, 4);
         log_putc('\n');
         ok = true;
-    } else if (bu == BU_IDLE) /* powered off meanwhile, or (BL2) it gave up */
+    } else if (bu == BU_IDLE) { /* powered off meanwhile, or (BL2) it gave up */
         log_puts(op == OP_POWER ? "NOT ready\n"
                  : op == OP_BL2 ? "no BL2 status (0x2300) seen\n"
                                 : "powered off before the reset release\n");
-    else if (tick_after(tick_ms(), op_deadline)) {
+        if (op == OP_BL2 && web && !web_up) {
+            op = OP_NONE;
+            op_result = 0;
+            web_over("it didn't start");
+            return;
+        }
+    } else if (tick_after(tick_ms(), op_deadline)) {
         if (op == OP_POWER) {
             log_puts("NOT ready (last reg11=");
             log_hexn(last_status, 4);
@@ -746,6 +779,12 @@ static void op_poll(void) {
         } else {
             log_puts("no BL2 status (0x2300) seen\n");
             bu = BU_IDLE;
+            if (web && !web_up) {
+                op = OP_NONE;
+                op_result = 0;
+                web_over("it didn't start");
+                return;
+            }
         } /* left powered, as BL2 may come yet */
     } else
         return;
@@ -754,6 +793,14 @@ static void op_poll(void) {
 }
 
 int dm870_op_result(void) { return op_result; }
+
+void dm870_bl2_web(void) {
+    log_puts("[mod] into BL2's web updater (Hold BL2WEB)\n");
+    dm870_op(ZD1H_MOD_OP_BL2, 120);
+    web = true;
+    web_up = false;
+    web_until = tick_ms() + WEB_MS;
+}
 
 void dm870_op(uint8_t o, uint32_t timeout_s) {
     op_result = 1;

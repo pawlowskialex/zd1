@@ -32,6 +32,9 @@ const char *dm870_name(void);         /* as the module notified (0x58) */
  * timeout_s; dm870_op_result: -1 while one runs, then 1 = got there, 0 = didn't (the others end at once) */
 void dm870_op(uint8_t op, uint32_t timeout_s);
 int dm870_op_result(void);
+/* the module into BL2's web updater (the host link's Hold BL2WEB on a ZD1): started again as at power-up when our OS
+ * speaks after it (BL2 resets the module after its burn), or after 20 minutes */
+void dm870_bl2_web(void);
 /* Our OS's settings and records, queried over the configuration channel; the answer comes from the main loop:
  * dm870_query_result() -1 while it runs, then 1 = answered, 0 = not (up to 3 s). One at a time.
  * A setting: written first if `value`, then read back (false: too long, not our OS, the write not taken); its value

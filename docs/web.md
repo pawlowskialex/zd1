@@ -49,8 +49,9 @@ images offered under `images/` instead (`index.json` names them). The three view
   USB; the system then the hold then its slot's start, at whose ready the main board takes the app it carries from the
   module (a Lightning model; a ZD1 through its preloader); the hold and a module restart for that; the signed system
   over the network, whose hold allows the main board the same; the rescue into a slot; DFU (a backup first); the relay;
-  `install` (the relay and DFU in one visit); BL2's XModem; the Lightning model's updater (`Bl2Updater`: BL2's web
-  updater on its Ethernet takes `zd1l-V.fw`, both chips); the key-hold, by hand. A route that brings the system as the
+  `install` (the relay and DFU in one visit); BL2's XModem; BL2's web updater from our firmware on the module's
+  Ethernet (`Hold` BL2_WEB): a Lightning model's takes `zd1l-V.fw` (both chips), a Zeppelin Air's `os-V.bcd` (the module
+  alone); the key-hold, by hand. A route that brings the system as the
   boot image's rescue doesn't copy it again into a slot that holds those bytes. The page runs the plan without routes
   done by hand and says what it leaves and why (over USB; by hand, with the plan that has them). The same banner picks
   up an install that stopped: the module on its rescue, in BL2 with no image, or on B&W's software. Then
@@ -336,7 +337,7 @@ cases (a wrong key, none in range, two networks). Next, in order:
   `Speaker.updateBoot` / `installFromRescue` / `updateBootInBl2`, `connectNet`, `spec()`), `www/app.js` (the wiring) and its ES modules in `www/js/` (no build step): `connection.js` (`events`,
   `connect`, `job`), `backups.js` (IndexedDB), `network.js` (`drawSettings`, `wifiStatus`), `receivers.js`,
   `software.js` (`drawDfu`, `drawInstall`, `drawReleases`, `planFacts`, `drawUpdate`, `runPlan` and its `STEPS`), `console.js`
-  (the console pane), `zd1l.js` + `bl2.js` (the ZD1L's install through its BL2, no-cors), `speaker.js`, `hero.js` (the top: the drawing, the
+  (the console pane), `zd1l.js` + `bl2.js` (BL2's web updater: host/core's `bl2web` through the page's fetch, read in zd1-app, blind in a browser; the ZD1L's install by address), `speaker.js`, `hero.js` (the top: the drawing, the
   title, the status), `led.js`, `zd-speaker.js`, `diagnostics.js`, `ui.js`, `shared.js`, `design.js` (the catalogue);
   the local manifest
   `tools/zeppelin/web.py`; the workflow `.github/workflows/pages.yml`.

@@ -57,14 +57,14 @@ yourself, put the telnet hook on its stock MCU and `fburn rd` the `0xA0000` part
 "Dumping BL2"). Our BL2 reports **0x11 = 0x2300** to the MCU, brings up KnOS, Ethernet, the SPI link and:
 - **Web updater** (GoAhead, port 80, no authentication) [HW]: `POST /goform/formPostHandler` multipart field
   `appFirmware`, then `GET /goform/formDownloadConfirmationHandler?button=Ok` (or the Expert handler with
-  `hwcheckoverride` / `cnedownload`), progress `bl_flash_burn_status.asp`. Client: `python3 tools/zeppelin bl2web`.
+  `hwcheckoverride` / `cnedownload`), progress `bl_flash_burn_status.asp`. Client: `zd1 bl2web`.
   After a burn BL2 resets the board.
   - An update writes a fresh header over the user settings (they are gone).
   - Each `.bcd` section length must be a multiple of 4, else "CRC check of image failed" (error 680) [HW]. `mkbcd`
     pads.
   - The status page keeps the previous update's verdict while the next burn runs: after a failed update in the
     same BL2 session the next upload shows "100 % / failed" at once while the burn succeeds and BL2 resets the board
-    [HW, EMU]. `bl2web` waits out a "failed" page for the reset.
+    [HW, EMU]. `bl2web` (host/core) waits out a "failed" page for the reset.
   - **Our 2010 BL2** doesn't know B&W's over-the-air `.fw` (`docs/mcu/stock-firmware.md`): the upload is parsed as a
     `.bcd` from its first byte, so the `.fw`'s 32-byte wrapper puts everything out of place and the header CRC fails
     ("The file is an invalid BCD file"). (The ZD1L's 2012 BL2 **does** take the whole `.fw` and burns both parts —
@@ -72,7 +72,7 @@ yourself, put the telnet hook on its stock MCU and `fburn rd` the `0xA0000` part
     model's and one packed by `bwfw.py` all end there against ours, each the first
     upload of a fresh BL2; the `.bcd` cut out of the Lightning model's gets as far as "HWID(0xbd), bcd HWID(0xbe)" [EMU
     2026-11-08: `zemu run emu/img/os/os.bcd --mcu FLASH --fwd 18080:80 --allow-panic --until 'waiting for a system'
-    --host 'zd1 module bl2' --sleep 25 --host 'python3 -I tools/zeppelin/knos/bl2web.py 127.0.0.1:18080 FILE --yes'].
+    --host 'zd1 module bl2' --sleep 25 --host 'zd1 bl2web 127.0.0.1:18080 FILE --yes'].
     The "version" and "encryption mode" it logs are the upload's bytes +0x28 and +0x29 (0x60021c7e, 0x60021c94 [RE]): a
     `.bcd`'s header version and encryption flag; a `.fw` gives ASCII from the build date (50, 48). "Total of N bytes in
     buffer" is the size of the first network chunk.
@@ -116,7 +116,7 @@ A real Lightning unit's BL2, contributed by a ZD1L owner: dumped over the stock-
   `FileStatusHandlerPageUndefined`; the ~7 MB size cap and the "persistent lock" reported earlier were this), the POST
   (302 to `/1000/firmware_apply.asp`), **`GET /1000/firmware_apply.asp`**, `GET /1000/firmware_expert.asp`, `GET
   /goform/formExpertDownloadConfirmationHandler?button=++++++Ok++++++`, then `firmware_status.asp` until `finished`.
-  `python3 tools/zeppelin bl2web IP FILE.fw --yes` does all of it (it tells this BL2 from ours by
+  `zd1 bl2web IP FILE.fw --yes` does all of it (it tells this BL2 from ours by
   `firmware_status.asp`); against this BL2 in the emulator it burned a `.fw` without an MCU part [EMU 2026-11-17].
   - **The apply page arms the confirm.** Its one line, `aspSetFirmwareUploadConfirmationHandler` (0x600c6910) with
     `"button"`, the Ok value, `"firmware_status.asp"` and `"bl_index.asp"`, copies the button's name and value and the

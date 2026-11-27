@@ -69,7 +69,8 @@ pub struct Facts {
     pub rescue_is_release: bool,
     /// the module on wired Ethernet with an address the front-end knows (BL2's web updater has no Wi-Fi)
     pub ethernet: bool,
-    /// the main board's firmware has `Allow` (it takes an app from the module after a hold) and `Bl2Updater`
+    /// the main board's firmware has `Allow` (it takes an app from the module after a hold), and starts BL2's web
+    /// updater on this model (`updater`: `Bl2Web`; a Lightning model's `Bl2Updater` before it)
     pub allow: bool,
     pub updater: bool,
     /// an MCU app is staged on the module: a system from before 0.5.1 keeps it, a later one until the main board runs
@@ -105,12 +106,15 @@ pub enum Route {
     /// a hold (`Bl2Updater`), the main board into B&W's bootloader, the module into BL2's web updater on its
     /// Ethernet, the release's `.fw` to it: both chips, the system from the rescue
     Updater,
+    /// a ZD1: a hold (`Bl2Web`), the module into BL2's web updater on its Ethernet, the release's `.bcd` to it: the
+    /// boot image, the system from the rescue (the 2010 BL2 takes no MCU part)
+    Bl2Web,
     /// the same by hand: the speaker unplugged, ON/OFF held while plugging it in, the `.fw` by address
     KeyHold,
 }
 
 impl Route {
-    pub const ALL: [Route; 11] = [
+    pub const ALL: [Route; 12] = [
         Route::SystemUsb,
         Route::SystemFollow,
         Route::Follow,
@@ -121,6 +125,7 @@ impl Route {
         Route::Install,
         Route::Bl2Xmodem,
         Route::Updater,
+        Route::Bl2Web,
         Route::KeyHold,
     ];
 
@@ -136,6 +141,7 @@ impl Route {
             Route::Install => "install",
             Route::Bl2Xmodem => "bl2-xmodem",
             Route::Updater => "updater",
+            Route::Bl2Web => "bl2-web",
             Route::KeyHold => "key-hold",
         }
     }
@@ -153,6 +159,7 @@ impl Route {
             Route::Install => 450,
             Route::Bl2Xmodem => 1000,
             Route::Updater => 600,
+            Route::Bl2Web => 300,
             Route::KeyHold => 600,
         }
     }
@@ -160,7 +167,12 @@ impl Route {
     /// Holds of ON/OFF it asks for.
     pub fn holds(self) -> u32 {
         match self {
-            Route::SystemFollow | Route::Follow | Route::SystemNet | Route::Updater | Route::KeyHold => 1,
+            Route::SystemFollow
+            | Route::Follow
+            | Route::SystemNet
+            | Route::Updater
+            | Route::Bl2Web
+            | Route::KeyHold => 1,
             _ => 0,
         }
     }
@@ -274,6 +286,7 @@ pub fn applies(r: Route, f: &Facts, s: &State) -> bool {
                 && !(s.staged && s.old_rescue)
                 && (s.boot || s.system || s.mcu)
         }
+        Route::Bl2Web => zd1 && f.has.bcd && f.ethernet && s.ours() && s.updater && s.boot,
         Route::KeyHold => !zd1 && f.has.fw && (s.boot || s.system || s.mcu || s.module != OS),
     }
 }
@@ -306,7 +319,7 @@ pub fn apply(r: Route, s: &State) -> State {
             n.mcu_now();
             n.staged = n.staged && n.system;
         }
-        Route::Relay | Route::Bl2Xmodem => n.boot_now(),
+        Route::Relay | Route::Bl2Xmodem | Route::Bl2Web => n.boot_now(),
         Route::Install | Route::Updater | Route::KeyHold => {
             n.mcu_now();
             n.boot_now();
@@ -530,13 +543,24 @@ mod tests {
 
     #[test]
     fn the_cases_people_have() {
-        // the owner's ZD1 over the network, everything behind: the system and the main board in one hold; the boot
-        // image needs USB
+        // the owner's ZD1 over the network, everything behind: the system and the main board in one hold, the boot
+        // image through BL2's web updater (its rescue finds the system in a slot already)
         let p = plan_auto(&facts(Model::Zd1, Link::Net));
+        assert_eq!(routes(&p), [Route::SystemNet, Route::Bl2Web]);
+        assert!(!p.left_boot && !p.left_system && !p.left_mcu);
+        // ... a main board too old for Bl2Web: the update brings one that has it
+        let f = Facts { updater: false, ..facts(Model::Zd1, Link::Net) };
+        assert_eq!(routes(&plan_auto(&f)), [Route::SystemNet, Route::Bl2Web]);
+        // ... no Ethernet: the boot image needs USB
+        let f = Facts { ethernet: false, ..facts(Model::Zd1, Link::Net) };
+        let p = plan_auto(&f);
         assert_eq!(routes(&p), [Route::SystemNet]);
-        assert!(p.left_boot && !p.left_system && !p.left_mcu);
-        // ... over USB: one visit to the bootloader
-        assert_eq!(routes(&plan_auto(&facts(Model::Zd1, Link::Usb))), [Route::Install]);
+        assert!(p.left_boot);
+        // ... over USB with Ethernet: the main board over DFU, the boot image (and the system) through BL2's web updater
+        assert_eq!(routes(&plan_auto(&facts(Model::Zd1, Link::Usb))), [Route::Dfu, Route::Bl2Web]);
+        // ... over USB without Ethernet: one visit to the bootloader
+        let f = Facts { ethernet: false, ..facts(Model::Zd1, Link::Usb) };
+        assert_eq!(routes(&plan_auto(&f)), [Route::Install]);
         // ... the boot image current: the system over USB, the main board over DFU (a backup first)
         let f = Facts { boot: false, ..facts(Model::Zd1, Link::Usb) };
         assert_eq!(routes(&plan_auto(&f)), [Route::Dfu, Route::SystemUsb]);

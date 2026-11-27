@@ -24,3 +24,6 @@ zd1-noise.workspace = true
 js-sys = "0.3"
 wasm-bindgen = "0.2"
 wasm-bindgen-futures = "0.4"
+
+[dev-dependencies]
+futures-lite = "2"

@@ -26,6 +26,7 @@ use zd1_host::spec::{self, Ty};
 use zd1_host::usb::{Bus, Iface, NusbBus, NusbDev, UsbError};
 use zd1_host::{Error, Events, Mcu, dfu, flash, install, msg, settings, speaker, update};
 
+mod bl2;
 mod net;
 use net::WebSock;
 
@@ -315,6 +316,63 @@ pub fn plan_update(facts: JsValue, by_hand: bool) -> Result<JsValue, JsValue> {
     set(&o, "secs", p.secs);
     set(&o, "left", left);
     Ok(o.into())
+}
+
+/// Which BL2 web updater answers at `addr` (host/core's `bl2web::look`), each request within `timeoutMs` (0: none):
+/// { kind: "zd1l", model, module, mcu } (the Lightning model's, what it has installed), { kind: "zd1" } (the Zeppelin
+/// Air's), { kind: "other" }, { kind: "blind" } (answers this page can't read); an error when nothing answers.
+#[wasm_bindgen(js_name = bl2Look)]
+pub async fn bl2_look(addr: String, mode: String, timeout_ms: u32) -> Result<JsValue, JsValue> {
+    use zd1_host::bl2web::{Bl2, look};
+    let h = bl2::JsHttp { addr, mode, timeout_ms };
+    let o = Object::new();
+    match look(&h).await.map_err(js_err)? {
+        Bl2::Zd1l { model, module, mcu } => {
+            set(&o, "kind", "zd1l");
+            set(&o, "model", model);
+            set(&o, "module", module);
+            set(&o, "mcu", mcu);
+        }
+        Bl2::Zd1 => set(&o, "kind", "zd1"),
+        Bl2::Other => set(&o, "kind", "other"),
+        Bl2::Blind => set(&o, "kind", "blind"),
+    }
+    Ok(o.into())
+}
+
+/// A file to the BL2 web updater at `addr` (host/core's `bl2web::upload`): the Lightning model's sequence (`lightning`:
+/// a `.fw`) or the Zeppelin Air's (a `.bcd`), written once confirmed. Whether the answers were read (then `bl2Burn`
+/// follows the write); an error on a refusal it read.
+#[wasm_bindgen(js_name = bl2Upload)]
+pub async fn bl2_upload(
+    addr: String,
+    mode: String,
+    lightning: bool,
+    data: Vec<u8>,
+    name: String,
+) -> Result<bool, JsValue> {
+    let h = bl2::JsHttp { addr, mode, timeout_ms: 0 };
+    zd1_host::bl2web::upload(&h, lightning, &data, &name).await.map_err(js_err)
+}
+
+/// The write `bl2Upload` started, followed to its end (host/core's `bl2web::burn`): `onProgress({ part, percent })` at
+/// each change (the Lightning model's parts "1" the main board's, "2" the module's). Readable answers only.
+#[wasm_bindgen(js_name = bl2Burn)]
+pub async fn bl2_burn(
+    addr: String,
+    mode: String,
+    lightning: bool,
+    on_progress: js_sys::Function,
+) -> Result<(), JsValue> {
+    let h = bl2::JsHttp { addr, mode, timeout_ms: 0 };
+    zd1_host::bl2web::burn(&h, lightning, |p| {
+        let o = Object::new();
+        set(&o, "part", p.part.as_str());
+        set(&o, "percent", p.percent.map_or(JsValue::NULL, |n| n.into()));
+        let _ = on_progress.call1(&JsValue::NULL, &o);
+    })
+    .await
+    .map_err(js_err)
 }
 
 /// What a file is (host/core's `image::identify`): { kind: "mcu", version, built, start, end } (Intel HEX or the app
@@ -760,25 +818,36 @@ impl Speaker {
             "allow the main board's firmware from the module: hold ON/OFF on the speaker for 5 s within 30 s, while \
              its LED flashes amber",
         );
-        let r = m.call(&msg::Allow).await;
+        let r = if m.supports("Hold") {
+            m.call(&msg::Hold { action: spec::HoldFor::App }).await.map(drop)
+        } else {
+            m.call(&msg::Allow).await.map(drop)
+        };
         self.put(Conn::Usb(m));
-        r.map(drop).map_err(js_err)
+        r.map_err(js_err)
     }
 
-    /// Into B&W's bootloader for BL2's web updater (`Bl2Updater`, a ZD1L): a person at the speaker holds ON/OFF 5 s
-    /// (events.prompt "updater"); then the speaker leaves USB and the network, and its module runs BL2's web updater on
-    /// wired Ethernet, which takes the release's `.fw` (js/bl2.js). This connection ends.
+    /// The module into BL2's web updater on its Ethernet (`Hold` BL2_WEB, or a Lightning model's `Bl2Updater` from before it):
+    /// a person at the speaker holds ON/OFF 5 s (events.prompt "updater"); then BL2 takes the release's `.fw` (a ZD1L:
+    /// the speaker leaves USB and the network) or `os-V.bcd` (a ZD1: our firmware stays on USB) (js/bl2.js). Over the
+    /// network this connection ends; over USB on a ZD1 it stays (`stays`: the page says which model).
     #[wasm_bindgen(js_name = bl2Updater)]
-    pub async fn bl2_updater(&self) -> Result<(), JsValue> {
+    pub async fn bl2_updater(&self, stays: bool) -> Result<(), JsValue> {
         let mut c = self.take().await?;
         self.ev.prompt(
             zd1_host::Confirm::Updater,
             "start the speaker's updater: hold ON/OFF on it for 5 s within 30 s, while its LED flashes amber",
         );
-        let r = on!(&mut c, m => m.call(&msg::Bl2Updater).await);
+        // `Hold` on either model; before it the Lightning model's `Bl2Updater`
+        let hold = msg::Hold { action: spec::HoldFor::Bl2Web };
+        let r = on!(&mut c, m => if m.supports("Hold") { m.call(&hold).await.map(drop) } else { m.call(&msg::Bl2Updater).await.map(drop) });
         match r {
             Ok(_) => {
-                self.closed.set(true); // it leaves: nothing of this connection comes back
+                if stays && matches!(c, Conn::Usb(_)) {
+                    self.put(c);
+                } else {
+                    self.closed.set(true); // it leaves: nothing of this connection comes back
+                }
                 Ok(())
             }
             Err(e) => {

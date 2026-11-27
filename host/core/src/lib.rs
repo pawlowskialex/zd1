@@ -20,6 +20,7 @@
 //! progress, a person's lines; it asks [`Events::cancelled`] where stopping is safe.
 
 pub mod backup;
+pub mod bl2web;
 pub mod console;
 pub mod dfu;
 pub mod flash;

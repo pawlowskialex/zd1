@@ -125,6 +125,10 @@ None of these has been seen on the unit. Treat them as "the code does something 
   its slot), and `Info`'s model ("Zeppelin Air with Lightning", HWID 0xBE). Not yet: `Bl2Updater` and the page's
   boot image through it (`docs/mcu/bootloader-hbl.md`; 0.5.0 left the MCU's app staged, which a rescue older than it
   serves to B&W's bootloader instead of starting BL2).
+- **A ZD1's boot image through its BL2's web updater** (`Hold` BL2_WEB, `docs/module/updater.md`) [EMU 2026-11-27: `zd1
+  bl2-updater os-debug.bcd`: the hold, BL2 through our OS, host/core's client's upload and write (35 s), the module
+  started again by the MCU at its first word, the new boot image's rescue finding its system in slot A; and the page's
+  client through its WebAssembly installing `zd1l.fw` on a stock ZD1L held at power-up].
 - **The Lightning model's image with the system as the rescue** (the ZD1's is on the unit, above).
 - **The network link's rest** (`docs/protocol/net.md`; `zd1 --net` is on the unit, above): the page's WebAssembly
   over the network (Chrome's Local Network Access from the hosted page not tried anywhere); a provisional change that

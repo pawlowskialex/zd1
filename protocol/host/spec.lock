@@ -58,6 +58,8 @@ field 0x21 1 u32 offset
 field 0x21 2 bytes:32768 data
 msg 0x22 request Allow
 msg 0x23 request Bl2Updater
+msg 0x24 request Hold
+field 0x24 0 enum:HoldFor action
 msg 0x0F request Lock
 field 0x0F 0 bool open
 msg 0x04 request Peek
@@ -390,6 +392,9 @@ enum DspIn 1 USB
 enum DspIn 2 MODULE
 enum DspIn 3 AUX
 enum DspIn 4 OPTICAL
+enum HoldFor 0 NONE
+enum HoldFor 1 APP
+enum HoldFor 2 BL2WEB
 enum Model 0 UNKNOWN
 enum Model 1 ZD1
 enum Model 2 ZD1L

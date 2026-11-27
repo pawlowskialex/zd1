@@ -1,7 +1,7 @@
 // The software: the bootloader's view (install, repair, roll back), the slots, the releases, installs from files.
 import { imageInfo, planUpdate, Speaker } from "../pkg/zd1_web.js";
 import { backups, drawBackups, restoreBackup } from "./backups.js";
-import { bl2Look } from "./bl2.js";
+import { bl2Burn, bl2Look, bl2Upload } from "./bl2.js";
 import { act, connect, connectNet, events, job, show } from "./connection.js";
 import { app } from "./shared.js";
 import { modelOf, refresh } from "./speaker.js";
@@ -320,7 +320,8 @@ function planFacts(rel) {
     rescueIsRelease: module === "rescue" && os === rel.system?.version,
     ethernet: ours && !!app.state?.eth_link && !!app.state?.eth_ip,
     allow: app.sp.supports("Allow"),
-    updater: app.sp.supports("Bl2Updater"),
+    // BL2's web updater from our firmware: either model's Hold (BL2_WEB), before it a Lightning model's Bl2Updater
+    updater: app.sp.supports("Hold") || (noDfu() && app.sp.supports("Bl2Updater")),
     staged: !(sysAt >= 0 && (firstAt < 0 || sysAt <= firstAt) && releases[sysAt].mcu?.version === fw),
     has: { system: !!rel.system, signed: !!rel.signed, bcd: !!rel.bcd, mcu: !!rel.mcu, fw: !!rel.fw },
   };
@@ -361,6 +362,11 @@ const ROUTES = {
     "speaker leaves this page, its module runs B&W's updater on the Ethernet cable, which takes the release's file for " +
     "both chips, and it restarts with our software, the release's system going into the slot that doesn't run: about " +
     "ten minutes, its power and cable in. Nothing written, a power cut takes it back to what it had",
+  "bl2-web": () =>
+    "someone at the speaker starts its module's updater (ON/OFF held 5 s while its light flashes amber); the module " +
+    "leaves the network and runs B&W's updater on the Ethernet cable, which takes the release's boot image (and with " +
+    "it the release's system), then starts again with our software: about 5 minutes, its cable in. With nothing " +
+    "written it comes back by itself after 20 minutes",
 };
 
 /// The parts a plan leaves (`left`), and why, with what a person could do (`hand`: the plan with routes done by hand).
@@ -482,6 +488,7 @@ const ROUTE_PHASE = {
   install: "the module's boot image and the main board's firmware",
   "bl2-xmodem": "the module's boot image",
   updater: "the speaker's updater",
+  "bl2-web": "the module's boot image, through its updater",
 };
 
 /// A slot's verdict, an error if the module went back to another.
@@ -633,16 +640,76 @@ const STEPS = {
     const sp = app.sp;
     app.sp = null; // it leaves: this connection ends
     try {
-      await sp.bl2Updater();
+      await sp.bl2Updater(false);
     } catch (e) {
       app.sp = sp; // nobody held ON/OFF (or it refused): the speaker stays as it was
       throw e;
     }
-    await updaterAt(ctx.addr);
+    await updaterAt(ctx.addr, "zd1l");
     const r = await writeFw(ctx.addr, fw, rel.fw.file.split("/").pop(), { own: true, phase: 1, of: 2 });
     ctx.said.push(r.replace(/\.$/, ""));
   },
+
+  /// The Zeppelin Air's own BL2 (2010) web updater (`Hold` BL2_WEB): the module into BL2, looked for at the speaker's
+  /// Ethernet address, the release's .bcd to it; after its burn it resets the module, the main board starts it again as
+  /// at power-up and the new boot image's rescue installs itself into a slot (or finds the system there). Over USB the
+  /// main board stays connected meanwhile.
+  async "bl2-web"(rel, _st, ctx) {
+    const bcd = await fetchImage(rel.bcd);
+    const usb = ctx.link === "usb";
+    await app.sp.bl2Updater(usb);
+    if (!usb) {
+      app.sp.close();
+      app.sp = null; // the network goes with the module
+    }
+    await updaterAt(ctx.addr, "zd1");
+    events.step(`the updater answers at ${ctx.addr}: the boot image goes to it`);
+    const read = await bl2Upload(ctx.addr, bcd, rel.bcd.file.split("/").pop(), { lightning: false });
+    if (read)
+      await bl2Burn(
+        ctx.addr,
+        ({ percent }) => {
+          events.step(`the updater writes the boot image: ${percent ?? "?"} %`);
+          if (percent !== null) events.progress("write", percent, 100);
+        },
+        { lightning: false },
+      );
+    const i = await moduleBack(rel, ctx);
+    ctx.said.push(`boot image ${rel.bcd.version}, system ${i.mod_os.split(" ")[1]} from a slot`);
+  },
 };
+
+/// The module back as our OS from a slot with the release's system, after a boot image's write through BL2's web
+/// updater: over USB through the main board, which stayed; over the network once our software answers at the
+/// speaker's address again (the new rescue may answer for a moment before the main board starts the module again).
+async function moduleBack(rel, ctx) {
+  const t0 = Date.now(),
+    want = rel.system?.version;
+  while (Date.now() - t0 < 900_000) {
+    events.wait("the speaker starting the new boot image", Math.round((Date.now() - t0) / 1000));
+    await new Promise((r) => setTimeout(r, 4000));
+    if (!app.sp) {
+      if (ctx.link === "net" && (await ours(ctx.addr))) await connectNet(ctx.addr).catch(() => {});
+      continue;
+    }
+    let i;
+    try {
+      i = await app.sp.call("Info", {});
+    } catch (e) {
+      if (!GONE.includes(e?.code)) throw e;
+      app.sp.close();
+      app.sp = null;
+      continue;
+    }
+    app.info = i;
+    const [, version, kind] = i.mod_os?.split(" ") ?? [];
+    if (names(app.S.ModState)[i.mod_state] === "ready" && version === want && kind !== "rescue") return i;
+  }
+  throw new Error(
+    "The module didn't come back with the release's system within 15 minutes. Diagnostics says where it is; with " +
+      "nothing written it starts what it had after 20 minutes.",
+  );
+}
 
 /// What the releases are drawn for: the versions running, and the boot image's once the module's State record is in.
 export const drawnKey = () => `${app.info?.fw}|${app.info?.mod_os}|${app.info?.mod_state}|${moduleBoot()}`;
@@ -743,7 +810,7 @@ export function drawReleases() {
 /// The updater answering at `addr` after `Bl2Updater` (about a minute: the module starts again under B&W's bootloader,
 /// then reboots into BL2). Where its answers can be read (zd1-app), by what it says; in a browser blind: something
 /// answers there that isn't our software, twice 5 s apart.
-async function updaterAt(addr) {
+async function updaterAt(addr, want = "zd1l") {
   const t0 = Date.now();
   let seen = 0;
   while (Date.now() - t0 < 240_000) {
@@ -751,9 +818,9 @@ async function updaterAt(addr) {
     await new Promise((r) => setTimeout(r, 5000));
     let kind = null;
     try {
-      kind = (await bl2Look(addr, { signal: AbortSignal.timeout(4000) })).kind;
+      kind = (await bl2Look(addr, { timeoutMs: 4000 })).kind;
     } catch {}
-    if (kind === "zd1l") return;
+    if (kind === want) return;
     seen = kind === "blind" && !(await ours(addr)) ? seen + 1 : 0;
     if (seen >= 2) return;
   }

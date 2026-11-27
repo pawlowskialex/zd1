@@ -68,7 +68,7 @@ settings, the Wi-Fi network and its key) stay on the NAND, unused by the stock a
 update IMAGE.bcd` from our firmware, or `zd1 bootloader`, `zd1 dfu relay IMAGE.bcd --yes`, `zd1 dfu start`; ~6.5 min
 for the stock 9 MB, ~5 min for our 6.6 MB `os.bcd`, works with the app partition invalid: `docs/mcu/bootloader-dfu.md`) [HW 2026-10-26]; with our MCU app
 running, `zd1 xmodem IMAGE.bcd` [HW]. Or BL2's web updater on the wired link
-(`python3 tools/zeppelin bl2web 169.254.1.1 IMAGE.bcd --yes --iface=en8`, after `zd1 module esc`) [HW]: BL2 tries DHCP
+(`zd1 bl2web 169.254.1.1 IMAGE.bcd --yes --iface=en8`, after `zd1 module esc`) [HW]: BL2 tries DHCP
 first and answers at 169.254.1.1 only minutes later on a link without a DHCP server.
 
 **The MAC back** with the stock module app running and our MCU firmware in place for the telnet switch [HW for the
