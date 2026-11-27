@@ -950,6 +950,12 @@ impl App {
         match mcufw::follow(&self.mcu, &carried, asked, confirmed) {
             mcufw::Follow::Same => {
                 let _ = std::fs::remove_file(mcufw::FOLLOWED);
+                // taken: nothing left staged, so B&W's bootloader calling later (the key-hold, Bl2Updater) gets BL2
+                // also from a rescue older than mcufw::ASKED, which serves whatever is staged
+                if std::fs::remove_file(mcufw::PENDING).is_ok() {
+                    self.say("[zd1-linkd] the MCU runs this system's app: the staged copy is gone\n");
+                    unsafe { libc::sync() };
+                }
             }
             mcufw::Follow::Not(why) => {
                 self.say(&format!("[zd1-linkd] MCU {}, this system's {carried}: left alone ({why})\n", self.mcu))

@@ -37,5 +37,8 @@ void inputs_inject_key(key_event_t k); /* from IR / the host link (Key) */
  * nothing injected (IR, the host link's Key) can make one, only the key's pin. True once per hold. */
 #define CONFIRM_HOLD_MS 5000
 bool inputs_confirm_take(void);
+/* ON/OFF is down now (debounced): B&W's bootloader takes it held 3 s as "back to the app", so nothing goes there while
+ * a confirmation's hold lasts */
+bool inputs_onoff_down(void);
 
 #endif

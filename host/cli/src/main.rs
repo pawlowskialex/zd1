@@ -790,7 +790,11 @@ async fn speaker_cmd<L: Link>(m: &mut Mcu<L>, cmd: Cmd, ev: &Rc<dyn Events>) -> 
             println!("unlocked");
         }
         Cmd::Bl2Updater => {
-            ev.prompt(Confirm::Updater, "hold ON/OFF on the speaker for 5 s within 30 s, while its LED flashes amber");
+            ev.prompt(
+                Confirm::Updater,
+                "hold ON/OFF on the speaker for 5 s within 30 s, while its LED flashes amber, then let go (the updater \
+                 starts once ON/OFF is up)",
+            );
             m.call(&msg::Bl2Updater).await?;
             println!(
                 "into B&W's bootloader: BL2's web updater comes up on the speaker's Ethernet in about a minute (its own \

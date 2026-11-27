@@ -44,8 +44,8 @@ const PROMPTS = {
   updater: [
     "Hold ON/OFF on the speaker",
     "amber",
-    `Its light flashes amber. ${HOLD} That starts the speaker's updater: it leaves this page for a few minutes, and ` +
-      "on its Ethernet cable takes the release for both of its chips.",
+    `Its light flashes amber. ${HOLD} Then let go: the speaker's updater starts once ON/OFF is up. It leaves this ` +
+      "page for a few minutes, and on its Ethernet cable takes the release for both of its chips.",
   ],
 };
 /// The press arrived (or the flow went on without one): its dialog goes, whatever comes next says so.

@@ -453,7 +453,7 @@ export function drawReleases() {
     v.append(el("p", { textContent: needs.length ? `Latest: ${named}. ${where}` : `Up to date: ${named}.` }));
     // a Lightning model: its boot image through its updater (Bl2Updater, the whole release); else not the page's to
     // write (BOOT_BY_IP), the rest is
-    const blocked = noDfu() && behind ? updaterBlocked(rel) : null;
+    const blocked = noDfu() && behind ? updaterBlocked(rel, needs) : null;
     const byIp = !!blocked;
     if (byIp)
       v.append(
@@ -509,10 +509,13 @@ export function drawReleases() {
 /// second upload); without one: the system into a slot, then the MCU firmware.
 export async function updateTo(rel, needs, finishing = false) {
   if (app.sp.link() === "net") return updateOverNetwork(rel, needs);
+  // a Lightning model: the system and the main board's firmware from it first, the updater (the boot image) once both
+  // are the release's: an older main board doesn't wait for ON/OFF to be let go before B&W's bootloader, and a rescue
+  // older than the system serves the MCU app staged until the main board runs it, instead of starting BL2
   if (noDfu())
-    return needs.includes("boot") && !updaterBlocked(rel)
-      ? updateByUpdater(rel)
-      : updateFromModule(rel, needs, finishing);
+    return needs.includes("system") || needs.includes("rescue") || needs.includes("mcu") || updaterBlocked(rel)
+      ? updateFromModule(rel, needs, finishing)
+      : updateByUpdater(rel);
   const has = (k) => needs.includes(k);
   const steps = !has("boot")
     ? needs
@@ -621,7 +624,7 @@ async function updateFromModule(rel, needs, finishing) {
     !(await ask(
       `Update to ${rel.version}?`,
       `${plan[0].toUpperCase()}${plan.slice(1)}. A few minutes; sound stops meanwhile.` +
-        (has("boot") ? " The boot image goes on through B&W's updater, later (Software says how)." : ""),
+        (has("boot") ? " The boot image comes after it: Update again then (it goes through B&W's updater)." : ""),
       "Update",
     ))
   )
@@ -693,16 +696,18 @@ async function updateFromModule(rel, needs, finishing) {
         );
       said.unshift(`system ${rel.system.version} in slot ${tried.toUpperCase()}`);
     }
-    return `Done: ${said.join(", ")}.${has("boot") ? " The boot image: through B&W's updater (Software says how)." : ""}`;
+    return `Done: ${said.join(", ")}.${has("boot") ? " The boot image is next: Update again (it goes through B&W's updater)." : ""}`;
   });
   refresh(true);
   return r;
 }
 
-/// Why the Lightning model's updater can't be started from here for `rel` (null: it can): the firmware's request, the
-/// release's .fw, the Ethernet cable (BL2 has no Wi-Fi) and the address it is looked for at.
-function updaterBlocked(rel) {
-  if (!app.sp?.supports("Bl2Updater")) return "its main board's firmware can't start its updater (it is older)";
+/// Why the Lightning model's updater can't be started from here for `rel` (null: it can): the firmware's request (an
+/// update that brings the main board's firmware first brings it: `needs` "mcu"), the release's .fw, the Ethernet cable
+/// (BL2 has no Wi-Fi) and the address it is looked for at.
+function updaterBlocked(rel, needs = []) {
+  if (!needs.includes("mcu") && !app.sp?.supports("Bl2Updater"))
+    return "its main board's firmware can't start its updater (it is older)";
   if (!rel.fw) return `release ${rel.version} has no file for the Lightning model`;
   if (!app.state?.eth_link) return "the speaker has no Ethernet cable in (its updater has no Wi-Fi)";
   if (!app.state?.eth_ip) return "the speaker has no address on its Ethernet yet";
