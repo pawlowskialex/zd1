@@ -76,6 +76,7 @@ bass, a key as if pressed), `Amp` (the interlock), `Peek`/`Poke` (bytes or 32-bi
 settings), `Debug`, `Unlock`/`Lock` (the gate), `Prefs`, `BootState`/`Boot` (the module's
 system slot), `Update`/`UpdateStatus`/`Pipe`/`PipeData` (the module's update, the bulk pipe), `XmFrame` (BL2's
 XModem), `Allow` (a person at the speaker allows an MCU app from the module: ON/OFF held 5 s; `src/mcufw.c`),
+`Bl2Updater` (a ZD1L, after the same hold: into B&W's bootloader for BL2's web updater),
 `ModRecord` (the module's State record), `Pair` and `SystemUpdate` (over the network only: `docs/protocol/net.md`), `Console` (the module's console for this host: its bytes in POLL's CONSOLE records instead of lines in the
 log; closed when the host stops polling for 2 s or a new host says HELLO) and `ConsoleWrite` (the host's bytes into the
 1 KB send ring, as many as fit; `zd1 console`, `src/modcon.c`). Everything the firmware prints goes into a 4 KB log the host reads (oldest text

@@ -124,6 +124,9 @@ pub enum Confirm {
     /// ON/OFF held 5 s, the LED flashing amber: a system update over the network and the MCU firmware it brings
     /// (`Allow`).
     Allow,
+    /// ON/OFF held 5 s, the LED flashing amber: the speaker into B&W's bootloader for BL2's web updater
+    /// (`Bl2Updater`, a ZD1L).
+    Updater,
 }
 
 impl Confirm {
@@ -132,6 +135,7 @@ impl Confirm {
             Confirm::Press => "press",
             Confirm::Pair => "pair",
             Confirm::Allow => "allow",
+            Confirm::Updater => "updater",
         }
     }
 }

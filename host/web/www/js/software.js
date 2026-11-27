@@ -1,10 +1,12 @@
 // The software: the bootloader's view (install, repair, roll back), the slots, the releases, installs from files.
 import { imageInfo, Speaker } from "../pkg/zd1_web.js";
 import { backups, drawBackups, restoreBackup } from "./backups.js";
-import { act, connect, events, job, show } from "./connection.js";
+import { bl2Look } from "./bl2.js";
+import { act, connect, connectNet, events, job, show } from "./connection.js";
 import { app } from "./shared.js";
 import { modelOf, refresh } from "./speaker.js";
 import { $, ask, el, failed, names, notice } from "./ui.js";
+import { ours, writeFw } from "./zd1l.js";
 
 // ---- the bootloader: the installer ------------------------------------------------------------------------------
 
@@ -449,9 +451,17 @@ export function drawReleases() {
     const where = `It updates ${updates}.${starting ? " The module is starting: its system is checked once it is up." : ""}`;
     const named = `release ${rel.version}${rel.date ? ` (${rel.date})` : ""}`;
     v.append(el("p", { textContent: needs.length ? `Latest: ${named}. ${where}` : `Up to date: ${named}.` }));
-    // a Lightning model: its boot image isn't the page's to write (BOOT_BY_IP); the rest is
-    const byIp = noDfu() && behind;
-    if (byIp) v.append(el("p", { className: "small", textContent: BOOT_BY_IP }));
+    // a Lightning model: its boot image through its updater (Bl2Updater, the whole release); else not the page's to
+    // write (BOOT_BY_IP), the rest is
+    const blocked = noDfu() && behind ? updaterBlocked(rel) : null;
+    const byIp = !!blocked;
+    if (byIp)
+      v.append(
+        el("p", {
+          className: "small",
+          textContent: `The boot image can't go on from here now: ${blocked}. ${BOOT_BY_IP}`,
+        }),
+      );
     if (rel.notes) v.append(el("p", { className: "small notes", textContent: rel.notes }));
     // behind: the banner on top of the page says so, with the one button
     const doable = byIp ? needs.filter((k) => k !== "boot") : needs;
@@ -499,7 +509,10 @@ export function drawReleases() {
 /// second upload); without one: the system into a slot, then the MCU firmware.
 export async function updateTo(rel, needs, finishing = false) {
   if (app.sp.link() === "net") return updateOverNetwork(rel, needs);
-  if (noDfu()) return updateFromModule(rel, needs, finishing);
+  if (noDfu())
+    return needs.includes("boot") && !updaterBlocked(rel)
+      ? updateByUpdater(rel)
+      : updateFromModule(rel, needs, finishing);
   const has = (k) => needs.includes(k);
   const steps = !has("boot")
     ? needs
@@ -684,6 +697,82 @@ async function updateFromModule(rel, needs, finishing) {
   });
   refresh(true);
   return r;
+}
+
+/// Why the Lightning model's updater can't be started from here for `rel` (null: it can): the firmware's request, the
+/// release's .fw, the Ethernet cable (BL2 has no Wi-Fi) and the address it is looked for at.
+function updaterBlocked(rel) {
+  if (!app.sp?.supports("Bl2Updater")) return "its main board's firmware can't start its updater (it is older)";
+  if (!rel.fw) return `release ${rel.version} has no file for the Lightning model`;
+  if (!app.state?.eth_link) return "the speaker has no Ethernet cable in (its updater has no Wi-Fi)";
+  if (!app.state?.eth_ip) return "the speaker has no address on its Ethernet yet";
+  return null;
+}
+
+/// A Lightning model to a release through its updater (`Bl2Updater`), the way to a new boot image: the main board into
+/// B&W's bootloader, the module into BL2's web updater on its Ethernet, the release's .fw to it (both chips; the boot
+/// image with the release's system as its rescue, which then installs itself into a slot: zd1l.js `writeFw`), until
+/// our software answers again. BL2 asks DHCP for itself: looked for at the speaker's Ethernet address.
+async function updateByUpdater(rel) {
+  const addr = app.state.eth_ip;
+  if (
+    !(await ask(
+      `Update to ${rel.version}?`,
+      "Its boot image is new in this release, which goes on through the speaker's own updater. Someone at the speaker " +
+        "starts it: ON/OFF held 5 s while its light flashes amber. The speaker then leaves this page: its main board " +
+        "goes into B&W's bootloader and its module into B&W's updater on the Ethernet cable (looked for at " +
+        `${addr}), which takes the release's file for both chips; then it restarts with our software and puts the ` +
+        "release's system into the slot that doesn't run. About ten minutes; keep its power and its cable in. The " +
+        "settings stay. Should it not come back: unplug its power and plug it in again (with nothing written it " +
+        "starts what it had), or the Lightning install by address after ON/OFF held while plugging it in.",
+      "Update",
+    ))
+  )
+    return;
+  const usb = app.sp.link() === "usb";
+  const r = await job(`Update to ${rel.version}`, false, async () => {
+    events.phase(1, 4, "the release's file");
+    const fw = await fetchImage(rel.fw);
+    events.phase(2, 4, "the speaker's updater");
+    const sp = app.sp;
+    app.sp = null; // it leaves: this connection ends
+    try {
+      await sp.bl2Updater();
+    } catch (e) {
+      app.sp = sp; // nobody held ON/OFF (or it refused): the speaker stays as it was
+      throw e;
+    }
+    await updaterAt(addr);
+    return writeFw(addr, fw, rel.fw.file.split("/").pop(), { own: true, phase: 3, of: 4 });
+  });
+  if (app.sp) return refresh(true);
+  if (usb) await connect(false);
+  else if (r) await connectNet(addr);
+  return r;
+}
+
+/// The updater answering at `addr` after `Bl2Updater` (about a minute: the module starts again under B&W's bootloader,
+/// then reboots into BL2). Where its answers can be read (zd1-app), by what it says; in a browser blind: something
+/// answers there that isn't our software, twice 5 s apart.
+async function updaterAt(addr) {
+  const t0 = Date.now();
+  let seen = 0;
+  while (Date.now() - t0 < 240_000) {
+    events.wait(`the speaker's updater coming up at ${addr}`, Math.round((Date.now() - t0) / 1000));
+    await new Promise((r) => setTimeout(r, 5000));
+    let kind = null;
+    try {
+      kind = (await bl2Look(addr, { signal: AbortSignal.timeout(4000) })).kind;
+    } catch {}
+    if (kind === "zd1l") return;
+    seen = kind === "blind" && !(await ours(addr)) ? seen + 1 : 0;
+    if (seen >= 2) return;
+  }
+  throw new Error(
+    `The speaker's updater didn't answer at ${addr} within 4 minutes. If the speaker's light is white, it runs ` +
+      "under another address: the welcome view's Lightning install finds it (or takes it from the router's list) and " +
+      "puts the release on. Else unplug the speaker's power and plug it in again: it starts what it had.",
+  );
 }
 
 /// The errors of a USB device going away mid-call: gone, or a transfer that failed or timed out with it.

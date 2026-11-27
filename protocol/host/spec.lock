@@ -57,6 +57,7 @@ field 0x21 0 enum:UpdateOp op
 field 0x21 1 u32 offset
 field 0x21 2 bytes:32768 data
 msg 0x22 request Allow
+msg 0x23 request Bl2Updater
 msg 0x0F request Lock
 field 0x0F 0 bool open
 msg 0x04 request Peek

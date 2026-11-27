@@ -100,3 +100,15 @@ void mcufw_enter(void) {
     }
     log_puts("[mcufw] no bootloader here takes an app from the module (a ZD1 without the preloader): ignored\n");
 }
+
+/* into B&W's bootloader with nothing staged for it (the host link's Bl2Updater, confirmed): it powers the module and
+ * asks it for BL2, our OS (which asked for no app) reboots into BL2, and BL2's web updater takes a .fw for both chips
+ * (docs/mcu/bootloader-hbl.md) */
+void mcufw_bl2_updater(void) {
+    if (!mcufw_hbl_present()) {
+        log_puts("[mcufw] no B&W bootloader here for BL2's web updater: ignored\n");
+        return;
+    }
+    log_puts("[mcufw] into B&W's bootloader: the module into BL2's web updater\n");
+    selfdfu_enter();
+}

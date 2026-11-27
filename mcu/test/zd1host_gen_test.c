@@ -355,6 +355,17 @@ static void allow_0(void){
     CHECK(zd1h_encode(&ZD1H_ALLOW, &a, out, sizeof w - 1) < 0, "allow_0: no room");
     { uint8_t x[sizeof w]; memcpy(x, w, sizeof w); x[0] ^= 0x80; CHECK(zd1h_decode(&ZD1H_ALLOW, x, sizeof x, &b) < 0, "allow_0: another id"); }
 }
+static void bl2_updater_0(void){
+    static const uint8_t w[] = {0x23};
+    zd1h_bl2_updater_t a, b; uint8_t out[ZD1H_MSG_MAX]; int n;
+    memset(&a, 0, sizeof a); memset(&b, 0xA5, sizeof b);
+    n = zd1h_encode(&ZD1H_BL2_UPDATER, &a, out, sizeof out);
+    CHECK(n == (int)sizeof w && !memcmp(out, w, n), "bl2_updater_0: encode");
+    CHECK(zd1h_decode(&ZD1H_BL2_UPDATER, w, sizeof w, &b) == 0, "bl2_updater_0: decode");
+    { uint8_t x[sizeof w + 3]; memcpy(x, w, sizeof w); x[sizeof w] = 7; x[sizeof w + 1] = 0xFF; x[sizeof w + 2] = 0; memset(&b, 0xA5, sizeof b); CHECK(zd1h_decode(&ZD1H_BL2_UPDATER, x, sizeof x, &b) == 0, "bl2_updater_0: trailing bytes"); }
+    CHECK(zd1h_encode(&ZD1H_BL2_UPDATER, &a, out, sizeof w - 1) < 0, "bl2_updater_0: no room");
+    { uint8_t x[sizeof w]; memcpy(x, w, sizeof w); x[0] ^= 0x80; CHECK(zd1h_decode(&ZD1H_BL2_UPDATER, x, sizeof x, &b) < 0, "bl2_updater_0: another id"); }
+}
 static void lock_0(void){
     static const uint8_t w[] = {0x0F,0x00};
     zd1h_lock_t a, b; uint8_t out[ZD1H_MSG_MAX]; int n;
@@ -2089,6 +2100,7 @@ int main(void){
     info_reply_2();
     unlock_0();
     allow_0();
+    bl2_updater_0();
     lock_0();
     lock_1();
     peek_0();

@@ -171,6 +171,7 @@ the system (`usr/lib/zd1/mcu/zd1.dmb`) is the same build's `.#mcu`, byte for byt
 | our OS, over the network | `system-V.signed`, after ON/OFF held 5 s on the speaker | its app from the new system, under the same hold; only when its version (the app's content) differs |
 | any of our releases or the stock firmware, over USB (the page's Update, `zd1`) | `os-V.bcd` when the stub or kernel differ, and the system from it (its rescue installs itself); else `system-V.cpio.gz`; `zd1-V.hex` | over DFU, the whole region: the preloader too |
 | a ZD1L, its first install (key-hold, BL2) | `zd1l-V.fw` | B&W's bootloader takes the `.fw`'s app from BL2 |
+| a ZD1L with a boot image that differs, from our firmware (`Bl2Updater`, held 5 s: BL2's web updater without the key-hold, on its Ethernet) | `zd1l-V.fw` | the same |
 
 So a ZD1 on a release from before the network link (no `zd1-netd`) takes one update over USB; from then on releases
 go over the network, unless one changes the stub or the kernel, or the preloader, which only DFU writes. Over USB with

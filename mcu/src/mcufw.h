@@ -58,6 +58,7 @@ bool mcufw_hbl_present(void);       /* the ZD1L: B&W's "Net HBL" at 0x80000000 *
  * firmware, or whose trial failed, leaves no allowance open behind it */
 #define MCUFW_ALLOW_AFTER_READY_MS 60000u
 void mcufw_allow(void);
+void mcufw_bl2_updater(void);  /* into the ZD1L's bootloader for BL2's web updater (Bl2Updater) */
 void mcufw_module_ready(void); /* the module got ready (dm870.c, on_ready) */
 void mcufw_report(void);       /* at the start: how the preloader's last run went (GPLP0), logged once */
 void mcufw_request(void);

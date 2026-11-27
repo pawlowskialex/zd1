@@ -815,6 +815,15 @@ messages! {
     /// update's trial, or the good slot's after one that failed), and none without. Our OS asks it at `SystemUpdate`
     /// BEGIN (docs/protocol/net.md). `Error DENIED` if nobody held it, `Error BUSY` while another confirmation waits.
     0x22 Allow -> Ok [free, 35000 ms] {}
+    /// Into B&W's bootloader for BL2's web updater, on a model whose bootloader takes its updates from the network
+    /// (the ZD1L's "Net HBL", docs/mcu/bootloader-hbl.md): the MCU waits up to 30 s for ON/OFF held 5 s (its LED flashes
+    /// amber); held, it answers, then goes into the bootloader, which powers the module and asks it for BL2. Our OS,
+    /// which asked the MCU for no app, sends it there: BL2's web updater on wired Ethernet (a DHCP lease of its own,
+    /// maybe another address than our OS's), which takes a B&W `.fw` for both chips (the release's `zd1l-V.fw`) and
+    /// restarts into it. Nothing on USB and no network link meanwhile; a power cut, or ON/OFF held 3 s while it waits, goes back to
+    /// this firmware with nothing written. `Error ARG` on a model without that bootloader (the Zeppelin Air: DFU),
+    /// `Error DENIED` if nobody held it.
+    0x23 Bl2Updater -> Ok [free, 35000 ms, net] {}
     /// Close the gate now, or open it for good (kept in the EEPROM across power cycles: a lab unit driven by tools
     /// unattended; the user's choice, made at the speaker since this request is gated).
     0x0F Lock -> Ok [gated, 1000 ms] {

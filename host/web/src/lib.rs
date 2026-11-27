@@ -477,6 +477,16 @@ impl Speaker {
         Ok(to_js(&codec::decode(&self.hello.borrow()).map_err(|e| js_err(e.into()))?))
     }
 
+    /// Whether the firmware has request `name` (its hello's `requests`): the page offers only what it can do.
+    pub fn supports(&self, name: &str) -> bool {
+        let Some(d) = spec::message(name) else { return false };
+        let Ok(h) = codec::decode(&self.hello.borrow()) else { return false };
+        match h.get("requests") {
+            Val::S(b) => b.get(d.id as usize / 8).is_some_and(|b| b >> (d.id % 8) & 1 == 1),
+            _ => false,
+        }
+    }
+
     /// One request by its name with its fields (docs/protocol/host.md); the reply as an object.
     pub async fn call(&self, name: String, fields: JsValue) -> Result<JsValue, JsValue> {
         let req = from_js(&name, &fields)?;
@@ -696,6 +706,29 @@ impl Speaker {
         let r = m.call(&msg::Allow).await;
         self.put(Conn::Usb(m));
         r.map(drop).map_err(js_err)
+    }
+
+    /// Into B&W's bootloader for BL2's web updater (`Bl2Updater`, a ZD1L): a person at the speaker holds ON/OFF 5 s
+    /// (events.prompt "updater"); then the speaker leaves USB and the network, and its module runs BL2's web updater on
+    /// wired Ethernet, which takes the release's `.fw` (js/bl2.js). This connection ends.
+    #[wasm_bindgen(js_name = bl2Updater)]
+    pub async fn bl2_updater(&self) -> Result<(), JsValue> {
+        let mut c = self.take().await?;
+        self.ev.prompt(
+            zd1_host::Confirm::Updater,
+            "start the speaker's updater: hold ON/OFF on it for 5 s within 30 s, while its LED flashes amber",
+        );
+        let r = on!(&mut c, m => m.call(&msg::Bl2Updater).await);
+        match r {
+            Ok(_) => {
+                self.closed.set(true); // it leaves: nothing of this connection comes back
+                Ok(())
+            }
+            Err(e) => {
+                self.put(c);
+                Err(js_err(e))
+            }
+        }
     }
 
     /// The module's boot image (our .bcd: stub, kernel, rescue) through the bootloader's relay, then our firmware

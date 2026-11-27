@@ -61,7 +61,22 @@ that never greeted us (not our MCU firmware) and that used the configuration cha
 first; after the EOT's ACK 0x29 = 0x2020 and, a second later, status 0x2500. The HBL wants an OK it has taken after
 its receive began (its download step clears the one before), and takes none once the status says finished (a status
 change is always read first): with the OK and the status together it finished the transfer and never said Done
-[EMU 2026-11-19]. Without a staged image the HCR reboots into BL2 as before (the bootloader's relay, `zd1 module bl2`).
+[EMU 2026-11-19]. Only after we asked the MCU for it (reg 0xD7: `/data/zd1/mcu/asked`, written and synced before
+the ask, gone when our MCU firmware greets us again or 15 s after an ask it didn't take): the image stays staged after
+a transfer, and B&W's bootloader calling on its own (the ZD1L's key-hold, `Bl2Updater`) wants BL2 itself, its web
+updater. Else, or without a staged image, the HCR reboots into BL2 as before (the bootloader's relay, `zd1 module
+bl2`).
+
+- **BL2's web updater from our firmware** (`Bl2Updater`, `zd1 bl2-updater`; the page's Update on a ZD1L whose boot
+  image differs): ON/OFF held 5 s, then `selfdfu_enter` (ISP_FORCE) with nothing asked; the HBL powers the module,
+  the stub starts the rescue, which reboots into BL2 at the HBL's HCR; BL2 waits with its web updater on the
+  Ethernet for a `.fw`, as after the key-hold, and the HBL takes its MCU part. The ISP_FORCE the HBL clears at once
+  makes a power cut a way back with nothing written. [EMU 2026-11-27: `zemu run` of `zd1lunit.py`'s unit with this
+  branch's `zd1l.fw` installed (the HBL, `.#mcu-emu`'s app), slot A up; `zd1 bl2-updater` with `--confirm`, "the
+  MCU's bootloader calls on its own (we asked for nothing): BL2 itself", BL2 on the same DHCP address as our OS (the
+  speaker's MAC), `host/web/test/zd1l.mjs` with `zd1l.fw`: "DownloadFirmwares() - Done", "ReceiveHostFirmware() -
+  Done", both parts written in 124 s, "Restart"; then the `.fw`'s MCU firmware, the model still told, the module
+  ready.]
 A bootloader quiet for 7 s mid-transfer gets the block again; 30 s ends it.
 
 - **Split escapes** [EMU 2026-11-19]: a transfer stopped at block 580: an escape pair (`27 27`) went out as `27`,

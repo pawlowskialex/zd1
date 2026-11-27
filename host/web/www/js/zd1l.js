@@ -12,7 +12,7 @@ import { fetchImage, releases } from "./software.js";
 import { $, ask, notice } from "./ui.js";
 
 /// Our software at `addr`: its network link answers the session's handshake.
-async function ours(addr) {
+export async function ours(addr) {
   try {
     let me = localStorage.getItem("zd1.identity");
     if (!me) {
@@ -163,45 +163,52 @@ export async function installZd1l(addr, file = null) {
   const done = await job(`The Lightning model: ${what}`, false, async () => {
     events.phase(1, 3, file ? "the file" : "the release's file");
     const fw = file ? file.data : await fetchImage(rel.fw);
-    events.phase(2, 3, `to the speaker's updater at ${addr}`);
-    let read;
-    try {
-      read = await bl2Upload(addr, fw, file ? file.name : rel.fw.file.split("/").pop());
-    } catch (e) {
-      if (e instanceof TypeError) throw new Error((await look(addr))?.text ?? `Nothing answers at ${addr}.`);
-      throw e;
-    }
-    if (read) {
-      events.phase(3, 3, "the updater writes it: the main board's part, then the module's");
-      // its parts in the order it writes them [EMU 2026-11-21]: the main board's, then the module's
-      const PARTS = { 1: "the main board's firmware", 2: "the module's software" };
-      await bl2Burn(addr, ({ part, percent }) => {
-        events.step(`writing ${PARTS[part] ?? `part ${part}`}${percent !== null ? `: ${percent} %` : ""}`);
-        if (percent !== null) events.progress("write", (Math.max(+part || 1, 1) - 1) * 100 + percent, 200);
-      });
-      if (file)
-        return "Written. The speaker restarts into it (if its light stays white, unplug its power and plug it in again).";
-      events.step("written: the speaker restarts into our software");
-    } else if (file) {
-      return (
-        `Sent to the updater at ${addr}: it installs the file now (its light white meanwhile), then the speaker ` +
-        "restarts into it. This page can't see the updater's progress."
-      );
-    }
-    if (!read) events.phase(3, 3, "the speaker installs it and starts");
-    const t0 = Date.now();
-    while (Date.now() - t0 < 15 * 60 * 1000) {
-      events.wait("our software answering", Math.round((Date.now() - t0) / 1000));
-      await new Promise((r) => setTimeout(r, 10000));
-      if (await ours(addr)) return `Installed: our software answers at ${addr}.`;
-    }
-    throw new Error(
-      `Nothing of ours answered at ${addr} within 15 minutes. ${
-        read
-          ? "If the light is still white, unplug its power and plug it in again"
-          : "If the light is still white, the updater refused the file (it checks the model)"
-      }; if it plays, it may have taken another address (the router's list).`,
-    );
+    return writeFw(addr, fw, file ? file.name : rel.fw.file.split("/").pop(), { own: !file, phase: 2, of: 3 });
   });
   if (done && !file) await connectNet(addr);
+}
+
+/// A .fw through the updater at `addr`, within a job (its phases from `phase` of `of`: the upload, the write): then,
+/// for ours (`own`), until our software answers at that address. The job's outcome.
+export async function writeFw(addr, fw, name, { own, phase, of }) {
+  const file = !own;
+  events.phase(phase, of, `to the speaker's updater at ${addr}`);
+  let read;
+  try {
+    read = await bl2Upload(addr, fw, name);
+  } catch (e) {
+    if (e instanceof TypeError) throw new Error((await look(addr))?.text ?? `Nothing answers at ${addr}.`);
+    throw e;
+  }
+  if (read) {
+    events.phase(phase + 1, of, "the updater writes it: the main board's part, then the module's");
+    // its parts in the order it writes them [EMU 2026-11-21]: the main board's, then the module's
+    const PARTS = { 1: "the main board's firmware", 2: "the module's software" };
+    await bl2Burn(addr, ({ part, percent }) => {
+      events.step(`writing ${PARTS[part] ?? `part ${part}`}${percent !== null ? `: ${percent} %` : ""}`);
+      if (percent !== null) events.progress("write", (Math.max(+part || 1, 1) - 1) * 100 + percent, 200);
+    });
+    if (file)
+      return "Written. The speaker restarts into it (if its light stays white, unplug its power and plug it in again).";
+    events.step("written: the speaker restarts into our software");
+  } else if (file) {
+    return (
+      `Sent to the updater at ${addr}: it installs the file now (its light white meanwhile), then the speaker ` +
+      "restarts into it. This page can't see the updater's progress."
+    );
+  }
+  if (!read) events.phase(phase + 1, of, "the speaker installs it and starts");
+  const t0 = Date.now();
+  while (Date.now() - t0 < 15 * 60 * 1000) {
+    events.wait("our software answering", Math.round((Date.now() - t0) / 1000));
+    await new Promise((r) => setTimeout(r, 10000));
+    if (await ours(addr)) return `Installed: our software answers at ${addr}.`;
+  }
+  throw new Error(
+    `Nothing of ours answered at ${addr} within 15 minutes. ${
+      read
+        ? "If the light is still white, unplug its power and plug it in again"
+        : "If the light is still white, the updater refused the file (it checks the model)"
+    }; if it plays, it may have taken another address (the router's list).`,
+  );
 }
