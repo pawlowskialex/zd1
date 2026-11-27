@@ -84,8 +84,9 @@ A bootloader quiet for 7 s mid-transfer gets the block again; 30 s ends it.
   the stock app with our OS always does).
 - How our OS starts it: `zd1-ctl mcu-update` (or anything that writes `mcu-update` to /run/zd1link) checks the staged
   `.dmb` and notifies 0xD7 (`MCU_FW`, `docs/protocol/registers.md`); our MCU firmware takes it once, until 60 s after the module's next ready (10 minutes at most), after
-  a person allowed it (the host link's `Allow`: ON/OFF held 5 s, asked at a network update's start; else it refuses,
-  and by hand `zd1 allow` over USB first), and goes where it is taken
+  a person allowed it (the host link's `Allow`: ON/OFF held 5 s, asked at a network update's start; over USB the
+  page asks it on a ZD1L between writing the system and starting its slot, or before a module restart when only the
+  MCU is behind (`docs/web.md`); else it refuses, and by hand `zd1 allow` over USB first), and goes where it is taken
   (`mcu/src/mcufw.c`): our preloader on the ZD1 (GPLP0 bit 25, the good slot in GPLP1 for our boot stub, the module
   off, a watchdog reset), the HBL on the ZD1L (ISP_FORCE: `selfdfu_enter`). The image stays staged. The system
   asks by itself when the MCU runs another version than the app it carries (by content; neither a `-dirty` build) (`/usr/lib/zd1/mcu/zd1.dmb`, the same

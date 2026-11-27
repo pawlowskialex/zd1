@@ -24,6 +24,14 @@ const NAME = {
   snapcast: "Snapcast",
   other: "An app",
 };
+/// What the page calls each model (the host link's `Model`, as the MCU firmware tells it).
+const MODEL = {
+  zd1: "Zeppelin Air",
+  zd1l: "Zeppelin Air with Lightning",
+  a7: "A7",
+};
+export const modelOf = (i) => names(app.S.Model)[i?.model];
+
 export const RECEIVERS = [
   ["airplay", "AirPlay"],
   ["spotify", "Spotify Connect"],
@@ -126,6 +134,11 @@ export function draw() {
   $("now").textContent = `The amp is ${ampSentence(i)}.`;
   drawBehaviour();
   drawAdvanced();
+  $("model").textContent =
+    MODEL[modelOf(i)] ??
+    (i.hbl_hwid
+      ? `not one this firmware knows (its bootloader says HWID 0x${i.hbl_hwid.toString(16).toUpperCase()})`
+      : "not reported by this firmware (older than that)");
   $("fw").textContent = `${i.fw}${i.built ? `, built ${i.built}` : ""}`;
   const ms = names(app.S.ModState)[i.mod_state];
   $("os").textContent =

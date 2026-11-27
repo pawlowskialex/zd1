@@ -30,6 +30,7 @@
 #include "protect.h"
 #include "ir.h"
 #include "dsp.h"
+#include "model.h"
 #include "usbaudio.h"
 #include "wifi.h"
 #include "udi_audio.h"
@@ -278,6 +279,8 @@ static void info_fill(zd1h_info_reply_t *r) {
     r->amp_idle_s = (uint16_t)(g_settings.amp_idle_min * 60u);
     r->volume_cap = g_settings.vol_cap;
     r->console_open = modcon_host();
+    r->model = (uint8_t)model();
+    r->hbl_hwid = model_hbl_hwid();
 }
 
 static void diag_fill(zd1h_diag_reply_t *r) {

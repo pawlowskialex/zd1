@@ -69,7 +69,8 @@ control transfers on EP0 to a vendor interface (IF3, class FF/5A/01: the host to
 transfer. Bulk data (an update's image) goes to the interface's one endpoint, bulk OUT 0x05 (the pipe, `src/pipe.c`).
 The USB interrupt takes a request and hands out the log (`src/log.c`) and the reply (`src/hostif.c`); the main loop
 runs the request. It is the only way in: no text console, every command a typed request with a typed reply. Requests:
-`Hello` (also answered from the interrupt), `Info`, `Diag` (internals), `Select`/`Volume`/`Key` (the source, volume and
+`Hello` (also answered from the interrupt), `Info` (with the model, told from the bootloader: `src/model.c`), `Diag`
+(internals), `Select`/`Volume`/`Key` (the source, volume and
 bass, a key as if pressed), `Amp` (the interlock), `Peek`/`Poke` (bytes or 32-bit words), `Dfu`, `Reboot`, `Module`
 (power, bring-up, into BL2 over SPI or through BL1's serial menu, held powered for JTAG), `ModRead`/`ModWrite`, `GetSetting`/`SetSetting` (the module OS's
 settings), `Debug`, `Unlock`/`Lock` (the gate), `Prefs`, `BootState`/`Boot` (the module's

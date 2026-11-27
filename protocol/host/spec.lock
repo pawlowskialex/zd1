@@ -47,6 +47,8 @@ field 0x42 26 u8 link_proto
 field 0x42 27 u16 amp_idle_s
 field 0x42 28 u8 volume_cap
 field 0x42 29 bool console_open
+field 0x42 30 enum:Model model
+field 0x42 31 u8 hbl_hwid
 msg 0x0E request Unlock
 msg 0x20 record Pair
 field 0x20 0 str:32 name
@@ -387,6 +389,10 @@ enum DspIn 1 USB
 enum DspIn 2 MODULE
 enum DspIn 3 AUX
 enum DspIn 4 OPTICAL
+enum Model 0 UNKNOWN
+enum Model 1 ZD1
+enum Model 2 ZD1L
+enum Model 3 A7
 enum Gate 0 LOCKED
 enum Gate 1 UNLOCKED
 enum Gate 2 OPEN
