@@ -37,6 +37,15 @@ with the AVR32 toolchain's objdump and Ghidra over an SRAM image, scripts there)
      Nothing else in the header is looked at. A good transfer also needs an HCR status OK after it.
   6. Status 0x2500 (BL2 finished), 10 s, the module off (PA17, 3 s, PA04), a watchdog reset into the app.
   ON/OFF held 3 s in most waiting states restarts into the app. With no module answering it waits for that press.
+- **BL2's progress wraps at the end of an upload** [RE, EMU 2026-11-27]: BL2 (`re/gen/bl2-zd1l`, 0x6006a6f0) counts every
+  byte of the `.fw` into its progress, the 32-byte wrapper and the closing newline too, so it ends 33 bytes past the
+  `.bcd` and MCU part the wrapper announces (`total`). Its progress, 100 - (total - received) * 100 / total in unsigned
+  32-bit arithmetic, wraps there to 100 - (2^32 - 100 * 33) // total, which BL2 prints (`Progress=-536`) and posts as
+  an HCR status (0x29 = 0x21A4) whenever it is a multiple of 10 as unsigned: when the quotient ends in 6. The HBL takes
+  that status as a failure ("DownloadFirmwares() - Failed"), BL2 then can't send it the MCU part ("xmodemTransmit
+  failed", "Couldnot Update Finish") and writes nothing. 0.4.0's and 0.4.1's `zd1l.fw` (total 6745746, -536) hit it
+  through the key-hold and `Bl2Updater` alike; 0.2.0-0.3.2 (-529) and B&W's 2.04.35 (-509) don't. `bwfw.py --pack`
+  pads the `.bcd` after its last section (2 KB steps) until no overshoot up to 33 bytes can wrap to a posted value.
 - **A broken escape fails the block**: BL2 sends a data 0xFF as `27 01`; idle 0xFF bytes between two data bytes are
   skipped, but between the `27` and its second byte they are taken as the escape, the block's CRC fails, NAK, and BL2
   cancels after its retries. In the emulator the module's TX FIFO used to run dry inside long replies (the link's

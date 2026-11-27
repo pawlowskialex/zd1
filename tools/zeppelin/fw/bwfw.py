@@ -54,6 +54,29 @@ def wrap(bcd, mcu, version):
     return struct.pack("<8I", 2, len(bcd), 0, len(mcu), zlib.crc32(body) & 0xFFFFFFFF, version, 0, 0) + body + b"\n"
 
 
+# BL2's upload (the ZD1L's: re/gen/bl2-zd1l, 0x6006a6f0) counts every byte of the file, the wrapper and the newline
+# too, so it ends up to 33 bytes past the .bcd and MCU part the wrapper announces (`total`). Its progress is 100 - (total
+# - received) * 100 / total in unsigned 32-bit arithmetic: past the end that wraps, 100 - (2^32 - 100 * over) // total.
+# When that value is a multiple of 10 as unsigned (the quotient ends in 6) BL2 posts it to the MCU's bootloader as a
+# status (0x29 = 0x21A4 in the emulator), which takes it as a failure and stops: BL2 then has no one to send the MCU part
+# to and writes nothing. 0.4.0's and 0.4.1's zd1l.fw were such a length (6745746: -536); every other release, and B&W's
+# own files, weren't [EMU 2026-11-27, docs/mcu/bootloader-hbl.md].
+WRAPPED_OVER = 32 + 1  # the wrapper and the newline
+
+
+def bl2_posts_wrapped(total):
+    """BL2 would post a wrapped progress for a file announcing `total` bytes (any overshoot up to the whole one)."""
+    return any(((1 << 32) - 100 * over) // total % 10 == 6 for over in range(1, WRAPPED_OVER + 1))
+
+
+def pad_for_bl2(bcd, mcu):
+    """The .bcd with zero bytes after its last section, in 2 KB steps (a NAND page), until BL2's progress can't wrap to a
+    posted value: nothing reads them (BL2 writes the sections by their offsets; the wrapper's CRC covers them)."""
+    while bl2_posts_wrapped(len(bcd) + len(mcu)):
+        bcd += bytes(2048)
+    return bcd
+
+
 def set_hwid(bcd, hwid):
     """The .bcd with its header's HWID replaced (the header's other half and its CRC kept right)."""
     f = bytearray(bcd)
@@ -135,8 +158,15 @@ def pack(a):
     if not a.name or not a.version:
         raise ValueError("--pack needs --name and --version")
     bytes3, number = release(a.version)
-    open(out, "wb").write(wrap(bcd, make_dmb(app, a.name, bytes3, bcd_built(bcd)), number))
-    print("%s: .bcd %d B, %s %d B at 0x80008000, version %s" % (out, len(bcd), a.name, len(app), a.version))
+    mcu = make_dmb(app, a.name, bytes3, bcd_built(bcd))
+    padded = pad_for_bl2(bcd, mcu)
+    bcdfmt.sections(padded)
+    open(out, "wb").write(wrap(padded, mcu, number))
+    pad = len(padded) - len(bcd)
+    print(
+        "%s: .bcd %d B%s, %s %d B at 0x80008000, version %s"
+        % (out, len(bcd), " + %d B for BL2's progress" % pad if pad else "", a.name, len(app), a.version)
+    )
 
 
 def main():
